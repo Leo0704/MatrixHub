@@ -18,9 +18,13 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "better-sqlite3": "^11.7.0",
     "electron-log": "^5.2.4",
     "playwright": "^1.49.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "uuid": "^11.0.5"
   },
   "devDependencies": {
@@ -44,14 +48,20 @@
       "package.json"
     ],
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.productivity"
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
-      "target": ["AppImage"]
+      "target": [
+        "AppImage"
+      ]
     }
   }
 }

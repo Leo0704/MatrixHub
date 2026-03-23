@@ -112,3 +112,24 @@ export interface IpcChannels {
   'rate:check': { platform: Platform };
   'rate:acquire': { platform: Platform };
 }
+
+// AI 生成请求
+export interface AIRequest {
+  providerType?: 'openai' | 'anthropic' | 'ollama' | 'zhipu';
+  model?: string;
+  prompt: string;
+  system?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+// AI 生成响应
+export interface AIResponse {
+  success: boolean;
+  content?: string;
+  error?: string;
+  provider?: string;
+  model?: string;
+  latencyMs?: number;
+  tokensUsed?: number;
+}

@@ -81,16 +81,14 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
   // User Agent 轮换
   const userAgent = getRandomUserAgent();
 
+  // 启动浏览器
   const browser = await chromium.launch({
     headless: false,  // 开发模式可见，生产模式可改为 true
-    userDataDir,
     args,
-    locale: 'zh-CN',
-    downloadsPath: path.join(app.getPath('userData'), 'downloads'),
   });
 
-  // 设置默认 User Agent
-  const context = browser.newContext({
+  // 创建 context 并设置
+  const context = await browser.newContext({
     userAgent,
     viewport: { width: 1280, height: 800 },
     timezoneId: 'Asia/Shanghai',
@@ -98,60 +96,21 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
     permissions: [],
   });
 
-  // 注入反检测脚本
-  await context.addInitScript(() => {
-    // 移除 webdriver 标识
+  contextPool.set(platform, context);
+
+  // 注入反检测脚本（运行在浏览器中）
+  await context.addInitScript(`// 反检测
     Object.defineProperty(navigator, 'webdriver', {
       get: () => false,
       configurable: true,
     });
-
     // 模拟 Chrome runtime
-    (window as any).chrome = {
-      runtime: { id: undefined, getURL: (s: string) => s },
+    globalThis.chrome = {
+      runtime: { id: undefined, getURL: (s) => s },
       app: {},
       storage: { local: {} },
     };
-
-    // 随机化 canvas 指纹
-    const originalGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (
-      this: HTMLCanvasElement,
-      type: string,
-      ...args: any[]
-    ) {
-      const context = originalGetContext.call(this, type, ...args);
-      if (type === '2d') {
-        const ctx = context as CanvasRenderingContext2D;
-        const originalFillText = ctx.fillText;
-        ctx.fillText = function (
-          this: CanvasRenderingContext2D,
-          ...fillArgs
-        ) {
-          // 添加微小的随机偏移
-          const x = (fillArgs[0] as any) as number;
-          const y = (fillArgs[1] as any) as number;
-          if (typeof x === 'number' && typeof y === 'number') {
-            fillArgs[0] = x + (Math.random() - 0.5) * 0.1;
-            fillArgs[1] = y + (Math.random() - 0.5) * 0.1;
-          }
-          return originalFillText.apply(this, fillArgs as any);
-        };
-      }
-      return context;
-    };
-
-    // 拦截 automation 相关属性
-    const originalQuery = window.navigator.permissions.query;
-    window.navigator.permissions.query = async function (this: any, ...args: any[]) {
-      if (args[0]?.name === 'notifications') {
-        return Promise.resolve({ state: 'default' } as any);
-      }
-      return originalQuery.apply(this, args);
-    };
-  });
-
-  contextPool.set(platform, context);
+  `);
 
   log.info(`浏览器启动成功: ${platform}, User-Agent: ${userAgent.substring(0, 50)}...`);
   return browser;
@@ -162,10 +121,14 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
  */
 export async function createPage(platform: Platform): Promise<Page> {
   const browser = await getBrowser(platform);
-  const context = contextPool.get(platform) ?? browser.newContext({
-    timezoneId: 'Asia/Shanghai',
-    locale: 'zh-CN',
-  });
+  let context = contextPool.get(platform);
+  if (!context) {
+    context = await browser.newContext({
+      timezoneId: 'Asia/Shanghai',
+      locale: 'zh-CN',
+    });
+    contextPool.set(platform, context);
+  }
 
   const page = await context.newPage();
 

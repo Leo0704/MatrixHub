@@ -55,18 +55,11 @@ enum CircuitState {
   HALF_OPEN = 'half_open', // 半开
 }
 
-interface CircuitBreaker {
-  state: CircuitState;
-  failureCount: number;
-  lastFailureTime: number;
-  successCount: number;
-}
-
 const DEFAULT_FAILURE_THRESHOLD = 5;
 const DEFAULT_RESET_TIMEOUT = 60000;  // 1分钟后重试
 const DEFAULT_SUCCESS_THRESHOLD = 3;   // 半开后需要 3 次成功才关闭
 
-export class CircuitBreaker {
+class Breaker {
   private state: CircuitState = CircuitState.CLOSED;
   private failureCount = 0;
   private successCount = 0;
@@ -149,13 +142,17 @@ export class CircuitBreaker {
  * - Prompt 模板管理
  */
 export class AIGateway {
-  private providers: Map<AIProviderType, AIProvider> = new Map();
-  private circuitBreakers: Map<AIProviderType, CircuitBreaker> = new Map();
+  private _providers: Map<AIProviderType, AIProvider> = new Map();
+  private circuitBreakers: Map<AIProviderType, Breaker> = new Map();
+
+  get providers(): Map<AIProviderType, AIProvider> {
+    return this._providers;
+  }
 
   constructor() {
     // 初始化熔断器
     for (const type of ['openai', 'anthropic', 'ollama', 'zhipu'] as AIProviderType[]) {
-      this.circuitBreakers.set(type, new CircuitBreaker());
+      this.circuitBreakers.set(type, new Breaker());
     }
   }
 
@@ -166,7 +163,7 @@ export class AIGateway {
     const startTime = Date.now();
     const providerType = request.providerType ?? 'openai';
 
-    const provider = this.providers.get(providerType);
+    const provider = this._providers.get(providerType);
     if (!provider) {
       return { success: false, error: `Provider not configured: ${providerType}` };
     }
@@ -360,7 +357,7 @@ export class AIGateway {
       now
     );
 
-    this.providers.set(provider.type, provider);
+    this._providers.set(provider.type, provider);
     log.info(`AI Provider added: ${provider.name} (${provider.type})`);
 
     return provider;
@@ -385,10 +382,10 @@ export class AIGateway {
         status: row.status,
       };
 
-      this.providers.set(provider.type, provider);
+      this._providers.set(provider.type, provider);
     }
 
-    log.info(`Loaded ${this.providers.size} AI providers`);
+    log.info(`Loaded ${this._providers.size} AI providers`);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import log from 'electron-log';
 import { taskQueue } from './queue.js';
-import { accountManager } from './credential-manager.js';
+import { accountManager, credentialManager } from './credential-manager.js';
 import { rateLimiter } from './rate-limiter.js';
 import { aiGateway } from './ai-gateway.js';
 import { selectorManager } from './selector-versioning.js';
@@ -185,6 +185,3 @@ function broadcastToRenderers(channel: string, data: any): void {
     win.webContents.send(channel, data);
   });
 }
-
-// 延迟导入避免循环依赖
-import { credentialManager } from './credential-manager.js';

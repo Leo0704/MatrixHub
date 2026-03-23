@@ -128,9 +128,9 @@ export class CredentialManager {
       return;
     }
 
+    const encoded = Buffer.from(value).toString('base64');
+
     try {
-      // 使用 pwd 加密存储
-      const encoded = Buffer.from(value).toString('base64');
       execSync(
         `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI矩阵运营大师"`,
         { encoding: 'utf8' }
