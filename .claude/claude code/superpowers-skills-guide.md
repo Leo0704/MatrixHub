@@ -1,6 +1,6 @@
 # Superpowers 技能完整指南
 
-> Claude Code 的 Superpowers 插件 — 15 个核心技能，将 Claude 变成专业开发团队
+> Claude Code 的 Superpowers 插件 (v5.0.5) — 14 个核心技能，将 Claude 变成专业开发团队
 
 ---
 
@@ -596,6 +596,8 @@ description: One-line description
 | 完成 | `/superpowers:finishing-a-development-branch` | 分支完成协调者 | 灵活 |
 | 元 | `/superpowers:using-superpowers` | 技能使用指南 | 元 |
 | 元 | `/superpowers:writing-skills` | 技能作者 | 元 |
+
+**总计: 14 个技能**
 
 ---
 
