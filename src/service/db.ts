@@ -143,6 +143,36 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_selectors_platform ON selector_versions(platform, selector_key);
   `);
 
+  // 告警表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS alerts (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL CHECK(type IN ('error', 'warning', 'info')),
+      title TEXT NOT NULL,
+      message TEXT,
+      timestamp INTEGER NOT NULL,
+      acknowledged INTEGER DEFAULT 0,
+      metric_name TEXT,
+      metric_value REAL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_alerts_acknowledged ON alerts(acknowledged);
+  `);
+
+  // 指标表（用于时序分析）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS metrics (
+      id TEXT PRIMARY KEY,
+      metric_name TEXT NOT NULL,
+      value REAL NOT NULL,
+      tags TEXT,
+      timestamp INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_metrics_name_time ON metrics(metric_name, timestamp DESC);
+  `);
+
   log.info('数据库 Schema 初始化完成');
 }
 

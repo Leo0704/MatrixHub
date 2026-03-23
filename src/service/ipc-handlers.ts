@@ -5,6 +5,7 @@ import { accountManager, credentialManager } from './credential-manager.js';
 import { rateLimiter } from './rate-limiter.js';
 import { aiGateway } from './ai-gateway.js';
 import { selectorManager } from './selector-versioning.js';
+import { monitoringService } from './monitoring.js';
 import { closeAllBrowsers } from './platform-launcher.js';
 import { getDb } from './db.js';
 import type { TaskFilter, Platform, AIRequest } from '../shared/types.js';
@@ -124,7 +125,44 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('ai:providers', async () => {
-    return Array.from(aiGateway.providers?.entries() ?? []);
+    const providers: any[] = [];
+    for (const [type, provider] of aiGateway.providers) {
+      providers.push({
+        id: provider.id,
+        name: provider.name,
+        type: provider.type,
+        baseUrl: provider.baseUrl,
+        models: provider.models,
+        isDefault: provider.isDefault,
+        status: provider.status,
+        // 不返回 apiKey
+      });
+    }
+    return providers;
+  });
+
+  ipcMain.handle('ai:add-provider', async (_event, params: {
+    name: string;
+    type: string;
+    apiKey: string;
+    baseUrl: string;
+    models: string[];
+    isDefault?: boolean;
+  }) => {
+    try {
+      const provider = await aiGateway.addProvider({
+        name: params.name,
+        type: params.type as any,
+        apiKey: params.apiKey,
+        baseUrl: params.baseUrl,
+        models: params.models,
+        isDefault: params.isDefault,
+      });
+      return { success: true, provider };
+    } catch (error) {
+      log.error('Failed to add AI provider:', error);
+      return { success: false, error: (error as Error).message };
+    }
   });
 
   ipcMain.handle('ai:circuit-status', async (_event, { providerType }: { providerType: string }) => {
@@ -135,6 +173,37 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('selector:get', async (_event, { platform, selectorKey }: { platform: Platform; selectorKey: string }) => {
     return selectorManager.get(platform, selectorKey);
+  });
+
+  ipcMain.handle('selector:list', async (_event, { platform }: { platform: Platform }) => {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM selector_versions
+      WHERE platform = ? AND is_active = 1
+      ORDER BY selector_key, version DESC
+    `).all(platform) as any[];
+
+    // 按 selector_key 分组，只取最新版本
+    const grouped = new Map<string, any>();
+    for (const row of rows) {
+      if (!grouped.has(row.selector_key)) {
+        grouped.set(row.selector_key, {
+          selectorKey: row.selector_key,
+          value: row.selector_value,
+          type: row.selector_value.startsWith('//') ? 'xpath' : 'css',
+          version: row.version,
+          successRate: row.success_rate,
+          failureCount: row.failure_count,
+          updatedAt: row.updated_at,
+        });
+      }
+    }
+
+    return Array.from(grouped.values());
+  });
+
+  ipcMain.handle('selector:get-versions', async (_event, { platform, selectorKey }: { platform: Platform; selectorKey: string }) => {
+    return selectorManager.getAllVersions(platform, selectorKey);
   });
 
   ipcMain.handle('selector:register', async (_event, params: {
@@ -171,6 +240,34 @@ export function registerIpcHandlers(): void {
     if (win) {
       win.webContents.openDevTools();
     }
+    return { success: true };
+  });
+
+  // ============ 监控相关 ============
+
+  ipcMain.handle('monitoring:health', async () => {
+    return monitoringService.healthCheck();
+  });
+
+  ipcMain.handle('monitoring:alerts', async (_event, options?: { limit?: number; unacknowledgedOnly?: boolean }) => {
+    return monitoringService.getAlerts(options);
+  });
+
+  ipcMain.handle('monitoring:acknowledge-alert', async (_event, { alertId }: { alertId: string }) => {
+    monitoringService.acknowledgeAlert(alertId);
+    return { success: true };
+  });
+
+  ipcMain.handle('monitoring:dashboard', async () => {
+    return monitoringService.getDashboardData();
+  });
+
+  ipcMain.handle('monitoring:metrics', async (_event, { name, from, to, limit }: { name: string; from?: number; to?: number; limit?: number }) => {
+    return monitoringService.getMetrics(name, { from, to, limit });
+  });
+
+  ipcMain.handle('monitoring:collect', async () => {
+    await monitoringService.collectMetrics();
     return { success: true };
   });
 

@@ -30,10 +30,20 @@ export interface ElectronAPI {
   // AI
   generateAI: (request: any) => Promise<any>;
   getAIProviders: () => Promise<any[]>;
+  addAIProvider: (params: {
+    name: string;
+    type: string;
+    apiKey: string;
+    baseUrl: string;
+    models: string[];
+    isDefault?: boolean;
+  }) => Promise<any>;
   getCircuitStatus: (providerType: string) => Promise<any>;
 
   // 选择器
   getSelector: (platform: string, selectorKey: string) => Promise<any>;
+  listSelectors: (platform: string) => Promise<any[]>;
+  getSelectorVersions: (platform: string, selectorKey: string) => Promise<any[]>;
   registerSelector: (params: any) => Promise<any>;
   reportSelectorSuccess: (platform: string, selectorKey: string) => Promise<any>;
   reportSelectorFailure: (platform: string, selectorKey: string) => Promise<any>;
@@ -43,6 +53,13 @@ export interface ElectronAPI {
   openDevTools: () => Promise<any>;
   getVersion: () => Promise<string>;
   getPath: (name: string) => Promise<string>;
+
+  // 监控
+  getHealthStatus: () => Promise<any>;
+  getAlerts: (options?: { limit?: number; unacknowledgedOnly?: boolean }) => Promise<any[]>;
+  acknowledgeAlert: (alertId: string) => Promise<any>;
+  getDashboardData: () => Promise<any>;
+  getMetrics: (name: string, from?: number, to?: number, limit?: number) => Promise<any[]>;
 
   // 事件监听
   onMenuAction: (channel: string, callback: () => void) => void;
@@ -79,11 +96,16 @@ const api: ElectronAPI = {
   // ============ AI ============
   generateAI: (request) => ipcRenderer.invoke('ai:generate', request),
   getAIProviders: () => ipcRenderer.invoke('ai:providers'),
+  addAIProvider: (params) => ipcRenderer.invoke('ai:add-provider', params),
   getCircuitStatus: (providerType) => ipcRenderer.invoke('ai:circuit-status', { providerType }),
 
   // ============ 选择器 ============
   getSelector: (platform, selectorKey) =>
     ipcRenderer.invoke('selector:get', { platform, selectorKey }),
+  listSelectors: (platform) =>
+    ipcRenderer.invoke('selector:list', { platform }),
+  getSelectorVersions: (platform, selectorKey) =>
+    ipcRenderer.invoke('selector:get-versions', { platform, selectorKey }),
   registerSelector: (params) => ipcRenderer.invoke('selector:register', params),
   reportSelectorSuccess: (platform, selectorKey) =>
     ipcRenderer.invoke('selector:report-success', { platform, selectorKey }),
@@ -95,6 +117,14 @@ const api: ElectronAPI = {
   openDevTools: () => ipcRenderer.invoke('system:open-devtools'),
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   getPath: (name) => ipcRenderer.invoke('app:get-path', name),
+
+  // ============ 监控 ============
+  getHealthStatus: () => ipcRenderer.invoke('monitoring:health'),
+  getAlerts: (options) => ipcRenderer.invoke('monitoring:alerts', options ?? {}),
+  acknowledgeAlert: (alertId) => ipcRenderer.invoke('monitoring:acknowledge-alert', { alertId }),
+  getDashboardData: () => ipcRenderer.invoke('monitoring:dashboard'),
+  getMetrics: (name, from, to, limit) =>
+    ipcRenderer.invoke('monitoring:metrics', { name, from, to, limit }),
 
   // ============ 事件监听 ============
   onMenuAction: (channel, callback) => {

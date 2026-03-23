@@ -1,4 +1,5 @@
 import { getDb } from './db.js';
+import { aiKeyManager } from './credential-manager.js';
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
 import type { Platform } from '../shared/types.js';
@@ -6,7 +7,19 @@ import type { Platform } from '../shared/types.js';
 /**
  * AI Provider 类型
  */
-export type AIProviderType = 'openai' | 'anthropic' | 'ollama' | 'zhipu';
+export type AIProviderType =
+  | 'openai'
+  | 'anthropic'
+  | 'ollama'
+  | 'zhipu'
+  | 'minimax'
+  | 'kimi'
+  | 'qwen'
+  | 'doubao'
+  | 'deepseek'
+  | 'spark'
+  | 'yi'
+  | 'siliconflow';
 
 /**
  * AI Provider 配置
@@ -15,7 +28,7 @@ export interface AIProvider {
   id: string;
   name: string;
   type: AIProviderType;
-  apiKey?: string;           // 存储在 Keychain 中的 key
+  apiKeyKeychainKey?: string; // Keychain 中存储 API Key 的 key
   baseUrl: string;
   models: string[];
   isDefault: boolean;
@@ -151,7 +164,12 @@ export class AIGateway {
 
   constructor() {
     // 初始化熔断器
-    for (const type of ['openai', 'anthropic', 'ollama', 'zhipu'] as AIProviderType[]) {
+    const allProviders: AIProviderType[] = [
+      'openai', 'anthropic', 'ollama', 'zhipu',
+      'minimax', 'kimi', 'qwen', 'doubao',
+      'deepseek', 'spark', 'yi', 'siliconflow',
+    ];
+    for (const type of allProviders) {
       this.circuitBreakers.set(type, new Breaker());
     }
   }
@@ -200,29 +218,48 @@ export class AIGateway {
    */
   private async callProvider(provider: AIProvider, request: AIRequest): Promise<string> {
     const model = request.model ?? provider.models[0];
+    const apiKey = await this.getProviderAPIKey(provider);
+
+    if (!apiKey) {
+      throw new Error(`API key not configured for provider: ${provider.type}`);
+    }
 
     switch (provider.type) {
       case 'openai':
-        return this.callOpenAI(provider, model, request);
+        return this.callOpenAI(provider, model, request, apiKey);
       case 'anthropic':
-        return this.callAnthropic(provider, model, request);
+        return this.callAnthropic(provider, model, request, apiKey);
       case 'ollama':
         return this.callOllama(provider, model, request);
       case 'zhipu':
-        return this.callZhipu(provider, model, request);
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'minimax':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'kimi':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'qwen':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'doubao':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'deepseek':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'yi':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'siliconflow':
+        return this.callOpenAICompatible(provider, model, request, apiKey);
+      case 'spark':
+        return this.callSpark(provider, model, request, apiKey);
       default:
         throw new Error(`Unsupported provider: ${provider.type}`);
     }
   }
 
-  private async callOpenAI(provider: AIProvider, model: string, request: AIRequest): Promise<string> {
-    // TODO: 实现 OpenAI API 调用
-    // const apiKey = await getKeychainKey(provider.apiKeyKeychainKey);
+  private async callOpenAI(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${provider.apiKey ?? ''}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
@@ -236,19 +273,20 @@ export class AIGateway {
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as any;
     return data.choices[0].message.content;
   }
 
-  private async callAnthropic(provider: AIProvider, model: string, request: AIRequest): Promise<string> {
+  private async callAnthropic(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const response = await fetch(`${provider.baseUrl}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': provider.apiKey ?? '',
+        'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
@@ -262,7 +300,8 @@ export class AIGateway {
     });
 
     if (!response.ok) {
-      throw new Error(`Anthropic API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Anthropic API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as any;
@@ -283,20 +322,23 @@ export class AIGateway {
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as any;
     return data.response;
   }
 
-  private async callZhipu(provider: AIProvider, model: string, request: AIRequest): Promise<string> {
-    // 智谱 GLM API
-    const response = await fetch(`${provider.baseUrl}/api/parompt/v1/text/chatcompletion`, {
+  /**
+   * OpenAI 兼容接口调用（minimax, kimi, qwen, doubao, deepseek, yi, siliconflow 等）
+   */
+  private async callOpenAICompatible(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${provider.apiKey ?? ''}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
@@ -310,7 +352,8 @@ export class AIGateway {
     });
 
     if (!response.ok) {
-      throw new Error(`Zhipu API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`${provider.name} API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as any;
@@ -318,24 +361,74 @@ export class AIGateway {
   }
 
   /**
+   * 讯飞星火 API（特殊接口）
+   */
+  private async callSpark(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    // 讯飞星火使用不同的认证方式
+    const messages: { role: string; content: string }[] = [];
+    if (request.system) {
+      messages.push({ role: 'system', content: request.system });
+    }
+    messages.push({ role: 'user', content: request.prompt });
+
+    const response = await fetch(`${provider.baseUrl}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        header: {
+          app_id: apiKey.split(':')[0] || '',
+        },
+        parameter: {
+          chat: {
+            domain: model,
+            temperature: request.temperature ?? 0.7,
+            max_tokens: request.maxTokens ?? 2000,
+          },
+        },
+        payload: {
+          message: {
+            text: messages,
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Spark API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    return data.payload.choices.text[0].content;
+  }
+
+  /**
    * 添加/更新 Provider
    */
-  addProvider(config: {
+  async addProvider(config: {
     name: string;
     type: AIProviderType;
     apiKey?: string;
     baseUrl: string;
     models: string[];
     isDefault?: boolean;
-  }): AIProvider {
+  }): Promise<AIProvider> {
     const db = getDb();
     const now = Date.now();
+
+    // 生成 keychain key 并存储 API Key
+    const keychainKey = `ai:${config.type}:${uuidv4().slice(0, 8)}`;
+    if (config.apiKey) {
+      await aiKeyManager.storeAPIKey(keychainKey, config.apiKey);
+    }
 
     const provider: AIProvider = {
       id: uuidv4(),
       name: config.name,
       type: config.type,
-      apiKey: config.apiKey,
+      apiKeyKeychainKey: keychainKey,
       baseUrl: config.baseUrl,
       models: config.models,
       isDefault: config.isDefault ?? false,
@@ -343,12 +436,13 @@ export class AIGateway {
     };
 
     db.prepare(`
-      INSERT INTO ai_providers (id, name, provider_type, base_url, models, is_default, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_providers (id, name, provider_type, api_key_keychain_key, base_url, models, is_default, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       provider.id,
       provider.name,
       provider.type,
+      provider.apiKeyKeychainKey,
       provider.baseUrl,
       JSON.stringify(provider.models),
       provider.isDefault ? 1 : 0,
@@ -356,6 +450,11 @@ export class AIGateway {
       now,
       now
     );
+
+    // 如果设为默认，取消其他默认
+    if (provider.isDefault) {
+      db.prepare('UPDATE ai_providers SET is_default = 0 WHERE id != ?').run(provider.id);
+    }
 
     this._providers.set(provider.type, provider);
     log.info(`AI Provider added: ${provider.name} (${provider.type})`);
@@ -366,7 +465,7 @@ export class AIGateway {
   /**
    * 加载所有 Provider
    */
-  loadProviders(): void {
+  async loadProviders(): Promise<void> {
     const db = getDb();
     const rows = db.prepare('SELECT * FROM ai_providers WHERE status = ?').all('active') as any[];
 
@@ -375,7 +474,7 @@ export class AIGateway {
         id: row.id,
         name: row.name,
         type: row.provider_type,
-        apiKey: undefined,  // 从 Keychain 加载
+        apiKeyKeychainKey: row.api_key_keychain_key,
         baseUrl: row.base_url,
         models: JSON.parse(row.models),
         isDefault: row.is_default === 1,
@@ -386,6 +485,29 @@ export class AIGateway {
     }
 
     log.info(`Loaded ${this._providers.size} AI providers`);
+  }
+
+  /**
+   * 获取默认 Provider
+   */
+  getDefaultProvider(): AIProvider | undefined {
+    for (const provider of this._providers.values()) {
+      if (provider.isDefault) {
+        return provider;
+      }
+    }
+    // 如果没有设置默认，返回第一个活跃的
+    return this._providers.values().next().value;
+  }
+
+  /**
+   * 获取 Provider 的 API Key
+   */
+  async getProviderAPIKey(provider: AIProvider): Promise<string | null> {
+    if (!provider.apiKeyKeychainKey) {
+      return null;
+    }
+    return aiKeyManager.getAPIKey(provider.apiKeyKeychainKey);
   }
 
   /**

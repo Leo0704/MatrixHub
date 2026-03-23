@@ -25,7 +25,7 @@
 |------|----------|
 | 桌面框架 | Electron 28+ |
 | 前端框架 | React 18 + TypeScript |
-| UI组件 | TailwindCSS + shadcn/ui |
+| UI组件 | CSS + CSS Variables（遵循设计系统 DESIGN.md）|
 | 自动化控制 | Playwright（主流稳定） |
 | 本地数据库 | better-sqlite3（同步API，Electron最优） |
 | 日志系统 | electron-log |
@@ -46,8 +46,8 @@
 │     渲染进程 (UI)      │       服务进程 (Service)        │
 │  ┌──────────────────┐  │  ┌──────────────────────────┐  │
 │  │ React 组件        │  │  │ 浏览器池管理器           │  │
-│  │ 状态管理 (Zustand)│  │  │ AI网关                   │  │
-│  │ 路由 (React Router)│  │  │ 任务队列处理器           │  │
+│  │ 状态管理 (React local state)│  │  │ AI网关                   │  │
+│  │ 路由 (单页，无路由库)│  │  │ 任务队列处理器           │  │
 │  └──────────────────┘  │  │ 数据库操作 (better-sqlite)│  │
 │                       │  │ 文件系统操作              │  │
 │                       │  └──────────────────────────┘  │
@@ -978,25 +978,23 @@ async function handlePublishFailure(task: PublishTask, error: Error) {
 ---
 
 ### 2.16 前端状态管理
-```typescript
-// Zustand 状态管理（轻量、TypeScript友好）
-import { create } from 'zustand';
 
+**当前实现：React local state + Props**
+- 使用 React 的 `useState`、`useReducer` 管理组件级状态
+- 通过 Props 层层传递（层级不深，暂不需要状态管理库）
+- IPC 通信获取服务进程数据，UI 层做展示层
+
+**未来可扩展：**
+如需全局状态管理，可引入 Zustand，接口设计预留扩展性：
+```typescript
+// 预留状态接口（暂未使用）
 interface AppState {
-  // 账号
   accounts: Account[];
   currentAccount: Account | null;
-  setAccounts: (accounts: Account[]) => void;
-
-  // 内容
   contents: Content[];
   currentContent: Content | null;
-
-  // 发布队列
   publishQueue: PublishTask[];
   isPublishing: boolean;
-
-  // 全局状态
   isLoading: boolean;
   error: string | null;
 }
@@ -1194,6 +1192,160 @@ test('内容发布流程', async ({ page }) => {
 - 核心业务逻辑：80%+
 - AI网关：90%+
 - 任务队列：85%+
+
+### 2.22 监控与告警
+
+**设计原则：**
+- 轻量优先：使用现有 electron-log 收集日志，不引入重型 APM
+- 本地存储：监控数据存本地 SQLite，不上传云端
+- 关键指标：只收集对排查问题有用的核心指标
+
+#### 核心监控指标
+
+| 指标 | 说明 | 告警阈值 |
+|------|------|----------|
+| 发布成功率 | 成功数/总数 | < 80% 告警 |
+| 平均发布耗时 | 从开始到成功的平均时间 | > 5分钟 告警 |
+| AI API 响应时间 | AI 请求平均耗时 | > 30秒 告警 |
+| 账号健康度 | 各账号风险评分 | > 50分 告警 |
+| 浏览器崩溃次数 | 服务进程周期内崩溃次数 | > 3次 告警 |
+| 任务队列堆积 | pending 状态任务数 | > 50 告警 |
+
+#### 日志分类
+
+```typescript
+// 使用 electron-log 的 channel 分离日志
+log.channel('browser').info('Browser launched');
+log.channel('ai').info('AI request:', { provider: 'openai', model: 'gpt-4' });
+log.channel('publish').info('Publish task:', taskId);
+log.channel('error').error('Error:', error);
+```
+
+#### 健康检查
+
+```typescript
+interface HealthStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  checks: {
+    browserPool: boolean;
+    aiGateway: boolean;
+    database: boolean;
+    queue: boolean;
+  };
+  metrics: {
+    activeBrowsers: number;
+    pendingTasks: number;
+    failedTasks24h: number;
+    avgAiLatency: number;
+  };
+}
+
+// 定时健康检查（每5分钟）
+async function runHealthCheck(): Promise<HealthStatus> {
+  return {
+    status: 'healthy',
+    checks: {
+      browserPool: browserPool.size < MAX_BROWSERS,
+      aiGateway: await aiGateway.healthCheck(),
+      database: await db.ping(),
+      queue: pendingTasks < 50,
+    },
+    metrics: await collectMetrics(),
+  };
+}
+```
+
+#### 告警通知
+
+```typescript
+interface Alert {
+  id: string;
+  type: 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  timestamp: number;
+  acknowledged: boolean;
+}
+
+// 系统通知（通过 Electron Notification）
+function sendAlert(alert: Alert) {
+  if (alert.type === 'error' || alert.type === 'warning') {
+    new Notification({
+      title: `[AI运营大师] ${alert.title}`,
+      body: alert.message,
+    });
+  }
+  // 同时记录到告警历史表
+  db.insert('alerts', alert);
+}
+
+// 告警历史表
+CREATE TABLE alerts (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT,
+  timestamp INTEGER NOT NULL,
+  acknowledged INTEGER DEFAULT 0
+);
+```
+
+#### 指标收集
+
+```typescript
+// metrics 表（用于时序分析）
+CREATE TABLE metrics (
+  id TEXT PRIMARY KEY,
+  metric_name TEXT NOT NULL,
+  value REAL NOT NULL,
+  tags TEXT,  -- JSON: {platform: 'douyin', account_id: 'xxx'}
+  timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX idx_metrics_name_time ON metrics(metric_name, timestamp);
+
+// 收集任务（每分钟）
+async function collectMetrics() {
+  const metrics = [
+    { name: 'publish_success_rate', value: calculateSuccessRate() },
+    { name: 'publish_avg_duration', value: calculateAvgDuration() },
+    { name: 'ai_avg_latency', value: calculateAvgAiLatency() },
+    { name: 'browser_count', value: browserPool.size },
+    { name: 'queue_pending', value: taskQueue.pendingCount },
+  ];
+
+  for (const m of metrics) {
+    db.insert('metrics', { id: uuid(), ...m, timestamp: Date.now() });
+  }
+}
+```
+
+#### 仪表盘数据（供 UI 展示）
+
+```typescript
+// 获取概览数据（供首页展示）
+interface DashboardData {
+  todayPublishCount: number;
+  successRate: number;
+  pendingTasks: number;
+  accountHealth: AccountHealth[];
+  recentAlerts: Alert[];
+  hotTopics: HotTopic[];
+}
+
+async function getDashboardData(): Promise<DashboardData> {
+  return {
+    todayPublishCount: db.count('publish_records', {
+      published_at: { $gte: todayStart() }
+    }),
+    successRate: db.calculateSuccessRate(),
+    pendingTasks: taskQueue.pendingCount,
+    accountHealth: getAllAccountHealth(),
+    recentAlerts: db.select('alerts', { limit: 5, order: 'timestamp DESC' }),
+    hotTopics: hotTopicMonitor.getTopics(),
+  };
+}
+```
 
 ### 2.22 构建与发布
 
@@ -3235,14 +3387,158 @@ interface ViralAnalysis {
 
 ## 9. 风险与挑战
 
-| 风险 | 影响 | 应对 |
+### 9.1 风险分类矩阵
+
+| 风险类别 | 概率 | 影响 | 优先级 |
+|----------|------|------|--------|
+| 平台封号/限流 | 高 | 极高 | P0 |
+| 选择器失效 | 高 | 高 | P0 |
+| AI API 不可用 | 中 | 高 | P1 |
+| 数据丢失/损坏 | 低 | 极高 | P1 |
+| 会话过期 | 高 | 中 | P2 |
+| 内存溢出 | 低 | 中 | P2 |
+
+### 9.2 平台封号风险（核心风险）
+
+**风险来源：**
+- 浏览器指纹被检测（Playwright 默认特征）
+- 操作频率异常（固定间隔、批量操作）
+- 同一 IP 多账号操作
+- 短时间内容高度相似
+- 平台风控策略升级
+
+**风险评分：**
+```
+基础风险分: 30/100
++ 固定操作间隔: +20分
++ 无浏览器指纹随机化: +15分
++ 同IP多账号: +20分
++ 内容重复率高: +15分
+= 总分 100 → 高危
+```
+
+**缓解措施：**
+
+| 措施 | 效果 | 实现难度 |
+|------|------|----------|
+| 浏览器指纹随机化 | 中 | 中 |
+| 操作间隔随机化（5-15秒随机） | 高 | 低 |
+| IP代理轮换 | 高 | 高（需代理服务） |
+| 账号操作间隔（每次操作间隔30分钟+） | 高 | 低 |
+| 降低每日发布频率 | 高 | 低 |
+| Stealth 插件 | 中 | 低 |
+| 模拟真人行为轨迹 | 中 | 高 |
+
+**推荐配置：**
+```typescript
+const PLATFORM_RISK_CONFIG = {
+  // 操作间隔（毫秒）
+  minActionInterval: 5000,   // 最小5秒
+  maxActionInterval: 15000,  // 最大15秒
+  // 每日发布上限
+  dailyPublishLimit: {
+    high: 2,    // 主账号
+    medium: 5,   // 子账号
+    low: 10     // 矩阵号
+  },
+  // 连续操作后强制休息
+  restAfterActions: 10,
+  restDurationMs: 30 * 60 * 1000, // 30分钟
+  // 内容相似度检测（简单版）
+  similarityThreshold: 0.7, // 超过此相似度拒绝发布
+};
+```
+
+**账号健康监测：**
+```typescript
+interface AccountHealth {
+  accountId: string;
+  riskScore: number;        // 0-100
+  violations: Violation[];  // 违规记录
+  restrictions: string[];   // 当前限制（如"每日发布上限已达"）
+  recommendation: 'normal' | 'reduce' | 'pause' | 'stop';
+}
+
+const RISK_THRESHOLDS = {
+  pause: 50,  // 风险超过50，暂停操作
+  stop: 80,   // 风险超过80，建议重新养号
+};
+```
+
+### 9.3 选择器失效风险
+
+**原因：**
+- 平台 UI 改版（常见，频率高）
+- A/B 测试导致不同用户看到不同 UI
+- 网络波动导致元素加载顺序变化
+
+**缓解措施：**
+```typescript
+// 选择器版本化
+interface SelectorVersion {
+  platform: Platform;
+  version: number;
+  selectors: {
+    loginButton: string[];
+    uploadInput: string[];
+    titleInput: string[];
+    contentInput: string[];
+    publishButton: string[];
+  };
+  testedAt: number;
+  validUntil: number; // 过期时间
+}
+
+// 降级策略
+const FALLBACK_STRATEGY = {
+  retryCount: 3,
+  retryInterval: 2000,
+  selectors: ['primary', 'secondary', 'tertiary', 'xpath'],
+  manualFallback: true, // 选择器全部失效时，回退到手动录入
+};
+```
+
+### 9.4 AI API 可用性风险
+
+| Provider | 可用性 | 降级方案 |
+|----------|--------|----------|
+| OpenAI | ~99.5% | Claude → 通义 → 智谱 |
+| Claude | ~99% | OpenAI → 通义 → 智谱 |
+| 通义 | ~98% | OpenAI → Claude |
+| 智谱 | ~97% | 其他 |
+
+**熔断配置：**
+```typescript
+const CIRCUIT_BREAKER_CONFIG = {
+  failThreshold: 5,        // 连续5次失败触发熔断
+  recoveryTimeout: 30000,   // 30秒后尝试恢复
+  halfOpenAttempts: 3,      // 半开状态允许3次尝试
+};
+```
+
+### 9.5 数据安全风险
+
+| 风险 | 影响 | 缓解 |
 |------|------|------|
-| 平台封号 | 高 | 模拟真人操作，控制频率，使用Stealth插件 |
-| 平台反爬虫 | 高 | 选择器维护机制，失败回退到手动录入 |
-| API成本 | 中 | 按需调用，优化prompt |
-| 第三方不稳定 | 中 | 多API备份，异常处理 |
-| 内容同质化 | 低 | 个性化prompt，差异化策略 |
-| 数据采集失败 | 中 | 多选择器备选，手动录入兜底 |
+| 数据库损坏 | 极高 | 每日自动备份 + 7天保留 |
+| 加密密钥丢失 | 极高 | 密钥绑定机器指纹 + 导出备份 |
+| 敏感数据泄露 | 高 | 敏感字段 AES-256-GCM 加密 |
+| 隐私合规 | 中 | 本地优先，不上传用户数据 |
+
+### 9.6 运营合规风险
+
+⚠️ **免责声明：**
+本工具通过模拟浏览器操作实现自动化发布，使用前请确保：
+1. 遵守目标平台的服务条款
+2. 遵守所在地区的法律法规
+3. 了解并承担账号封禁风险
+4. 不用于垃圾内容分发、虚假宣传等违规行为
+
+**合规使用建议：**
+- 控制发布频率，不追求数量追求质量
+- 内容原创，避免搬运和重复
+- 合理设置发布时间，避免打扰用户
+- 定期检查账号健康状态
 
 ---
 

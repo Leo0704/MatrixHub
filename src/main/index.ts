@@ -19,7 +19,7 @@ if (!gotTheLock) {
   app.quit();
 }
 
-log.info('=== AI矩阵运营大师 启动 ===');
+log.info('=== MatrixHub 启动 ===');
 log.info(`版本: ${app.getVersion()}`);
 log.info(`Electron: ${process.versions.electron}`);
 log.info(`Chrome: ${process.versions.chrome}`);
@@ -110,7 +110,7 @@ function createTray(): void {
     },
   ]);
 
-  tray.setToolTip('AI矩阵运营大师');
+  tray.setToolTip('MatrixHub');
   tray.setContextMenu(contextMenu);
 
   tray.on('click', () => {
@@ -308,7 +308,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
-  log.info('=== AI矩阵运营大师 关闭 ===');
+  log.info('=== MatrixHub 关闭 ===');
   await shutdownServices();
 });
 

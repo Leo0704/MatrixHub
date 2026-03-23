@@ -115,7 +115,9 @@ export interface IpcChannels {
 
 // AI 生成请求
 export interface AIRequest {
-  providerType?: 'openai' | 'anthropic' | 'ollama' | 'zhipu';
+  providerType?: 'openai' | 'anthropic' | 'ollama' | 'zhipu'
+    | 'minimax' | 'kimi' | 'qwen' | 'doubao'
+    | 'deepseek' | 'spark' | 'yi' | 'siliconflow';
   model?: string;
   prompt: string;
   system?: string;

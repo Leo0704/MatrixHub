@@ -6,9 +6,10 @@ import AICreation from './pages/AICreation';
 import ScheduledPublish from './pages/ScheduledPublish';
 import DataInsights from './pages/DataInsights';
 import AccountManagement from './pages/AccountManagement';
+import SelectorSettings from './pages/SelectorSettings';
 import Settings from './pages/Settings';
 
-type Page = 'overview' | 'content' | 'ai' | 'schedule' | 'insights' | 'accounts' | 'settings';
+type Page = 'overview' | 'content' | 'ai' | 'schedule' | 'insights' | 'accounts' | 'selectors' | 'settings';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('overview');
@@ -18,11 +19,30 @@ function App() {
   useEffect(() => {
     window.electronAPI?.getVersion().then(setVersion);
     loadAccounts();
+
+    // 监听账号变化
+    window.electronAPI?.onAccountAdded((account) => {
+      setAccounts(prev => [account, ...prev]);
+    });
+
+    window.electronAPI?.onAccountRemoved(({ accountId }) => {
+      setAccounts(prev => prev.filter(a => a.id !== accountId));
+    });
+
+    return () => {
+      window.electronAPI?.removeAllListeners('account:added');
+      window.electronAPI?.removeAllListeners('account:removed');
+    };
   }, []);
 
   const loadAccounts = async () => {
-    // TODO: 从主进程加载账号
-    setAccounts([]);
+    try {
+      const list = await window.electronAPI?.listAccounts();
+      setAccounts(list || []);
+    } catch (error) {
+      console.error('Failed to load accounts:', error);
+      setAccounts([]);
+    }
   };
 
   const navItems: { page: Page; icon: string; label: string }[] = [
@@ -32,6 +52,7 @@ function App() {
     { page: 'schedule', icon: '📅', label: '定时发布' },
     { page: 'insights', icon: '📈', label: '数据洞察' },
     { page: 'accounts', icon: '🔑', label: '账号管理' },
+    { page: 'selectors', icon: '🎯', label: '选择器设置' },
   ];
 
   const renderPage = () => {
@@ -48,6 +69,8 @@ function App() {
         return <DataInsights />;
       case 'accounts':
         return <AccountManagement />;
+      case 'selectors':
+        return <SelectorSettings />;
       case 'settings':
         return <Settings />;
       default:
@@ -82,7 +105,7 @@ function App() {
             </div>
             <div>
               <h3 style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>
-                AI矩阵运营大师
+                MatrixHub
               </h3>
               <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 {version && `v${version}`}

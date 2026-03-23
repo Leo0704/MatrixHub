@@ -132,14 +132,14 @@ export class CredentialManager {
 
     try {
       execSync(
-        `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI矩阵运营大师"`,
+        `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "MatrixHub"`,
         { encoding: 'utf8' }
       );
     } catch (error) {
       // 可能已存在，尝试更新
       try {
         execSync(
-          `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI矩阵运营大师" -U`,
+          `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "MatrixHub" -U`,
           { encoding: 'utf8' }
         );
       } catch (updateError) {
@@ -179,6 +179,137 @@ export class CredentialManager {
 }
 
 export const credentialManager = new CredentialManager();
+
+// ============ AI API Key 管理 ============
+
+export class AIKeyManager {
+  private serviceName = 'com.aimatrix.ops.ai';
+
+  /**
+   * 存储 AI API Key
+   */
+  async storeAPIKey(providerType: string, apiKey: string): Promise<void> {
+    const key = `ai:${providerType}`;
+
+    // 使用 safeStorage 加密存储
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(apiKey);
+      const storePath = this.getKeyPath(providerType);
+      fs.writeFileSync(storePath, encrypted);
+      log.info(`AI API Key 已加密存储: ${providerType}`);
+    } else {
+      // 回退: 使用 Keychain CLI
+      this.storeKeychain(key, apiKey);
+    }
+  }
+
+  /**
+   * 获取 AI API Key
+   */
+  async getAPIKey(providerType: string): Promise<string | null> {
+    const key = `ai:${providerType}`;
+
+    // 尝试从加密文件加载
+    const storePath = this.getKeyPath(providerType);
+    if (fs.existsSync(storePath)) {
+      try {
+        const encrypted = fs.readFileSync(storePath);
+        if (safeStorage.isEncryptionAvailable()) {
+          return safeStorage.decryptString(encrypted);
+        }
+      } catch (error) {
+        log.error(`解密 AI API Key 失败: ${providerType}`, error);
+      }
+    }
+
+    // 回退: 从 Keychain CLI 获取
+    return this.getKeychain(key);
+  }
+
+  /**
+   * 删除 AI API Key
+   */
+  async deleteAPIKey(providerType: string): Promise<void> {
+    const key = `ai:${providerType}`;
+
+    const storePath = this.getKeyPath(providerType);
+    if (fs.existsSync(storePath)) {
+      fs.unlinkSync(storePath);
+    }
+
+    this.deleteKeychain(key);
+    log.info(`AI API Key 已删除: ${providerType}`);
+  }
+
+  /**
+   * 检查 API Key 是否存在
+   */
+  async hasAPIKey(providerType: string): Promise<boolean> {
+    const key = await this.getAPIKey(providerType);
+    return key !== null && key.length > 0;
+  }
+
+  private getKeyPath(providerType: string): string {
+    const dir = path.join(app.getPath('userData'), 'credentials');
+    fs.mkdirSync(dir, { recursive: true });
+    return path.join(dir, `ai_${providerType}.enc`);
+  }
+
+  private storeKeychain(key: string, value: string): void {
+    if (process.platform !== 'darwin') {
+      log.warn('Keychain CLI only supported on macOS');
+      return;
+    }
+
+    const encoded = Buffer.from(value).toString('base64');
+
+    try {
+      execSync(
+        `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI API Key"`,
+        { encoding: 'utf8' }
+      );
+    } catch {
+      try {
+        execSync(
+          `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI API Key" -U`,
+          { encoding: 'utf8' }
+        );
+      } catch (updateError) {
+        log.error('Keychain store failed:', updateError);
+      }
+    }
+  }
+
+  private getKeychain(key: string): string | null {
+    if (process.platform !== 'darwin') {
+      return null;
+    }
+
+    try {
+      const result = execSync(
+        `security find-generic-password -s "${this.serviceName}" -a "${key}" -w`,
+        { encoding: 'utf8' }
+      );
+      return result.trim();
+    } catch {
+      return null;
+    }
+  }
+
+  private deleteKeychain(key: string): void {
+    if (process.platform !== 'darwin') {
+      return;
+    }
+
+    try {
+      execSync(`security delete-generic-password -s "${this.serviceName}" -a "${key}"`);
+    } catch {
+      // 忽略删除失败
+    }
+  }
+}
+
+export const aiKeyManager = new AIKeyManager();
 
 // ============ 账号管理器 ============
 

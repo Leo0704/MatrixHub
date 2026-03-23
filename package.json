@@ -1,7 +1,7 @@
 {
-  "name": "ai-matrix-ops",
+  "name": "matrixhub",
   "version": "0.1.0",
-  "description": "AI矩阵运营大师 - 多平台内容创作与发布管理工具",
+  "description": "MatrixHub - 多平台内容创作与发布管理工具",
   "main": "dist/main/index.js",
   "author": "",
   "license": "MIT",
@@ -15,7 +15,10 @@
     "build:renderer": "vite build",
     "start": "electron .",
     "package": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@types/react": "^19.2.14",
@@ -31,15 +34,17 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.7",
     "@types/uuid": "^10.0.0",
+    "@vitest/ui": "^4.1.0",
     "concurrently": "^9.1.2",
     "electron": "^34.0.2",
     "electron-builder": "^25.1.8",
     "typescript": "^5.7.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^4.1.0"
   },
   "build": {
-    "appId": "com.aimatrix.ops",
-    "productName": "AI矩阵运营大师",
+    "appId": "com.matrixhub.ops",
+    "productName": "MatrixHub",
     "directories": {
       "output": "release"
     },
