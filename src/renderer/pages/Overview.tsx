@@ -1,54 +1,68 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { PlatformStats, Task } from '../types';
 
-const mockStats: PlatformStats[] = [
-  { platform: 'douyin', totalTasks: 156, completedTasks: 142, failedTasks: 8, pendingTasks: 6, successRate: 94.7 },
-  { platform: 'kuaishou', totalTasks: 89, completedTasks: 85, failedTasks: 2, pendingTasks: 2, successRate: 97.7 },
-  { platform: 'xiaohongshu', totalTasks: 67, completedTasks: 62, failedTasks: 3, pendingTasks: 2, successRate: 94.0 },
-];
-
-const mockRecentTasks: Task[] = [
-  {
-    id: '1',
-    type: 'publish',
-    platform: 'douyin',
-    status: 'completed',
-    title: '【干货】5个技巧让你的视频爆款',
-    payload: {},
-    retryCount: 0,
-    maxRetries: 3,
-    createdAt: Date.now() - 3600000,
-  },
-  {
-    id: '2',
-    type: 'ai_generate',
-    platform: 'xiaohongshu',
-    status: 'running',
-    title: '春日穿搭灵感文案生成',
-    payload: {},
-    retryCount: 0,
-    maxRetries: 3,
-    createdAt: Date.now() - 1800000,
-    progress: 65,
-  },
-  {
-    id: '3',
-    type: 'publish',
-    platform: 'kuaishou',
-    status: 'pending',
-    title: '美食探店系列第三期',
-    payload: {},
-    retryCount: 0,
-    maxRetries: 3,
-    scheduledAt: Date.now() + 7200000,
-    createdAt: Date.now(),
-  },
-];
-
 export default function Overview() {
-  const totalTasks = mockStats.reduce((sum, s) => sum + s.totalTasks, 0);
-  const totalCompleted = mockStats.reduce((sum, s) => sum + s.completedTasks, 0);
-  const totalFailed = mockStats.reduce((sum, s) => sum + s.failedTasks, 0);
+  const [stats, setStats] = useState<{
+    total: number;
+    pending: number;
+    running: number;
+    completed: number;
+    failed: number;
+    deferred: number;
+  } | null>(null);
+  const [recentTasks, setRecentTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+
+    // 监听任务更新
+    window.electronAPI?.onTaskCreated((task) => {
+      setRecentTasks(prev => [task, ...prev.slice(0, 9)]);
+    });
+
+    window.electronAPI?.onTaskUpdated((task) => {
+      setRecentTasks(prev => prev.map(t => t.id === task.id ? task : t));
+      loadStats(); // 刷新统计
+    });
+
+    return () => {
+      window.electronAPI?.removeAllListeners('task:created');
+      window.electronAPI?.removeAllListeners('task:updated');
+    };
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [taskStats, tasks] = await Promise.all([
+        window.electronAPI?.getTaskStats(),
+        window.electronAPI?.listTasks({ limit: 5 }),
+      ]);
+      setStats(taskStats);
+      setRecentTasks(tasks ?? []);
+    } catch (error) {
+      console.error('加载数据失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    const taskStats = await window.electronAPI?.getTaskStats();
+    setStats(taskStats);
+  };
+
+  if (loading) {
+    return <div className="empty-state"><div className="empty-state-icon">⏳</div><p>加载中...</p></div>;
+  }
+
+  const totalTasks = stats?.total ?? 0;
+  const totalCompleted = stats?.completed ?? 0;
+  const totalFailed = stats?.failed ?? 0;
+  const totalPending = (stats?.pending ?? 0) + (stats?.running ?? 0) + (stats?.deferred ?? 0);
+  const successRate = totalCompleted + totalFailed > 0
+    ? ((totalCompleted / (totalCompleted + totalFailed)) * 100).toFixed(1)
+    : '0';
 
   return (
     <div>
@@ -59,42 +73,10 @@ export default function Overview() {
         gap: 'var(--space-lg)',
         marginBottom: 'var(--space-xl)'
       }}>
-        <StatCard
-          label="总任务数"
-          value={totalTasks}
-          icon="📋"
-          color="var(--primary)"
-        />
-        <StatCard
-          label="已完成"
-          value={totalCompleted}
-          icon="✅"
-          color="var(--success)"
-        />
-        <StatCard
-          label="失败"
-          value={totalFailed}
-          icon="❌"
-          color="var(--error)"
-        />
-        <StatCard
-          label="平均成功率"
-          value={`${((totalCompleted / (totalCompleted + totalFailed || 1)) * 100).toFixed(1)}%`}
-          icon="📊"
-          color="var(--accent-orange)"
-        />
-      </div>
-
-      {/* 平台统计 */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: 'var(--space-lg)',
-        marginBottom: 'var(--space-xl)'
-      }}>
-        {mockStats.map(stat => (
-          <PlatformCard key={stat.platform} stats={stat} />
-        ))}
+        <StatCard label="总任务数" value={totalTasks} icon="📋" color="var(--primary)" />
+        <StatCard label="执行中" value={totalPending} icon="⚡" color="var(--accent-orange)" />
+        <StatCard label="已完成" value={totalCompleted} icon="✅" color="var(--success)" />
+        <StatCard label="成功率" value={`${successRate}%`} icon="📊" color="var(--info)" />
       </div>
 
       {/* 最近任务 */}
@@ -106,16 +88,27 @@ export default function Overview() {
           marginBottom: 'var(--space-lg)'
         }}>
           <h3>最近任务</h3>
-          <button className="btn btn-ghost" style={{ fontSize: 13 }}>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 13 }}
+            onClick={() => {/* 导航到内容管理 */}}
+          >
             查看全部 →
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-          {mockRecentTasks.map(task => (
-            <TaskRow key={task.id} task={task} />
-          ))}
-        </div>
+        {recentTasks.length === 0 ? (
+          <div className="empty-state" style={{ padding: 'var(--space-xl)' }}>
+            <div className="empty-state-icon">📝</div>
+            <p style={{ color: 'var(--text-muted)' }}>暂无任务，创建一个开始吧</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {recentTasks.map(task => (
+              <TaskRow key={task.id} task={task} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -160,63 +153,6 @@ function StatCard({ label, value, icon, color }: {
   );
 }
 
-function PlatformCard({ stats }: { stats: PlatformStats }) {
-  const platformInfo = {
-    douyin: { name: '抖音', icon: '🎵', color: 'var(--platform-douyin)' },
-    kuaishou: { name: '快手', icon: '📱', color: 'var(--platform-kuaishou)' },
-    xiaohongshu: { name: '小红书', icon: '📕', color: 'var(--platform-xiaohongshu)' },
-  };
-
-  const info = platformInfo[stats.platform];
-
-  return (
-    <div className="card">
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-sm)',
-        marginBottom: 'var(--space-lg)'
-      }}>
-        <span style={{ fontSize: 20 }}>{info.icon}</span>
-        <span style={{ fontWeight: 600 }}>{info.name}</span>
-        <span
-          className={`badge badge-platform-${stats.platform}`}
-          style={{ marginLeft: 'auto' }}
-        >
-          {info.name}
-        </span>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
-            {stats.totalTasks}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>总任务</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--success)' }}>
-            {stats.successRate}%
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>成功率</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-            {stats.pendingTasks}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>等待中</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--error)' }}>
-            {stats.failedTasks}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>失败</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TaskRow({ task }: { task: Task }) {
   const statusConfig = {
     pending: { label: '等待中', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
@@ -228,6 +164,8 @@ function TaskRow({ task }: { task: Task }) {
   };
 
   const status = statusConfig[task.status];
+  const platformName = task.platform === 'douyin' ? '抖音' :
+                        task.platform === 'kuaishou' ? '快手' : '小红书';
 
   return (
     <div style={{
@@ -239,7 +177,7 @@ function TaskRow({ task }: { task: Task }) {
       background: 'var(--bg-elevated)',
     }}>
       <span className={`badge badge-platform-${task.platform}`}>
-        {task.platform === 'douyin' ? '抖音' : task.platform === 'kuaishou' ? '快手' : '小红书'}
+        {platformName}
       </span>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -253,7 +191,7 @@ function TaskRow({ task }: { task: Task }) {
           {task.title}
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          {new Date(task.createdAt).toLocaleString('zh-CN')}
+          {formatTime(task.createdAt)}
         </div>
       </div>
 
@@ -286,4 +224,17 @@ function TaskRow({ task }: { task: Task }) {
       </span>
     </div>
   );
+}
+
+function formatTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (hours < 24) return `${hours} 小时前`;
+  return `${days} 天前`;
 }

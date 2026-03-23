@@ -1,54 +1,58 @@
-import { useState } from 'react';
-import type { Task } from '../types';
-
-const mockContent: Task[] = [
-  {
-    id: '1',
-    type: 'publish',
-    platform: 'douyin',
-    status: 'completed',
-    title: '【干货】5个技巧让你的视频爆款',
-    payload: { views: 12500, likes: 890, comments: 45 },
-    retryCount: 0,
-    maxRetries: 3,
-    createdAt: Date.now() - 86400000,
-    completedAt: Date.now() - 86400000,
-  },
-  {
-    id: '2',
-    type: 'publish',
-    platform: 'xiaohongshu',
-    status: 'completed',
-    title: '春日穿搭灵感｜一周不重样',
-    payload: { views: 8300, likes: 620, comments: 28 },
-    retryCount: 0,
-    maxRetries: 3,
-    createdAt: Date.now() - 172800000,
-    completedAt: Date.now() - 172800000,
-  },
-  {
-    id: '3',
-    type: 'publish',
-    platform: 'kuaishou',
-    status: 'pending',
-    title: '美食探店系列第三期',
-    payload: {},
-    retryCount: 0,
-    maxRetries: 3,
-    scheduledAt: Date.now() + 7200000,
-    createdAt: Date.now() - 3600000,
-  },
-];
+import { useState, useEffect } from 'react';
+import type { Task, Platform } from '../types';
 
 export default function ContentManagement() {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'failed'>('all');
-  const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'douyin' | 'kuaishou' | 'xiaohongshu'>('all');
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'running' | 'completed' | 'failed'>('all');
+  const [selectedPlatform, setSelectedPlatform] = useState<'all' | Platform>('all');
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const filteredContent = mockContent.filter(task => {
+  useEffect(() => {
+    loadTasks();
+
+    window.electronAPI?.onTaskCreated((task) => {
+      setTasks(prev => [task, ...prev]);
+    });
+
+    window.electronAPI?.onTaskUpdated((task) => {
+      setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+    });
+
+    return () => {
+      window.electronAPI?.removeAllListeners('task:created');
+      window.electronAPI?.removeAllListeners('task:updated');
+    };
+  }, []);
+
+  const loadTasks = async () => {
+    try {
+      const result = await window.electronAPI?.listTasks({ type: 'publish' });
+      setTasks(result ?? []);
+    } catch (error) {
+      console.error('加载任务失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = async (taskId: string) => {
+    await window.electronAPI?.cancelTask(taskId);
+  };
+
+  const handleRetry = async (taskId: string) => {
+    await window.electronAPI?.retryTask(taskId);
+  };
+
+  const filteredTasks = tasks.filter(task => {
     if (filter !== 'all' && task.status !== filter) return false;
     if (selectedPlatform !== 'all' && task.platform !== selectedPlatform) return false;
     return true;
   });
+
+  if (loading) {
+    return <div className="empty-state"><div className="empty-state-icon">⏳</div><p>加载中...</p></div>;
+  }
 
   return (
     <div>
@@ -80,38 +84,75 @@ export default function ContentManagement() {
           >
             <option value="all">全部状态</option>
             <option value="pending">等待中</option>
+            <option value="running">执行中</option>
             <option value="completed">已完成</option>
             <option value="failed">失败</option>
           </select>
         </div>
 
-        <button className="btn btn-primary">
+        <button
+          className="btn btn-primary"
+          onClick={() => setShowCreateModal(true)}
+        >
           + 新建内容
         </button>
       </div>
 
       {/* 内容列表 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-        {filteredContent.length === 0 ? (
+        {filteredTasks.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📝</div>
             <h3>暂无内容</h3>
             <p style={{ color: 'var(--text-muted)' }}>
               创建你的第一个内容任务吧
             </p>
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: 'var(--space-lg)' }}
+              onClick={() => setShowCreateModal(true)}
+            >
+              创建内容
+            </button>
           </div>
         ) : (
-          filteredContent.map(content => (
-            <ContentCard key={content.id} content={content} />
+          filteredTasks.map(task => (
+            <ContentCard
+              key={task.id}
+              task={task}
+              onCancel={() => handleCancel(task.id)}
+              onRetry={() => handleRetry(task.id)}
+            />
           ))
         )}
       </div>
+
+      {/* 创建弹窗 */}
+      {showCreateModal && (
+        <CreateTaskModal
+          onClose={() => setShowCreateModal(false)}
+          onCreated={(task) => {
+            setTasks([task, ...tasks]);
+            setShowCreateModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function ContentCard({ content }: { content: Task }) {
-  const result = content.payload as { views?: number; likes?: number; comments?: number };
+function ContentCard({
+  task,
+  onCancel,
+  onRetry,
+}: {
+  task: Task;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  const result = task.result as { views?: number; likes?: number; comments?: number } | undefined;
+  const platformName = task.platform === 'douyin' ? '抖音' :
+                      task.platform === 'kuaishou' ? '快手' : '小红书';
 
   return (
     <div className="card" style={{
@@ -130,8 +171,8 @@ function ContentCard({ content }: { content: Task }) {
         justifyContent: 'center',
         flexShrink: 0,
       }}>
-        {content.platform === 'douyin' ? '🎵' :
-         content.platform === 'kuaishou' ? '📱' : '📕'}
+        {task.platform === 'douyin' ? '🎵' :
+         task.platform === 'kuaishou' ? '📱' : '📕'}
       </div>
 
       {/* 内容信息 */}
@@ -142,11 +183,10 @@ function ContentCard({ content }: { content: Task }) {
           gap: 'var(--space-sm)',
           marginBottom: 'var(--space-xs)'
         }}>
-          <span className={`badge badge-platform-${content.platform}`}>
-            {content.platform === 'douyin' ? '抖音' :
-             content.platform === 'kuaishou' ? '快手' : '小红书'}
+          <span className={`badge badge-platform-${task.platform}`}>
+            {platformName}
           </span>
-          <StatusBadge status={content.status} />
+          <StatusBadge status={task.status} />
         </div>
 
         <h3 style={{
@@ -157,7 +197,7 @@ function ContentCard({ content }: { content: Task }) {
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap'
         }}>
-          {content.title}
+          {task.title}
         </h3>
 
         <div style={{
@@ -166,14 +206,14 @@ function ContentCard({ content }: { content: Task }) {
           fontSize: 13,
           color: 'var(--text-secondary)'
         }}>
-          <span>创建于 {formatTime(content.createdAt)}</span>
-          {content.scheduledAt && (
-            <span>计划发布 {formatTime(content.scheduledAt)}</span>
+          <span>创建于 {formatTime(task.createdAt)}</span>
+          {task.scheduledAt && (
+            <span>计划发布 {formatTime(task.scheduledAt)}</span>
           )}
         </div>
 
         {/* 数据统计 */}
-        {content.status === 'completed' && result.views !== undefined && (
+        {task.status === 'completed' && result && (
           <div style={{
             display: 'flex',
             gap: 'var(--space-xl)',
@@ -181,18 +221,39 @@ function ContentCard({ content }: { content: Task }) {
             paddingTop: 'var(--space-md)',
             borderTop: '1px solid var(--border-subtle)'
           }}>
-            <Stat label="观看" value={formatNumber(result.views)} />
+            <Stat label="观看" value={formatNumber(result.views ?? 0)} />
             <Stat label="点赞" value={formatNumber(result.likes ?? 0)} />
             <Stat label="评论" value={formatNumber(result.comments ?? 0)} />
+          </div>
+        )}
+
+        {/* 错误信息 */}
+        {task.status === 'failed' && task.error && (
+          <div style={{
+            marginTop: 'var(--space-md)',
+            padding: 'var(--space-sm)',
+            background: 'rgba(239,68,68,0.1)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12,
+            color: 'var(--error)',
+          }}>
+            错误: {task.error}
           </div>
         )}
       </div>
 
       {/* 操作 */}
       <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-        <button className="btn btn-ghost" style={{ fontSize: 13 }}>
-          编辑
-        </button>
+        {(task.status === 'pending' || task.status === 'running' || task.status === 'deferred') && (
+          <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={onCancel}>
+            取消
+          </button>
+        )}
+        {task.status === 'failed' && (
+          <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={onRetry}>
+            重试
+          </button>
+        )}
         <button className="btn btn-ghost" style={{ fontSize: 13 }}>
           详情
         </button>
@@ -238,13 +299,129 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CreateTaskModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (task: Task) => void;
+}) {
+  const [platform, setPlatform] = useState<Platform>('douyin');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async () => {
+    if (!title.trim()) return;
+
+    setCreating(true);
+    try {
+      const task = await window.electronAPI?.createTask({
+        type: 'publish',
+        platform,
+        title: title.trim(),
+        payload: {
+          title: title.trim(),
+          content: content.trim(),
+        },
+      });
+      if (task) {
+        onCreated(task);
+      }
+    } catch (error) {
+      console.error('创建任务失败:', error);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    }}>
+      <div className="card" style={{ width: 500, maxWidth: '90vw' }}>
+        <h3 style={{ marginBottom: 'var(--space-lg)' }}>新建内容</h3>
+
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>平台</label>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+            {(['douyin', 'kuaishou', 'xiaohongshu'] as Platform[]).map(p => (
+              <button
+                key={p}
+                className={`btn ${platform === p ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, fontSize: 13 }}
+                onClick={() => setPlatform(p)}
+              >
+                {p === 'douyin' ? '🎵 抖音' : p === 'kuaishou' ? '📱 快手' : '📕 小红书'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>标题</label>
+          <input
+            className="input"
+            style={{ width: '100%' }}
+            placeholder="输入内容标题"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+          />
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>内容</label>
+          <textarea
+            className="input"
+            style={{
+              width: '100%',
+              height: 120,
+              padding: 'var(--space-md)',
+              resize: 'none',
+            }}
+            placeholder="输入正文内容"
+            value={content}
+            onChange={e => setContent(e.target.value)}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary" onClick={onClose}>
+            取消
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleCreate}
+            disabled={creating || !title.trim()}
+          >
+            {creating ? '创建中...' : '创建'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: 13,
+  fontWeight: 500,
+  color: 'var(--text-secondary)',
+  marginBottom: 'var(--space-sm)',
+};
+
 function formatTime(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
+  return new Date(timestamp).toLocaleString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   });
 }
 
