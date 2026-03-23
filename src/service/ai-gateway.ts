@@ -179,7 +179,11 @@ export class AIGateway {
    */
   async generate(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now();
-    const providerType = request.providerType ?? 'openai';
+    const providerType = request.providerType ?? this.getDefaultProvider()?.type;
+
+    if (!providerType) {
+      return { success: false, error: 'No AI provider configured' };
+    }
 
     const provider = this._providers.get(providerType);
     if (!provider) {
@@ -278,6 +282,9 @@ export class AIGateway {
     }
 
     const data = await response.json() as any;
+    if (!data.choices?.length) {
+      throw new Error('OpenAI API returned empty choices');
+    }
     return data.choices[0].message.content;
   }
 
@@ -305,6 +312,9 @@ export class AIGateway {
     }
 
     const data = await response.json() as any;
+    if (!data.content?.length) {
+      throw new Error('Anthropic API returned empty content');
+    }
     return data.content[0].text;
   }
 
@@ -357,6 +367,9 @@ export class AIGateway {
     }
 
     const data = await response.json() as any;
+    if (!data.choices?.length) {
+      throw new Error(`${provider.name} API returned empty choices`);
+    }
     return data.choices[0].message.content;
   }
 
@@ -401,6 +414,9 @@ export class AIGateway {
     }
 
     const data = await response.json() as any;
+    if (!data.payload?.choices?.text?.length) {
+      throw new Error('Spark API returned empty choices');
+    }
     return data.payload.choices.text[0].content;
   }
 
