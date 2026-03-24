@@ -35,31 +35,7 @@ export interface AIProvider {
   status: 'active' | 'inactive' | 'error';
 }
 
-/**
- * AI 生成请求
- */
-export interface AIRequest {
-  taskType?: TaskType;
-  providerType?: AIProviderType;
-  model?: string;
-  prompt: string;
-  system?: string;
-  temperature?: number;
-  maxTokens?: number;
-}
-
-/**
- * AI 生成响应
- */
-export interface AIResponse {
-  success: boolean;
-  content?: string;
-  error?: string;
-  provider?: string;
-  model?: string;
-  latencyMs?: number;
-  tokensUsed?: number;
-}
+// 使用从 shared/types.ts 导入的 AIRequest 和 AIResponse
 
 // ============ 熔断器实现 ============
 

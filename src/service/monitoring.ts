@@ -2,7 +2,8 @@ import { getDb } from './db.js';
 import { v4 as uuidv4 } from 'uuid';
 import log from 'electron-log';
 import type { Platform } from '../shared/types.js';
-import { getBrowserPoolStatus } from './platform-launcher.js';
+import { getBrowserPoolStatus, getPagePoolStatus } from './platform-launcher.js';
+import { taskQueue } from './queue.js';
 
 // Alert thresholds
 export const ALERT_THRESHOLDS = {
@@ -383,8 +384,10 @@ export class MonitoringService {
   async collectMetrics(): Promise<void> {
     const db = getDb();
     const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+    const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
-    // Task counts
+    // ============ 任务统计 ============
     const taskStats = db.prepare(`
       SELECT
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
@@ -392,22 +395,204 @@ export class MonitoringService {
         SUM(CASE WHEN status = 'pending' OR status = 'deferred' THEN 1 ELSE 0 END) as pending
       FROM tasks
       WHERE updated_at > ?
-    `).get(now - 60 * 60 * 1000) as any;
+    `).get(oneHourAgo) as any;
 
-    // Calculate success rate
     const total = (taskStats?.completed ?? 0) + (taskStats?.failed ?? 0);
     const successRate = total > 0 ? (taskStats?.completed ?? 0) / total : 1;
 
-    // Record metrics
     this.recordMetric('publish_success_rate', successRate);
     this.recordMetric('tasks_pending', taskStats?.pending ?? 0);
     this.recordMetric('tasks_completed', taskStats?.completed ?? 0);
     this.recordMetric('tasks_failed', taskStats?.failed ?? 0);
 
+    // ============ 按平台统计 ============
+    const platformStats = db.prepare(`
+      SELECT
+        platform,
+        type,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+      FROM tasks
+      WHERE updated_at > ?
+      GROUP BY platform, type
+    `).all(oneDayAgo) as any[];
+
+    for (const stat of platformStats) {
+      const platformTotal = stat.completed + stat.failed;
+      const platformSuccessRate = platformTotal > 0 ? stat.completed / platformTotal : 1;
+      this.recordMetric('platform_success_rate', platformSuccessRate, {
+        platform: stat.platform,
+        type: stat.type,
+      });
+    }
+
+    // ============ 执行时长统计 ============
+    const durationStats = db.prepare(`
+      SELECT
+        AVG(completed_at - started_at) as avg_duration_ms,
+        MIN(completed_at - started_at) as min_duration_ms,
+        MAX(completed_at - started_at) as max_duration_ms
+      FROM tasks
+      WHERE status = 'completed'
+        AND completed_at IS NOT NULL
+        AND started_at IS NOT NULL
+        AND updated_at > ?
+    `).get(oneDayAgo) as any;
+
+    if (durationStats?.avg_duration_ms) {
+      this.recordMetric('task_avg_duration_ms', durationStats.avg_duration_ms);
+      this.recordMetric('task_min_duration_ms', durationStats.min_duration_ms);
+      this.recordMetric('task_max_duration_ms', durationStats.max_duration_ms);
+    }
+
+    // ============ 选择器命中率 ============
+    const selectorStats = db.prepare(`
+      SELECT
+        platform,
+        selector_key,
+        success_rate,
+        failure_count
+      FROM selector_versions
+      WHERE is_active = 1
+    `).all() as any[];
+
+    for (const stat of selectorStats) {
+      this.recordMetric('selector_success_rate', stat.success_rate, {
+        platform: stat.platform,
+        selector: stat.selector_key,
+      });
+    }
+
+    // ============ 重试统计 ============
+    const retryStats = db.prepare(`
+      SELECT
+        COUNT(*) as retried_tasks,
+        AVG(retry_count) as avg_retries
+      FROM tasks
+      WHERE retry_count > 0
+        AND updated_at > ?
+    `).get(oneDayAgo) as any;
+
+    if (retryStats) {
+      this.recordMetric('tasks_retried', retryStats.retried_tasks ?? 0);
+      this.recordMetric('avg_retry_count', retryStats.avg_retries ?? 0);
+    }
+
+    // ============ 页面池统计 ============
+    const pagePoolStatus = getPagePoolStatus();
+    for (const [platform, status] of Object.entries(pagePoolStatus.byPlatform)) {
+      this.recordMetric('page_pool_total', status.total, { platform });
+      this.recordMetric('page_pool_in_use', status.inUse, { platform });
+      this.recordMetric('page_pool_idle', status.idle, { platform });
+    }
+
+    // ============ 队列积压统计 ============
+    const queueStats = taskQueue.getStats();
+    this.recordMetric('queue_total', queueStats.total);
+    this.recordMetric('queue_pending', queueStats.pending);
+    this.recordMetric('queue_running', queueStats.running);
+    this.recordMetric('queue_completed', queueStats.completed);
+    this.recordMetric('queue_failed', queueStats.failed);
+    this.recordMetric('queue_deferred', queueStats.deferred);
+
+    // ============ AI 延迟 ============
     if (this.aiLatencies.length > 0) {
       const avgLatency = this.aiLatencies.reduce((a, b) => a + b, 0) / this.aiLatencies.length;
       this.recordMetric('ai_avg_latency', avgLatency);
     }
+  }
+
+  /**
+   * 获取详细统计报告
+   */
+  async getDetailedStats(): Promise<{
+    overview: {
+      totalTasks: number;
+      successRate: number;
+      avgDuration: number;
+      totalRetries: number;
+    };
+    byPlatform: Record<string, {
+      successRate: number;
+      avgDuration: number;
+      taskCount: number;
+    }>;
+    selectors: Record<string, Record<string, {
+      successRate: number;
+      isActive: boolean;
+    }>>;
+    pagePool: ReturnType<typeof getPagePoolStatus>;
+    alerts: Alert[];
+  }> {
+    const db = getDb();
+    const now = Date.now();
+    const oneDayAgo = now - 24 * 60 * 60 * 1000;
+
+    // Overview
+    const overview = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+        AVG(CASE WHEN completed_at IS NOT NULL AND started_at IS NOT NULL
+          THEN completed_at - started_at ELSE NULL END) as avg_duration,
+        SUM(retry_count) as total_retries
+      FROM tasks
+      WHERE updated_at > ?
+    `).get(oneDayAgo) as any;
+
+    const successRate = overview.total > 0 ? overview.completed / overview.total : 1;
+
+    // By platform
+    const platformStats = db.prepare(`
+      SELECT
+        platform,
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        AVG(CASE WHEN completed_at IS NOT NULL AND started_at IS NOT NULL
+          THEN completed_at - started_at ELSE NULL END) as avg_duration
+      FROM tasks
+      WHERE updated_at > ?
+      GROUP BY platform
+    `).all(oneDayAgo) as any[];
+
+    const byPlatform: Record<string, any> = {};
+    for (const stat of platformStats) {
+      byPlatform[stat.platform] = {
+        successRate: stat.total > 0 ? stat.completed / stat.total : 1,
+        avgDuration: stat.avg_duration ?? 0,
+        taskCount: stat.total,
+      };
+    }
+
+    // Selectors
+    const selectorStats = db.prepare(`
+      SELECT platform, selector_key, success_rate, is_active
+      FROM selector_versions
+      WHERE is_active = 1
+    `).all() as any[];
+
+    const selectors: Record<string, Record<string, any>> = {};
+    for (const stat of selectorStats) {
+      if (!selectors[stat.platform]) selectors[stat.platform] = {};
+      selectors[stat.platform][stat.selector_key] = {
+        successRate: stat.success_rate,
+        isActive: stat.is_active === 1,
+      };
+    }
+
+    return {
+      overview: {
+        totalTasks: overview.total ?? 0,
+        successRate,
+        avgDuration: overview.avg_duration ?? 0,
+        totalRetries: overview.total_retries ?? 0,
+      },
+      byPlatform,
+      selectors,
+      pagePool: getPagePoolStatus(),
+      alerts: this.getAlerts({ limit: 10 }),
+    };
   }
 
   /**

@@ -30,7 +30,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "recharts": "^3.8.0",
-    "uuid": "^11.0.5"
+    "uuid": "^11.0.5",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",

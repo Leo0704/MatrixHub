@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Account, AccountGroup, Platform } from '~shared/types';
+import { useToast } from '../components/Toast';
 
 export default function AccountManagement() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -8,6 +9,8 @@ export default function AccountManagement() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadAccounts();
@@ -51,7 +54,7 @@ export default function AccountManagement() {
       const result = await window.electronAPI?.listAccounts();
       setAccounts(result ?? []);
     } catch (error) {
-      console.error('加载账号失败:', error);
+      showToast('加载账号失败', 'error');
     } finally {
       setLoading(false);
     }
@@ -62,7 +65,7 @@ export default function AccountManagement() {
       const groupsResult = await window.electronAPI?.listGroups();
       setGroups(groupsResult ?? []);
     } catch (error) {
-      console.error('加载分组失败:', error);
+      showToast('加载分组失败', 'error');
     }
   };
 
@@ -71,8 +74,18 @@ export default function AccountManagement() {
     : accounts;
 
   const handleRemove = async (id: string) => {
-    if (confirm('确定要删除这个账号吗？')) {
-      await window.electronAPI?.removeAccount(id);
+    setConfirmDelete(id);
+  };
+
+  const confirmRemove = async () => {
+    if (confirmDelete) {
+      try {
+        await window.electronAPI?.removeAccount(confirmDelete);
+        showToast('账号已删除', 'success');
+      } catch {
+        showToast('删除账号失败', 'error');
+      }
+      setConfirmDelete(null);
     }
   };
 
@@ -193,6 +206,53 @@ export default function AccountManagement() {
           groups={groups}
           onClose={() => setShowGroupModal(false)}
         />
+      )}
+
+      {/* 删除确认弹窗 */}
+      {confirmDelete && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}
+          onClick={() => setConfirmDelete(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-confirm-title"
+        >
+          <div style={{
+            background: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-lg)',
+            padding: 'var(--space-xl)',
+            width: 400,
+            border: '1px solid var(--border-subtle)',
+          }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 id="delete-confirm-title" style={{ marginBottom: 'var(--space-md)' }}>确认删除</h3>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-lg)' }}>
+              确定要删除这个账号吗？此操作无法撤销。
+            </p>
+            <div style={{ display: 'flex', gap: 'var(--space-md)', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setConfirmDelete(null)}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={confirmRemove}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,9 @@
 /**
- * 服务进程 - 在独立进程中执行任务
- * 通过 Child Process 和 Pipe 与主进程通信
+ * 服务进程 - 在主进程中执行任务的后台服务循环
+ *
+ * 注意：此模块运行在主进程中，不是独立进程。
+ * 原设计为独立进程，但为简化架构改为在主进程后台运行。
+ * 使用异步循环和非阻塞操作确保不阻塞主进程。
  *
  * 架构说明:
  * - service-process.ts: 服务循环和任务调度核心
@@ -8,10 +11,11 @@
  * - config/: 配置 (选择器, prompts)
  * - utils/: 辅助函数 (页面操作)
  */
-import { createPage } from './platform-launcher.js';
+import { createPage, releasePage } from './platform-launcher.js';
 import { taskQueue } from './queue.js';
 import { aiGateway } from './ai-gateway.js';
 import { dailyBriefingAll, checkHotTopics } from './ai-director.js';
+import { sleep } from './utils/sleep.js';
 import type { Task, Platform } from '../shared/types.js';
 import log from 'electron-log';
 import {
@@ -24,12 +28,77 @@ import {
 
 // 服务进程配置
 const MAX_CONCURRENT = 3;
-const POLL_INTERVAL = 2000; // 2秒轮询
+const MIN_POLL_INTERVAL = 500;  // 最小轮询间隔（毫秒）
+const MAX_POLL_INTERVAL = 5000;  // 最大轮询间隔（毫秒）
+const TASK_NOTIFY_INTERVAL = 100; // 任务通知检查间隔
 
 // 当前运行中的任务
 const runningTasks = new Map<string, AbortController>();
 
 let isRunning = false;
+let taskNotifier: (() => void) | null = null;
+let lastPollTime = 0;
+
+/**
+ * 等待任务（事件驱动，智能间隔）
+ */
+async function waitForTask(): Promise<Task | null> {
+  while (isRunning) {
+    const now = Date.now();
+    const timeSinceLastPoll = now - lastPollTime;
+
+    // 计算智能轮询间隔
+    // 如果刚刚处理过任务，用较短的间隔
+    // 如果长时间没任务，逐渐增加间隔
+    const queueDepth = getPendingTaskCount();
+    let pollInterval: number;
+
+    if (runningTasks.size >= MAX_CONCURRENT) {
+      // 全部满载，等待较长间隔
+      pollInterval = MAX_POLL_INTERVAL;
+    } else if (queueDepth > 5) {
+      // 队列积压多，加快轮询
+      pollInterval = MIN_POLL_INTERVAL;
+    } else if (queueDepth > 0) {
+      // 有任务但不多，中等间隔
+      pollInterval = MIN_POLL_INTERVAL * 2;
+    } else {
+      // 队列为空，使用较长间隔 + 抖动
+      pollInterval = Math.min(MAX_POLL_INTERVAL, MIN_POLL_INTERVAL * 4 + Math.random() * 1000);
+    }
+
+    if (timeSinceLastPoll < pollInterval) {
+      // 使用指数退避等待通知或超时
+      const waitTime = Math.max(pollInterval - timeSinceLastPoll, TASK_NOTIFY_INTERVAL);
+      await sleep(Math.min(waitTime, pollInterval));
+      continue;
+    }
+
+    lastPollTime = now;
+    const task = taskQueue.dequeue();
+    if (task) {
+      return task;
+    }
+  }
+  return null;
+}
+
+/**
+ * 通知有新任务（可被调用以立即唤醒轮询）
+ */
+export function notifyNewTask(): void {
+  if (taskNotifier) {
+    taskNotifier();
+  }
+}
+
+/**
+ * 获取待处理任务数量（估算）
+ */
+function getPendingTaskCount(): number {
+  const stats = taskQueue.getStats();
+  return stats.pending + stats.deferred;
+}
 
 /**
  * 启动服务循环
@@ -41,6 +110,7 @@ export async function startServiceLoop(): Promise<void> {
   }
 
   isRunning = true;
+  lastPollTime = Date.now();
   log.info(`[Service] 启动服务循环 (最大并发: ${MAX_CONCURRENT})`);
 
   // 加载 AI Gateway
@@ -86,13 +156,16 @@ export async function startServiceLoop(): Promise<void> {
     try {
       // 检查是否有空余槽位
       if (runningTasks.size < MAX_CONCURRENT) {
-        const task = taskQueue.dequeue();
+        const task = await waitForTask();
         if (task) {
           executeTask(task);
+          // 执行完后立即检查是否还有任务
+          continue;
         }
       }
 
-      await sleep(POLL_INTERVAL);
+      // 空闲时短暂休眠
+      await sleep(TASK_NOTIFY_INTERVAL);
     } catch (error) {
       log.error('[Service] 服务循环错误:', error);
       await sleep(5000);
@@ -169,12 +242,22 @@ async function executeTask(task: Task): Promise<void> {
 
 // ============ 任务类型处理器 ============
 
+/**
+ * 从 payload 中提取 accountId
+ */
+function getAccountIdFromTask(task: Task): string | undefined {
+  const payload = task.payload as Record<string, unknown>;
+  return payload.accountId as string | undefined;
+}
+
 async function handlePublishTask(task: Task, signal: AbortSignal): Promise<void> {
-  const page = await createPage(task.platform);
+  const accountId = getAccountIdFromTask(task);
+  const page = await createPage(task.platform, accountId);
   try {
     await executePublishTask(page, task, signal);
   } finally {
-    // executePublishTask 已经关闭了 page，但为了安全再检查一下
+    // 发布任务后归还页面到池（保持登录状态）
+    await releasePage(page);
   }
 }
 
@@ -191,7 +274,8 @@ async function handleFetchDataTask(task: Task, signal: AbortSignal): Promise<voi
 }
 
 async function handleAutomationTask(task: Task, signal: AbortSignal): Promise<void> {
-  const page = await createPage(task.platform as Platform);
+  const accountId = getAccountIdFromTask(task);
+  const page = await createPage(task.platform as Platform, accountId);
   try {
     const result = await executeAutomationTask(page, task, signal);
     taskQueue.updateStatus(task.id, 'running', {
@@ -199,16 +283,18 @@ async function handleAutomationTask(task: Task, signal: AbortSignal): Promise<vo
       progress: 100,
     });
   } finally {
-    await page.close();
+    // 归还页面到池（保持登录状态）
+    await releasePage(page);
   }
 }
 
 async function handlePageAgentTask(task: Task, signal: AbortSignal): Promise<void> {
-  const page = await createPage(task.platform);
+  const accountId = getAccountIdFromTask(task);
+  const page = await createPage(task.platform, accountId);
   try {
     const result = await executePageAgentTask(page, task, signal);
     taskQueue.updateStatus(task.id, result.success ? 'completed' : 'failed', {
-      result,
+      result: result as unknown as Record<string, unknown>,
       progress: 100,
     });
   } finally {
@@ -216,20 +302,16 @@ async function handlePageAgentTask(task: Task, signal: AbortSignal): Promise<voi
   }
 }
 
-// ============ 辅助函数 ============
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 // ============ 主进程 fork 入口 ============
 
 export function createServiceRunner(): {
   start: () => Promise<void>;
   stop: () => void;
+  notifyNewTask: () => void;
 } {
   return {
     start: startServiceLoop,
     stop: stopServiceLoop,
+    notifyNewTask,
   };
 }

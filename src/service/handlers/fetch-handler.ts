@@ -4,8 +4,8 @@
 import type { Platform, Task } from '../../shared/types.js';
 import { createFetcher, createAllFetchers } from '../data-fetcher/index.js';
 import type { FetchResult, HotTopic } from '../data-fetcher/types.js';
-import { createPage } from './platform-launcher.js';
-import { checkLoginState, navigateTo, randomDelay } from './utils/page-helpers.js';
+import { createPage } from '../platform-launcher.js';
+import { checkLoginState, navigateTo, randomDelay } from '../utils/page-helpers.js';
 import log from 'electron-log';
 
 interface FetchDataPayload {
@@ -19,7 +19,7 @@ export async function executeFetchDataTask(
   task: Task,
   signal: AbortSignal
 ): Promise<Record<string, unknown>> {
-  const payload = task.payload as FetchDataPayload;
+  const payload = task.payload as unknown as FetchDataPayload;
 
   signal.throwIfAborted();
 
@@ -29,7 +29,7 @@ export async function executeFetchDataTask(
 
   switch (payload.dataType) {
     case 'hot_topics':
-      result = await fetchHotTopics(payload.platform);
+      result = await fetchHotTopics(payload.platform) as unknown as Record<string, unknown>;
       break;
     case 'content_stats':
       result = await fetchContentStats(payload.accountId, payload.dateRange);

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { Task, Platform } from '~shared/types';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { Task, Platform, Account } from '~shared/types';
 
 interface ScheduledTask {
   id: string;
@@ -33,10 +33,448 @@ function mapTaskStatus(status: TaskStatus): { label: string; color: string; bg: 
   }
 }
 
+// 定时任务创建弹窗
+function CreateScheduledTaskModal({
+  onClose,
+  onCreated,
+  initialDate,
+}: {
+  onClose: () => void;
+  onCreated: (task: Task) => void;
+  initialDate?: Date;
+}) {
+  const [platform, setPlatform] = useState<Platform>('douyin');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(initialDate || new Date());
+  const [selectedHour, setSelectedHour] = useState(9);
+  const [selectedMinute, setSelectedMinute] = useState(0);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const loadAccounts = async () => {
+    try {
+      const result = await window.electronAPI?.listAccounts(platform);
+      setAccounts(result ?? []);
+      if (result && result.length > 0) {
+        setSelectedAccountId(result[0].id);
+      }
+    } catch (error) {
+      console.error('加载账号失败:', error);
+    }
+  };
+
+  const handlePlatformChange = async (newPlatform: Platform) => {
+    setPlatform(newPlatform);
+    const result = await window.electronAPI?.listAccounts(newPlatform);
+    setAccounts(result ?? []);
+    if (result && result.length > 0) {
+      setSelectedAccountId(result[0].id);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!title.trim()) {
+      alert('请输入标题');
+      return;
+    }
+    if (!selectedAccountId) {
+      alert('请选择账号');
+      return;
+    }
+
+    // 计算定时发布时间戳
+    const scheduledAt = new Date(selectedDate);
+    scheduledAt.setHours(selectedHour, selectedMinute, 0, 0);
+
+    if (scheduledAt.getTime() <= Date.now()) {
+      alert('定时发布时间必须晚于当前时间');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const task = await window.electronAPI?.createTask({
+        type: 'publish',
+        platform,
+        title: title.trim(),
+        payload: {
+          title: title.trim(),
+          content: content.trim(),
+          accountId: selectedAccountId,
+        },
+        scheduledAt: scheduledAt.getTime(),
+      });
+
+      if (task) {
+        onCreated(task);
+        onClose();
+      }
+    } catch (error) {
+      console.error('创建定时任务失败:', error);
+      alert('创建定时任务失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const platformInfo = {
+    douyin: { name: '抖音', icon: '🎵' },
+    kuaishou: { name: '快手', icon: '📱' },
+    xiaohongshu: { name: '小红书', icon: '📕' },
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    }} onClick={onClose}>
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-xl)',
+          width: 480,
+          maxHeight: '80vh',
+          overflow: 'auto',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 style={{ marginBottom: 'var(--space-lg)' }}>创建定时任务</h2>
+
+        {/* 平台选择 */}
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>平台</label>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+            {(Object.keys(platformInfo) as Platform[]).map(p => (
+              <button
+                key={p}
+                className={`btn ${platform === p ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => handlePlatformChange(p)}
+              >
+                {platformInfo[p].icon} {platformInfo[p].name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 账号选择 */}
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>发布账号</label>
+          <select
+            className="input"
+            value={selectedAccountId || ''}
+            onChange={e => setSelectedAccountId(e.target.value)}
+          >
+            {accounts.length === 0 ? (
+              <option value="">暂无可用账号</option>
+            ) : (
+              accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.displayName || a.username}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+
+        {/* 定时设置 */}
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>定时发布</label>
+          <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
+            <input
+              type="date"
+              className="input"
+              style={{ flex: 1 }}
+              value={selectedDate.toISOString().split('T')[0]}
+              onChange={e => setSelectedDate(new Date(e.target.value + 'T00:00:00'))}
+              min={new Date().toISOString().split('T')[0]}
+            />
+            <select
+              className="input"
+              style={{ width: 80 }}
+              value={selectedHour}
+              onChange={e => setSelectedHour(parseInt(e.target.value))}
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
+              ))}
+            </select>
+            <span>:</span>
+            <select
+              className="input"
+              style={{ width: 80 }}
+              value={selectedMinute}
+              onChange={e => setSelectedMinute(parseInt(e.target.value))}
+            >
+              {[0, 15, 30, 45].map(m => (
+                <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* 标题 */}
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>标题</label>
+          <input
+            type="text"
+            className="input"
+            placeholder="输入视频/图文标题"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+          />
+        </div>
+
+        {/* 内容 */}
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>内容描述</label>
+          <textarea
+            className="input"
+            placeholder="输入内容描述..."
+            rows={4}
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            style={{ resize: 'vertical' }}
+          />
+        </div>
+
+        {/* 操作 */}
+        <div style={{ display: 'flex', gap: 'var(--space-md)', justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={creating}>
+            取消
+          </button>
+          <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+            {creating ? '创建中...' : '创建定时任务'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: 13,
+  fontWeight: 500,
+  color: 'var(--text-secondary)',
+  marginBottom: 'var(--space-sm)',
+};
+
+// 日历组件
+function CalendarPicker({
+  tasks,
+  currentMonth,
+  onMonthChange,
+  onSelectDate,
+}: {
+  tasks: ScheduledTask[];
+  currentMonth: Date;
+  onMonthChange: (date: Date) => void;
+  onSelectDate: (date: Date) => void;
+}) {
+  const platformInfo = {
+    douyin: { icon: '🎵' },
+    kuaishou: { icon: '📱' },
+    xiaohongshu: { icon: '📕' },
+  };
+
+  // 获取日历数据
+  const calendarData = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+
+    // 第一天
+    const firstDay = new Date(year, month, 1);
+    // 最后一天
+    const lastDay = new Date(year, month + 1, 0);
+
+    // 月份第一天是星期几 (0-6)
+    const startWeekday = firstDay.getDay();
+
+    // 构建日历格子
+    const days: { date: Date; isCurrentMonth: boolean; tasks: ScheduledTask[] }[] = [];
+
+    // 上月的天数
+    for (let i = startWeekday - 1; i >= 0; i--) {
+      const date = new Date(year, month, -i);
+      days.push({ date, isCurrentMonth: false, tasks: [] });
+    }
+
+    // 当月的天数
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      const date = new Date(year, month, d);
+      const dayTasks = tasks.filter(t => {
+        if (!t.scheduledAt) return false;
+        const taskDate = new Date(t.scheduledAt);
+        return taskDate.getFullYear() === year &&
+               taskDate.getMonth() === month &&
+               taskDate.getDate() === d;
+      });
+      days.push({ date, isCurrentMonth: true, tasks: dayTasks });
+    }
+
+    // 补足到42个格子 (6行)
+    while (days.length < 42) {
+      const lastDate = days[days.length - 1].date;
+      const nextDate = new Date(lastDate);
+      nextDate.setDate(lastDate.getDate() + 1);
+      days.push({ date: nextDate, isCurrentMonth: false, tasks: [] });
+    }
+
+    return days;
+  }, [currentMonth, tasks]);
+
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+
+  const prevMonth = () => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() - 1);
+    onMonthChange(newMonth);
+  };
+
+  const nextMonth = () => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() + 1);
+    onMonthChange(newMonth);
+  };
+
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+           date.getMonth() === today.getMonth() &&
+           date.getFullYear() === today.getFullYear();
+  };
+
+  return (
+    <div style={{
+      background: 'var(--bg-elevated)',
+      borderRadius: 'var(--radius-lg)',
+      padding: 'var(--space-lg)',
+      marginBottom: 'var(--space-xl)',
+    }}>
+      {/* 头部：月份导航 */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 'var(--space-lg)',
+      }}>
+        <button
+          className="btn btn-ghost"
+          onClick={prevMonth}
+          style={{ padding: '4px 8px' }}
+        >
+          ◀
+        </button>
+        <span style={{ fontWeight: 600, fontSize: 16 }}>
+          {currentMonth.getFullYear()}年{currentMonth.getMonth() + 1}月
+        </span>
+        <button
+          className="btn btn-ghost"
+          onClick={nextMonth}
+          style={{ padding: '4px 8px' }}
+        >
+          ▶
+        </button>
+      </div>
+
+      {/* 星期标题 */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(7, 1fr)',
+        gap: 4,
+        marginBottom: 8,
+      }}>
+        {weekDays.map(day => (
+          <div
+            key={day}
+            style={{
+              textAlign: 'center',
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              padding: '4px 0',
+            }}
+          >
+            {day}
+          </div>
+        ))}
+      </div>
+
+      {/* 日期网格 */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(7, 1fr)',
+        gap: 4,
+      }}>
+        {calendarData.map((day, index) => (
+          <div
+            key={index}
+            onClick={() => day.isCurrentMonth && onSelectDate(day.date)}
+            style={{
+              position: 'relative',
+              aspectRatio: '1',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-md)',
+              cursor: day.isCurrentMonth ? 'pointer' : 'default',
+              background: day.isCurrentMonth ? 'var(--bg-overlay)' : 'transparent',
+              opacity: day.isCurrentMonth ? 1 : 0.3,
+              border: isToday(day.date) ? '2px solid var(--primary)' : '2px solid transparent',
+            }}
+          >
+            <span style={{
+              fontSize: 14,
+              fontWeight: isToday(day.date) ? 600 : 400,
+            }}>
+              {day.date.getDate()}
+            </span>
+            {/* 任务指示器 */}
+            {day.tasks.length > 0 && (
+              <div style={{
+                position: 'absolute',
+                bottom: 4,
+                display: 'flex',
+                gap: 2,
+              }}>
+                {day.tasks.slice(0, 3).map((t, i) => (
+                  <span key={i} style={{ fontSize: 10 }}>
+                    {platformInfo[t.platform]?.icon ?? '📦'}
+                  </span>
+                ))}
+                {day.tasks.length > 3 && (
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    +{day.tasks.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ScheduledPublish() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const loadTasks = useCallback(async () => {
     try {
@@ -103,6 +541,22 @@ export default function ScheduledPublish() {
     }
   };
 
+  const handleTaskCreated = (task: Task) => {
+    setTasks(prev => [{
+      ...task,
+      platform: task.platform as Platform,
+      status: task.status as TaskStatus,
+      type: task.type,
+      retryCount: task.retryCount,
+      maxRetries: task.maxRetries,
+    } as ScheduledTask, ...prev]);
+  };
+
+  const handleDateSelect = (date: Date) => {
+    setSelectedDate(date);
+    setShowCreateModal(true);
+  };
+
   return (
     <div>
       {/* 快捷操作 */}
@@ -111,7 +565,7 @@ export default function ScheduledPublish() {
         gap: 'var(--space-md)',
         marginBottom: 'var(--space-xl)'
       }}>
-        <button className="btn btn-primary">
+        <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
           + 创建定时任务
         </button>
         <button className="btn btn-secondary">
@@ -119,17 +573,13 @@ export default function ScheduledPublish() {
         </button>
       </div>
 
-      {/* 日历视图占位 */}
-      <div className="card" style={{
-        height: 120,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 'var(--space-xl)',
-        background: 'var(--bg-elevated)'
-      }}>
-        <span style={{ color: 'var(--text-muted)' }}>📅 日历视图</span>
-      </div>
+      {/* 日历视图 */}
+      <CalendarPicker
+        tasks={tasks}
+        currentMonth={currentMonth}
+        onMonthChange={setCurrentMonth}
+        onSelectDate={handleDateSelect}
+      />
 
       {/* 定时任务列表 */}
       <div className="card">
@@ -174,6 +624,18 @@ export default function ScheduledPublish() {
           </div>
         )}
       </div>
+
+      {/* 创建定时任务弹窗 */}
+      {showCreateModal && (
+        <CreateScheduledTaskModal
+          onClose={() => {
+            setShowCreateModal(false);
+            setSelectedDate(undefined);
+          }}
+          onCreated={handleTaskCreated}
+          initialDate={selectedDate}
+        />
+      )}
     </div>
   );
 }

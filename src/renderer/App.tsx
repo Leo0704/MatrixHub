@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Account } from '~shared/types';
+import { ToastProvider } from './components/Toast';
 import Overview from './pages/Overview';
 import ContentManagement from './pages/ContentManagement';
 import AICreation from './pages/AICreation';
@@ -79,6 +80,7 @@ function App() {
   };
 
   return (
+    <ToastProvider>
     <div className="app-layout">
       {/* 侧边栏 */}
       <aside className="sidebar">
@@ -172,6 +174,7 @@ function App() {
         </div>
       </main>
     </div>
+    </ToastProvider>
   );
 }
 

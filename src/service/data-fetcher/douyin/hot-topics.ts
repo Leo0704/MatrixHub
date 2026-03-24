@@ -8,7 +8,7 @@ import log from 'electron-log';
 import { BaseFetcher } from '../base-fetcher.js';
 import { DouYinClient, DouYinClientConfig } from './client.js';
 import type { HotTopic, FetchOptions, FetchResult } from '../types.js';
-import type { Platform } from '../../shared/types.js';
+import type { Platform } from '../../../shared/types.js';
 import { createPage } from '../../platform-launcher.js';
 
 // 默认请求头
@@ -103,16 +103,6 @@ export class DouYinFetcher extends BaseFetcher {
     } catch (err) {
       log.error('[DouYinFetcher] 登录失败:', err);
       throw new Error('登录超时或失败');
-    }
-  }
-
-  /**
-   * 确保已登录
-   */
-  private async ensureLogin(): Promise<void> {
-    if (!(await this.checkLoginStatus())) {
-      log.info('[DouYinFetcher] 未登录，开始登录流程');
-      await this.login();
     }
   }
 

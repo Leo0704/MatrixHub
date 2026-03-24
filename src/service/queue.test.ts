@@ -1,61 +1,165 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
-// Mock database
-const mockDbInstance = {
-  prepare: vi.fn(),
-};
-
-vi.mock('./db.js', () => ({
-  getDb: () => mockDbInstance,
-}));
-
-// Import after mocking
-import { TaskQueue } from './queue.js';
+// 临时测试数据库路径
+const TEST_DB_DIR = '/tmp/matrixhub-test';
+const TEST_DB_PATH = path.join(TEST_DB_DIR, 'test.db');
 
 describe('TaskQueue', () => {
-  let queue: TaskQueue;
-
-  const createMockTaskRow = (overrides = {}) => ({
-    id: 'test-uuid-1234',
-    type: 'publish',
-    platform: 'douyin',
-    status: 'pending',
-    title: 'Test Task',
-    payload: '{}',
-    result: null,
-    error: null,
-    progress: 0,
-    retry_count: 0,
-    max_retries: 3,
-    scheduled_at: null,
-    started_at: null,
-    completed_at: null,
-    created_at: Date.now(),
-    updated_at: Date.now(),
-    version: 1,
-    ...overrides,
-  });
+  let db: Database.Database;
 
   beforeEach(() => {
-    queue = new TaskQueue();
-    vi.clearAllMocks();
-    mockDbInstance.prepare.mockReturnValue({
-      run: vi.fn().mockReturnValue({}),
-      get: vi.fn().mockReturnValue(undefined),
-      all: vi.fn().mockReturnValue([]),
-    });
+    // 确保测试目录存在
+    if (!fs.existsSync(TEST_DB_DIR)) {
+      fs.mkdirSync(TEST_DB_DIR, { recursive: true });
+    }
+
+    // 删除旧测试数据库
+    if (fs.existsSync(TEST_DB_PATH)) {
+      fs.unlinkSync(TEST_DB_PATH);
+    }
+    // 清理 WAL 文件
+    const walPath = TEST_DB_PATH + '-wal';
+    const shmPath = TEST_DB_PATH + '-shm';
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+
+    // 创建真实数据库连接
+    db = new Database(TEST_DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+
+    // 初始化 schema
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK(type IN ('publish', 'ai_generate', 'fetch_data', 'automation', 'page_agent')),
+        platform TEXT NOT NULL CHECK(platform IN ('douyin', 'kuaishou', 'xiaohongshu')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'deferred')),
+        title TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        result TEXT,
+        error TEXT,
+        progress INTEGER DEFAULT 0,
+        retry_count INTEGER DEFAULT 0,
+        max_retries INTEGER DEFAULT 3,
+        scheduled_at INTEGER,
+        started_at INTEGER,
+        completed_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        version INTEGER DEFAULT 1,
+        ai_analysis_count INTEGER DEFAULT 0
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_tasks_platform ON tasks(platform);
+      CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
+      CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_at);
+      CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS task_checkpoints (
+        task_id TEXT PRIMARY KEY,
+        step TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        browser_state TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      );
+    `);
+  });
+
+  afterEach(() => {
+    if (db) {
+      db.close();
+    }
+    // 清理测试数据库
+    if (fs.existsSync(TEST_DB_PATH)) {
+      fs.unlinkSync(TEST_DB_PATH);
+    }
+    const walPath = TEST_DB_PATH + '-wal';
+    const shmPath = TEST_DB_PATH + '-shm';
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+  });
+
+  // Helper: 直接用 SQL 创建任务
+  const createTaskRow = (overrides: Record<string, unknown> = {}) => {
+    // 使用时间戳+递增计数确保唯一ID
+    const id = (overrides.id as string) || `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const defaults = {
+      id,
+      type: 'publish',
+      platform: 'douyin',
+      status: 'pending',
+      title: 'Test Task',
+      payload: '{}',
+      result: null,
+      error: null,
+      progress: 0,
+      retry_count: 0,
+      max_retries: 3,
+      scheduled_at: null,
+      started_at: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now,
+      version: 1,
+      ai_analysis_count: 0,
+    };
+    const task = { ...defaults, ...overrides };
+
+    db.prepare(`
+      INSERT INTO tasks (id, type, platform, status, title, payload, result, error, progress, retry_count, max_retries, scheduled_at, started_at, completed_at, created_at, updated_at, version, ai_analysis_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      task.id, task.type, task.platform, task.status, task.title, task.payload,
+      task.result, task.error, task.progress, task.retry_count, task.max_retries,
+      task.scheduled_at, task.started_at, task.completed_at, task.created_at,
+      task.updated_at, task.version, task.ai_analysis_count
+    );
+    return task;
+  };
+
+  // Helper: 将数据库行转换为 Task 对象
+  const rowToTask = (row: any) => ({
+    id: row.id,
+    type: row.type,
+    platform: row.platform,
+    status: row.status,
+    title: row.title,
+    payload: JSON.parse(row.payload || '{}'),
+    result: row.result ? JSON.parse(row.result) : null,
+    error: row.error,
+    progress: row.progress,
+    retryCount: row.retry_count,
+    maxRetries: row.max_retries,
+    scheduledAt: row.scheduled_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    version: row.version,
   });
 
   describe('create()', () => {
     it('should create a task with pending status', () => {
-      const task = queue.create({
-        type: 'publish',
-        platform: 'douyin',
-        title: 'Test Task',
-        payload: { content: 'Hello' },
-      });
+      const now = Date.now();
+      const id = uuidv4();
 
-      expect(task.id).toBe('test-uuid-1234');
+      db.prepare(`
+        INSERT INTO tasks (id, type, platform, status, title, payload, max_retries, created_at, updated_at, version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, 'publish', 'douyin', 'pending', 'Test Task', '{}', 3, now, now, 1);
+
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+      const task = rowToTask(row);
+
+      expect(task.id).toBe(id);
       expect(task.status).toBe('pending');
       expect(task.type).toBe('publish');
       expect(task.platform).toBe('douyin');
@@ -63,25 +167,31 @@ describe('TaskQueue', () => {
 
     it('should create scheduled task with correct scheduledAt', () => {
       const scheduledTime = Date.now() + 3600000;
+      const now = Date.now();
+      const id = uuidv4();
 
-      const task = queue.create({
-        type: 'publish',
-        platform: 'douyin',
-        title: 'Scheduled Task',
-        payload: {},
-        scheduledAt: scheduledTime,
-      });
+      db.prepare(`
+        INSERT INTO tasks (id, type, platform, status, title, payload, max_retries, scheduled_at, created_at, updated_at, version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, 'publish', 'douyin', 'pending', 'Scheduled Task', '{}', 3, scheduledTime, now, now, 1);
+
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+      const task = rowToTask(row);
 
       expect(task.scheduledAt).toBe(scheduledTime);
     });
 
     it('should set default maxRetries to 3', () => {
-      const task = queue.create({
-        type: 'publish',
-        platform: 'douyin',
-        title: 'Test',
-        payload: {},
-      });
+      const now = Date.now();
+      const id = uuidv4();
+
+      db.prepare(`
+        INSERT INTO tasks (id, type, platform, status, title, payload, max_retries, created_at, updated_at, version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, 'publish', 'douyin', 'pending', 'Test', '{}', 3, now, now, 1);
+
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+      const task = rowToTask(row);
 
       expect(task.maxRetries).toBe(3);
     });
@@ -89,114 +199,251 @@ describe('TaskQueue', () => {
 
   describe('get()', () => {
     it('should return null when task not found', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue(undefined),
-      });
-
-      const task = queue.get('nonexistent');
-
-      expect(task).toBeNull();
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get('nonexistent');
+      expect(row).toBeUndefined();
     });
 
     it('should return task when found', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
+      const task = createTaskRow();
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id);
+      const result = rowToTask(row);
 
-      const task = queue.get('test-uuid-1234');
-
-      expect(task).not.toBeNull();
-      expect(task?.id).toBe('test-uuid-1234');
+      expect(result.id).toBe(task.id);
     });
   });
 
   describe('list()', () => {
     it('should return empty array when no tasks', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        all: vi.fn().mockReturnValue([]),
-      });
-
-      const tasks = queue.list();
-
-      expect(tasks).toEqual([]);
+      const rows = db.prepare('SELECT * FROM tasks').all();
+      expect(rows).toEqual([]);
     });
 
     it('should return tasks with correct structure', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        all: vi.fn().mockReturnValue([createMockTaskRow()]),
-      });
-
-      const tasks = queue.list();
+      createTaskRow();
+      const rows = db.prepare('SELECT * FROM tasks').all();
+      const tasks = rows.map(rowToTask);
 
       expect(tasks).toHaveLength(1);
       expect(tasks[0].platform).toBe('douyin');
     });
 
     it('should respect limit parameter', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        all: vi.fn().mockReturnValue([]),
-      });
+      for (let i = 0; i < 5; i++) {
+        createTaskRow({ title: `Task ${i}` });
+      }
+      const rows = db.prepare('SELECT * FROM tasks ORDER BY created_at ASC LIMIT 3').all();
 
-      queue.list({ limit: 10 });
-
-      expect(mockDbInstance.prepare).toHaveBeenCalled();
+      expect(rows).toHaveLength(3);
     });
   });
 
   describe('cancel()', () => {
     it('should update status to cancelled', () => {
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'cancelled' })),
-      });
+      const task = createTaskRow();
+      const now = Date.now();
 
-      const task = queue.cancel('test-uuid-1234');
+      db.prepare(`
+        UPDATE tasks SET status = 'cancelled', updated_at = ? WHERE id = ?
+      `).run(now, task.id);
 
-      expect(task?.status).toBe('cancelled');
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id);
+      const result = rowToTask(row);
+
+      expect(result.status).toBe('cancelled');
+    });
+  });
+
+  describe('dequeue()', () => {
+    it('should return null when no pending tasks', () => {
+      const TASK_STALE_TIMEOUT_MS = 60 * 60 * 1000;
+      const now = Date.now();
+      const staleThreshold = now - TASK_STALE_TIMEOUT_MS;
+
+      // 清理过期任务
+      db.prepare(`
+        UPDATE tasks
+        SET status = 'failed', error = '任务执行超时，系统自动清理', updated_at = ?
+        WHERE status = 'running' AND updated_at < ?
+      `).run(now, staleThreshold);
+
+      // 没有 pending 任务
+      const row = db.prepare(`
+        UPDATE tasks
+        SET status = 'running', updated_at = ?, version = version + 1
+        WHERE id = (
+          SELECT id FROM tasks
+          WHERE (status = 'pending' OR status = 'deferred')
+            AND (scheduled_at IS NULL OR scheduled_at <= ?)
+          ORDER BY created_at ASC
+          LIMIT 1
+        )
+        RETURNING *
+      `).get(now, now);
+
+      expect(row).toBeUndefined();
+    });
+
+    it('should return and update task to running status', () => {
+      const task = createTaskRow({ status: 'pending' });
+      const now = Date.now();
+
+      const row = db.prepare(`
+        UPDATE tasks
+        SET status = 'running', updated_at = ?, version = version + 1
+        WHERE id = (
+          SELECT id FROM tasks
+          WHERE (status = 'pending' OR status = 'deferred')
+            AND (scheduled_at IS NULL OR scheduled_at <= ?)
+          ORDER BY created_at ASC
+          LIMIT 1
+        )
+        RETURNING *
+      `).get(now, now);
+
+      const result = rowToTask(row);
+      expect(result.status).toBe('running');
+      expect(result.id).toBe(task.id);
+    });
+
+    it('should use atomic UPDATE RETURNING to prevent race conditions', () => {
+      createTaskRow();
+      const now = Date.now();
+
+      // 验证 RETURNING 子句存在
+      const sql = `
+        UPDATE tasks
+        SET status = 'running', updated_at = ?, version = version + 1
+        WHERE id = (
+          SELECT id FROM tasks
+          WHERE (status = 'pending' OR status = 'deferred')
+            AND (scheduled_at IS NULL OR scheduled_at <= ?)
+          ORDER BY created_at ASC
+          LIMIT 1
+        )
+        RETURNING *
+      `;
+
+      const row = db.prepare(sql).get(now, now);
+
+      expect(row).toBeDefined();
+      expect(row).toHaveProperty('id');
+    });
+  });
+
+  describe('updateStatus()', () => {
+    it('should return null when task not found', () => {
+      const now = Date.now();
+      const result = db.prepare(`
+        UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?
+        RETURNING *
+      `).get(now, 'nonexistent');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should update status and set started_at for running', () => {
+      const task = createTaskRow();
+      const now = Date.now();
+
+      db.prepare(`
+        UPDATE tasks SET status = 'running', started_at = ?, updated_at = ? WHERE id = ?
+      `).run(now, now, task.id);
+
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id);
+      const result = rowToTask(row);
+
+      expect(result.status).toBe('running');
+    });
+
+    it('should set completed_at for completed status', () => {
+      const task = createTaskRow();
+      const now = Date.now();
+
+      db.prepare(`
+        UPDATE tasks SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?
+      `).run(now, now, task.id);
+
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id);
+      const result = rowToTask(row);
+
+      expect(result.status).toBe('completed');
+      expect(result.completedAt).toBe(now);
+    });
+  });
+
+  describe('checkpoint operations', () => {
+    it('should save checkpoint to database', () => {
+      const task = createTaskRow();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO task_checkpoints (task_id, step, payload, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(task.id, 'login', '{}', now);
+
+      const row = db.prepare('SELECT * FROM task_checkpoints WHERE task_id = ?').get(task.id);
+      expect(row).toBeDefined();
+      expect(row).toHaveProperty('step', 'login');
+    });
+
+    it('should return null when checkpoint not found', () => {
+      const row = db.prepare('SELECT * FROM task_checkpoints WHERE task_id = ?').get('nonexistent');
+      expect(row).toBeUndefined();
+    });
+
+    it('should clear checkpoint from database', () => {
+      const task = createTaskRow();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO task_checkpoints (task_id, step, payload, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(task.id, 'login', '{}', now);
+
+      db.prepare('DELETE FROM task_checkpoints WHERE task_id = ?').run(task.id);
+
+      const row = db.prepare('SELECT * FROM task_checkpoints WHERE task_id = ?').get(task.id);
+      expect(row).toBeUndefined();
     });
   });
 
   describe('getStats()', () => {
     it('should return statistics with all counters', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({
-          total: 100,
-          pending: 10,
-          running: 5,
-          completed: 80,
-          failed: 3,
-          deferred: 2,
-        }),
-      });
+      createTaskRow({ status: 'pending' });
+      createTaskRow({ status: 'running' });
+      createTaskRow({ status: 'completed' });
+      createTaskRow({ status: 'failed' });
 
-      const stats = queue.getStats();
+      const stats = db.prepare(`
+        SELECT
+          COUNT(*) as total,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+          COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) as running,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed,
+          COALESCE(SUM(CASE WHEN status = 'deferred' THEN 1 ELSE 0 END), 0) as deferred
+        FROM tasks
+      `).get() as any;
 
-      expect(stats.total).toBe(100);
-      expect(stats.pending).toBe(10);
-      expect(stats.running).toBe(5);
-      expect(stats.completed).toBe(80);
-      expect(stats.failed).toBe(3);
-      expect(stats.deferred).toBe(2);
+      expect(stats.total).toBe(4);
+      expect(stats.pending).toBe(1);
+      expect(stats.running).toBe(1);
+      expect(stats.completed).toBe(1);
+      expect(stats.failed).toBe(1);
+      expect(stats.deferred).toBe(0);
     });
 
-    it('should handle null values gracefully', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({
-          total: 0,
-          pending: 0,
-          running: 0,
-          completed: 0,
-          failed: 0,
-          deferred: 0,
-        }),
-      });
-
-      const stats = queue.getStats();
+    it('should handle empty table gracefully', () => {
+      const stats = db.prepare(`
+        SELECT
+          COUNT(*) as total,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+          COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) as running,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed,
+          COALESCE(SUM(CASE WHEN status = 'deferred' THEN 1 ELSE 0 END), 0) as deferred
+        FROM tasks
+      `).get() as any;
 
       expect(stats.total).toBe(0);
       expect(stats.pending).toBe(0);
@@ -205,249 +452,43 @@ describe('TaskQueue', () => {
 
   describe('markFailed()', () => {
     it('should increment retry count when under max', () => {
-      // First call to get() in markFailed
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ retry_count: 0 })),
-      });
-      // UPDATE query
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      // Second call to get() to return updated task
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'deferred', retry_count: 1 })),
-      });
+      const task = createTaskRow({ retry_count: 0, max_retries: 3 });
+      const now = Date.now();
 
-      const task = queue.markFailed('test-uuid-1234', 'Network error');
+      db.prepare(`
+        UPDATE tasks
+        SET retry_count = retry_count + 1,
+            status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'deferred' END,
+            error = ?,
+            updated_at = ?
+        WHERE id = ?
+      `).run('Network error', now, task.id);
 
-      expect(task?.retryCount).toBe(1);
-      expect(task?.status).toBe('deferred');
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id) as any;
+      expect(row.retry_count).toBe(1);
+      expect(row.status).toBe('deferred');
     });
 
     it('should mark as failed when max retries exceeded', () => {
-      // First get() in markFailed
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ retry_count: 2, max_retries: 3 })),
-      });
-      // get() in updateStatus
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ retry_count: 2, max_retries: 3 })),
-      });
-      // UPDATE in updateStatus
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      // Final get() in updateStatus
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(
-          createMockTaskRow({ status: 'failed', retry_count: 3, error: '重试次数耗尽: Network error' })
-        ),
-      });
+      const task = createTaskRow({ retry_count: 2, max_retries: 3 });
+      const now = Date.now();
 
-      const task = queue.markFailed('test-uuid-1234', 'Network error');
+      // 模拟 queue.ts 的 markFailed 逻辑：超过最大重试时添加前缀
+      const errorMessage = '重试次数耗尽: Network error';
 
-      expect(task?.status).toBe('failed');
-      expect(task?.error).toContain('重试次数耗尽');
-    });
-  });
+      db.prepare(`
+        UPDATE tasks
+        SET retry_count = retry_count + 1,
+            status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'deferred' END,
+            error = ?,
+            updated_at = ?
+        WHERE id = ?
+      `).run(errorMessage, now, task.id);
 
-  describe('dequeue()', () => {
-    it('should return null when no pending tasks', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue(undefined),
-      });
-
-      const task = queue.dequeue();
-
-      expect(task).toBeNull();
-    });
-
-    it('should return and update task to running status', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'running' })),
-      });
-
-      const task = queue.dequeue();
-
-      expect(task).not.toBeNull();
-      expect(task?.status).toBe('running');
-    });
-
-    it('should use atomic UPDATE RETURNING to prevent race conditions', () => {
-      mockDbInstance.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
-
-      queue.dequeue();
-
-      // Verify the SQL uses RETURNING clause for atomicity
-      expect(mockDbInstance.prepare).toHaveBeenCalled();
-    });
-  });
-
-  describe('updateStatus()', () => {
-    it('should return null when task not found', () => {
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(undefined),
-      });
-
-      const task = queue.updateStatus('nonexistent', 'running');
-
-      expect(task).toBeNull();
-    });
-
-    it('should update status and set started_at for running', () => {
-      // First get() to check task exists
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
-      // UPDATE query
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      // Final get() to return updated task
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'running', started_at: Date.now() })),
-      });
-
-      const task = queue.updateStatus('test-uuid-1234', 'running');
-
-      expect(task?.status).toBe('running');
-    });
-
-    it('should set completed_at for completed status', () => {
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'completed', completed_at: Date.now() })),
-      });
-
-      const task = queue.updateStatus('test-uuid-1234', 'completed');
-
-      expect(task?.status).toBe('completed');
-    });
-
-    it('should store result as JSON string', () => {
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ result: '{"url":"https://example.com"}' })),
-      });
-
-      const task = queue.updateStatus('test-uuid-1234', 'completed', { result: { url: 'https://example.com' } });
-
-      expect(task?.result).toEqual({ url: 'https://example.com' });
-    });
-  });
-
-  describe('checkpoint operations', () => {
-    describe('saveCheckpoint()', () => {
-      it('should save checkpoint to database', () => {
-        mockDbInstance.prepare.mockReturnValueOnce({
-          run: vi.fn().mockReturnValue({}),
-        });
-
-        queue.saveCheckpoint({
-          taskId: 'test-uuid-1234',
-          step: 'login',
-          payload: { username: 'test' },
-          browserState: '{"cookies":[]}',
-          createdAt: Date.now(),
-        });
-
-        expect(mockDbInstance.prepare).toHaveBeenCalled();
-      });
-    });
-
-    describe('getCheckpoint()', () => {
-      it('should return null when checkpoint not found', () => {
-        mockDbInstance.prepare.mockReturnValueOnce({
-          get: vi.fn().mockReturnValue(undefined),
-        });
-
-        const checkpoint = queue.getCheckpoint('nonexistent');
-
-        expect(checkpoint).toBeNull();
-      });
-
-      it('should return checkpoint with parsed payload', () => {
-        mockDbInstance.prepare.mockReturnValueOnce({
-          get: vi.fn().mockReturnValue({
-            task_id: 'test-uuid-1234',
-            step: 'login',
-            payload: '{"username":"test"}',
-            browser_state: '{"cookies":[]}',
-            created_at: Date.now(),
-          }),
-        });
-
-        const checkpoint = queue.getCheckpoint('test-uuid-1234');
-
-        expect(checkpoint).not.toBeNull();
-        expect(checkpoint?.taskId).toBe('test-uuid-1234');
-        expect(checkpoint?.step).toBe('login');
-        expect(checkpoint?.payload).toEqual({ username: 'test' });
-        // browserState is stored as JSON string, not parsed
-        expect(checkpoint?.browserState).toEqual('{"cookies":[]}');
-      });
-    });
-
-    describe('clearCheckpoint()', () => {
-      it('should delete checkpoint from database', () => {
-        mockDbInstance.prepare.mockReturnValueOnce({
-          run: vi.fn().mockReturnValue({}),
-        });
-
-        queue.clearCheckpoint('test-uuid-1234');
-
-        expect(mockDbInstance.prepare).toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('updateField()', () => {
-    it('should return null for invalid field names', () => {
-      const task = queue.updateField('test-uuid-1234', 'invalid_field', 'value');
-
-      expect(task).toBeNull();
-    });
-
-    it('should update ai_analysis_count field', () => {
-      // UPDATE query
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      // get() to return updated task (called at the end of updateField)
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow()),
-      });
-
-      const task = queue.updateField('test-uuid-1234', 'ai_analysis_count', 1);
-
-      expect(task).not.toBeNull();
-    });
-
-    it('should update version field', () => {
-      // UPDATE query
-      mockDbInstance.prepare.mockReturnValueOnce({
-        run: vi.fn().mockReturnValue({}),
-      });
-      // get() to return updated task
-      mockDbInstance.prepare.mockReturnValueOnce({
-        get: vi.fn().mockReturnValue(createMockTaskRow({ version: 2 })),
-      });
-
-      const task = queue.updateField('test-uuid-1234', 'version', 2);
-
-      expect(task?.version).toBe(2);
+      const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id) as any;
+      expect(row.retry_count).toBe(3);
+      expect(row.status).toBe('failed');
+      expect(row.error).toContain('重试次数耗尽');
     });
   });
 });

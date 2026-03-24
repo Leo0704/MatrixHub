@@ -28,7 +28,7 @@ export function generateWebId(): string {
     return parts.join('-');
   };
 
-  const webId = [...e(null)].map((x) => (x in '018' ? e(parseInt(x)) : x)).join('');
+  const webId = [...e(null)].map((x) => ('018'.includes(x) ? e(parseInt(x)) : x)).join('');
   return webId.replace(/-/g, '').slice(0, 19);
 }
 

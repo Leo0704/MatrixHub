@@ -1,6 +1,6 @@
 # Superpowers 技能完整指南
 
-> Claude Code 的 Superpowers 插件 (v5.0.5) — 14 个核心技能，将 Claude 变成专业开发团队
+> Claude Code 的 Superpowers 插件 — 14 个核心技能，将 Claude 变成专业开发团队
 
 ---
 
@@ -27,7 +27,6 @@
   - [/superpowers:verification-before-completion](#superpowersverification-before-completion)
   - [/superpowers:finishing-a-development-branch](#superpowersfinishing-a-development-branch)
 - [元技能](#元技能)
-  - [/superpowers:using-superpowers](#superpowersusing-superpowers)
   - [/superpowers:writing-skills](#superpowerswriting-skills)
 
 ---
@@ -72,12 +71,30 @@ Brainstorm → Plan → Develop (TDD) → Debug → Review → Verify → Finish
 | "技能过度了" | 简单的事变复杂，使用技能 |
 | "我就先做这一件事" | 在做任何事之前检查 |
 | "这感觉很高效" | 无纪律的行动浪费时间 |
+| "我知道那是什么意思" | 知道概念 ≠ 使用技能 |
 
 ### 指令优先级
 
 1. **用户明确指令** (CLAUDE.md, GEMINI.md, AGENTS.md, 直接请求) — 最高优先级
 2. **Superpowers 技能** — 覆盖默认系统行为
 3. **默认系统提示** — 最低优先级
+
+### 技能优先级
+
+当多个技能可能适用时，按此顺序：
+
+1. **流程技能优先** (brainstorming, debugging) — 这些决定如何处理任务
+2. **实现技能其次** (frontend-design, mcp-builder) — 这些指导执行
+
+- "让我们构建 X" → 先 brainstorming，再实现技能
+- "修复这个 bug" → 先 debugging，再领域特定技能
+
+### 技能类型
+
+- **刚性技能** (TDD, debugging): 严格遵循，不能绕过
+- **灵活技能** (patterns): 根据上下文调整
+
+技能本身会说明是哪种类型。
 
 ---
 
@@ -111,19 +128,6 @@ Brainstorm → Plan → Develop (TDD) → Debug → Review → Verify → Finish
 - 发现阶段问题
 - 对齐用户期望
 
-**示例**:
-```
-你: 我想添加一个用户认证系统
-
-Claude: [调用 /superpowers:brainstorming]
-
-        让我们先探索一下：
-        1. 你期望的认证方式是什么？(OAuth, JWT, Session)
-        2. 需要支持哪些登录方式？(邮箱, 手机, 第三方)
-        3. 用户数据的敏感程度如何？
-        ...
-```
-
 ---
 
 ## 规划阶段
@@ -146,33 +150,6 @@ Claude: [调用 /superpowers:brainstorming]
 - 架构权衡分析
 - 依赖关系图
 
-**工作方式**:
-1. 分析需求和约束
-2. 识别关键文件
-3. 设计实现策略
-4. 创建可执行步骤
-
-**示例**:
-```
-你: 我需要实现一个支付系统，支持支付宝和微信支付
-
-Claude: [调用 /superpowers:writing-plans]
-
-        ## 实现计划
-
-        ### 第一步：支付抽象层
-        - 创建 `src/payment/types.ts` — 定义统一接口
-        - 创建 `src/payment/base.ts` — 基础抽象类
-
-        ### 第二步：支付宝实现
-        - 创建 `src/payment/alipay.ts`
-        - ...
-
-        ### 关键决策点
-        - 是否需要支持退款？
-        - 异步通知如何处理？
-```
-
 ---
 
 ### /superpowers:executing-plans
@@ -186,12 +163,6 @@ Claude: [调用 /superpowers:writing-plans]
 - 定期检查点
 - 计划偏离检测
 - 进度跟踪
-
-**工作方式**:
-1. 加载计划文件
-2. 按步骤执行
-3. 在检查点暂停审查
-4. 报告进度和问题
 
 **安全特性**:
 - 计划偏离时停止
@@ -222,39 +193,6 @@ Red → Green → Refactor
 3. **Refactor**: 在测试保护下改进代码
 4. 重复
 
-**为什么 TDD**:
-- 设计文档即测试
-- 重构的安全网
-- 快速反馈循环
-- 更好的代码设计
-
-**示例**:
-```
-你: 实现一个用户注册功能
-
-Claude: [调用 /superpowers:test-driven-development]
-
-        ## 第一步：写测试 (Red)
-
-        ```typescript
-        describe('User Registration', () => {
-          it('should register user with valid email', () => {
-            // ...
-          });
-
-          it('should reject invalid email', () => {
-            // ...
-          });
-        });
-        ```
-
-        ## 第二步：实现 (Green)
-        ...
-
-        ## 第三步：重构
-        ...
-```
-
 ---
 
 ### /superpowers:subagent-driven-development
@@ -267,17 +205,6 @@ Claude: [调用 /superpowers:test-driven-development]
 - 计划有多个独立任务
 - 任务可以并行执行
 - 没有共享状态依赖
-
-**工作方式**:
-1. 分析计划中的任务
-2. 识别独立任务
-3. 分配给子代理
-4. 协调结果
-
-**优势**:
-- 加速执行
-- 上下文隔离
-- 并行处理
 
 ---
 
@@ -292,31 +219,6 @@ Claude: [调用 /superpowers:test-driven-development]
 - 无共享状态
 - 无顺序依赖
 
-**工作方式**:
-1. 识别可并行任务
-2. 启动多个子代理
-3. 收集结果
-4. 合并输出
-
-**示例**:
-```
-你: 我需要：
-    1. 修复登录页面的 bug
-    2. 添加用户设置页面
-    3. 优化数据库查询
-
-Claude: [调用 /superpowers:dispatching-parallel-agents]
-
-        这三个任务相互独立，可以并行执行。
-
-        启动 3 个子代理...
-        [Agent 1] 修复登录页面 bug
-        [Agent 2] 添加用户设置页面
-        [Agent 3] 优化数据库查询
-
-        所有任务完成，合并结果...
-```
-
 ---
 
 ### /superpowers:using-git-worktrees
@@ -329,17 +231,6 @@ Claude: [调用 /superpowers:dispatching-parallel-agents]
 - 创建隔离的 git worktree
 - 智能目录选择
 - 安全验证
-
-**场景**:
-- 需要干净的工作目录
-- 多功能并行开发
-- 计划执行前的隔离
-
-**工作方式**:
-1. 验证当前状态
-2. 创建新 worktree
-3. 切换到隔离环境
-4. 完成后清理
 
 ---
 
@@ -357,8 +248,8 @@ Claude: [调用 /superpowers:dispatching-parallel-agents]
 
 **调试流程**:
 1. **观察** — 收集信息，复现问题
-2. **假设** — 基于证据提出假设
-3. **实验** — 验证假设
+2. **分析** — 基于证据提出假设
+3. **假设** — 设计验证实验
 4. **修复** — 基于根本原因修复
 5. **验证** — 确认修复有效
 
@@ -367,38 +258,6 @@ Claude: [调用 /superpowers:dispatching-parallel-agents]
 - ❌ 治标不治本
 - ❌ 跳过调查
 - ❌ 忽略测试
-
-**示例**:
-```
-你: 测试失败了，帮我修复
-
-Claude: [调用 /superpowers:systematic-debugging]
-
-        ## 第一步：观察
-
-        错误信息: TypeError: Cannot read property 'id' of undefined
-        位置: src/user/service.ts:42
-
-        ## 第二步：假设
-
-        可能原因:
-        1. user 对象为 null
-        2. API 返回格式变更
-        3. 竞态条件
-
-        ## 第三步：实验
-
-        检查 API 响应格式...
-        [验证中]
-
-        ## 第四步：根本原因
-
-        API 在用户不存在时返回 null，而不是空对象。
-
-        ## 第五步：修复
-
-        添加 null 检查...
-```
 
 ---
 
@@ -422,12 +281,6 @@ Claude: [调用 /superpowers:systematic-debugging]
 - 文档更新
 - 安全考虑
 
-**工作方式**:
-1. 收集变更摘要
-2. 生成审查请求
-3. 等待审查反馈
-4. 处理反馈意见
-
 ---
 
 ### /superpowers:receiving-code-review
@@ -442,26 +295,6 @@ Claude: [调用 /superpowers:systematic-debugging]
 - 技术严谨和验证
 - 不是表演性同意
 - 不是盲目实施
-
-**工作方式**:
-1. 理解反馈意图
-2. 验证技术准确性
-3. 评估建议可行性
-4. 有根据地实施
-
-**处理不清楚的反馈**:
-```
-审查者: "这段代码性能不好"
-
-Claude: [调用 /superpowers:receiving-code-review]
-
-        让我验证这个反馈：
-        - 当前复杂度: O(n)
-        - 数据规模: ~1000 条
-        - 实际影响: ~10ms
-
-        反馈可能不够准确。建议回复审查者请求更多上下文。
-```
 
 ---
 
@@ -484,30 +317,10 @@ Claude: [调用 /superpowers:receiving-code-review]
 4. ✅ 无 TypeScript 错误
 5. ✅ 功能按预期工作
 
-**工作方式**:
-1. 运行验证命令
-2. 确认输出
-3. 才能声称成功
-
 **反模式**:
 - ❌ "应该可以了"
 - ❌ "我测试过了"（没运行命令）
 - ❌ 跳过验证直接提交
-
-**示例**:
-```
-你: 功能完成了，帮我提交
-
-Claude: [调用 /superpowers:verification-before-completion]
-
-        在提交前让我验证：
-
-        1. 运行测试... ✅ 全部通过
-        2. 构建检查... ✅ 无错误
-        3. 类型检查... ✅ 无问题
-
-        验证通过，可以提交。
-```
 
 ---
 
@@ -522,49 +335,15 @@ Claude: [调用 /superpowers:verification-before-completion]
 2. **PR** — 创建 Pull Request
 3. **Cleanup** — 清理并放弃
 
-**考虑因素**:
-- 变更范围
-- 团队流程
-- 审查需求
-- 部署策略
-
-**工作方式**:
-1. 评估分支状态
-2. 呈现选项
-3. 等待用户决定
-4. 执行选择
-
 ---
 
 ## 元技能
-
-### /superpowers:using-superpowers
-
-**角色**: 技能使用指南
-
-**用途**: 每个对话开始时建立如何查找和使用技能的规则。
-
-**核心内容**:
-- 技能使用规则
-- 优先级原则
-- 危险思维信号
-- 平台适配说明
-
-**这是你正在阅读的技能。**
-
----
 
 ### /superpowers:writing-skills
 
 **角色**: 技能作者
 
 **用途**: 创建新技能、编辑现有技能或验证技能在部署前工作正常时使用。
-
-**工作方式**:
-1. 定义技能目的
-2. 编写技能内容
-3. 验证技能语法
-4. 测试技能执行
 
 **技能结构**:
 ```markdown
@@ -594,7 +373,6 @@ description: One-line description
 | 审查 | `/superpowers:receiving-code-review` | 审查响应者 | 灵活 |
 | 完成 | `/superpowers:verification-before-completion` | 验证工程师 | 刚性 |
 | 完成 | `/superpowers:finishing-a-development-branch` | 分支完成协调者 | 灵活 |
-| 元 | `/superpowers:using-superpowers` | 技能使用指南 | 元 |
 | 元 | `/superpowers:writing-skills` | 技能作者 | 元 |
 
 **总计: 14 个技能**
@@ -636,15 +414,4 @@ description: One-line description
 
 ---
 
-## 故障排除
-
-| 问题 | 解决方案 |
-|------|----------|
-| 技能没有被触发 | 确保请求明确匹配技能用途 |
-| TDD 感觉太慢 | 这是正常的，长期会节省时间 |
-| 调试卡住了 | 使用 `/superpowers:systematic-debugging` 重新开始 |
-| 审查反馈不清楚 | 使用 `/superpowers:receiving-code-review` 处理 |
-
----
-
-*来源: Superpowers 插件 — Claude Code 官方技能集*
+*来源: Superpowers 插件*

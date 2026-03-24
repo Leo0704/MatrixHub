@@ -15,19 +15,19 @@ describe('DataFetcher Factory', () => {
   it('should create DouYin fetcher', () => {
     const fetcher = createFetcher('douyin');
     expect(fetcher).toBeDefined();
-    expect(fetcher.platform).toBe('douyin');
+    expect((fetcher as any).platform).toBe('douyin');
   });
 
   it('should create XiaoHongShu fetcher', () => {
     const fetcher = createFetcher('xiaohongshu');
     expect(fetcher).toBeDefined();
-    expect(fetcher.platform).toBe('xiaohongshu');
+    expect((fetcher as any).platform).toBe('xiaohongshu');
   });
 
   it('should create Kuaishou fetcher', () => {
     const fetcher = createFetcher('kuaishou');
     expect(fetcher).toBeDefined();
-    expect(fetcher.platform).toBe('kuaishou');
+    expect((fetcher as any).platform).toBe('kuaishou');
   });
 
   it('should throw for unknown platform', () => {
@@ -37,9 +37,9 @@ describe('DataFetcher Factory', () => {
   it('should create all fetchers', () => {
     fetchers = createAllFetchers();
     expect(fetchers).toHaveLength(3);
-    expect(fetchers[0].platform).toBe('douyin');
-    expect(fetchers[1].platform).toBe('xiaohongshu');
-    expect(fetchers[2].platform).toBe('kuaishou');
+    expect((fetchers[0] as any).platform).toBe('douyin');
+    expect((fetchers[1] as any).platform).toBe('xiaohongshu');
+    expect((fetchers[2] as any).platform).toBe('kuaishou');
   });
 });
 
@@ -50,7 +50,7 @@ describe('HotTopic normalization', () => {
       title: '测试话题',
       heat: 1000,
     };
-    const normalized = fetcher.normalizeTopic(partial, 1);
+    const normalized = (fetcher as any).normalizeTopic(partial, 1);
     expect(normalized.title).toBe('测试话题');
     expect(normalized.heat).toBe(1000);
     expect(normalized.rank).toBe(1);

@@ -56,7 +56,7 @@ export async function executePageAgentTask(
   task: Task,
   signal: AbortSignal
 ): Promise<PageAgentResult> {
-  const payload = task.payload as PageAgentPayload;
+  const payload = task.payload as unknown as PageAgentPayload;
   const goal = payload.goal;
   const platform = payload.platform;
   const maxSteps = payload.maxSteps ?? 20;
@@ -210,7 +210,7 @@ async function executeAction(
       ];
 
       let elIndex = 0;
-      const elements = document.querySelectorAll(interactiveSelectors.join(','));
+      const elements = Array.from(document.querySelectorAll(interactiveSelectors.join(',')));
 
       for (const el of elements) {
         const style = window.getComputedStyle(el);
@@ -252,7 +252,7 @@ async function executeAction(
       ];
 
       let elIndex = 0;
-      const elements = document.querySelectorAll(interactiveSelectors.join(','));
+      const elements = Array.from(document.querySelectorAll(interactiveSelectors.join(',')));
 
       for (const el of elements) {
         const style = window.getComputedStyle(el);

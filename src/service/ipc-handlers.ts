@@ -239,6 +239,51 @@ export function registerIpcHandlers(): void {
     return rateLimiter.check(platform);
   });
 
+  // ============ 自动化确认 ============
+
+  ipcMain.handle('automation:confirm', async (_event, params: {
+    action: string;
+    platform: Platform;
+    accountId?: string;
+    config?: Record<string, unknown>;
+  }) => {
+    const { action, platform, accountId, config } = params;
+
+    // 获取主窗口
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) {
+      log.warn('[IPC] automation:confirm - 没有主窗口');
+      return false;
+    }
+
+    // 操作描述映射
+    const actionLabels: Record<string, string> = {
+      auto_reply: '自动回复评论',
+      auto_like: '自动点赞视频',
+      auto_follow: '自动关注用户',
+      comment_management: '评论管理',
+    };
+
+    const actionLabel = actionLabels[action] || action;
+    const platformLabels: Record<string, string> = {
+      douyin: '抖音',
+      kuaishou: '快手',
+      xiaohongshu: '小红书',
+    };
+    const platformLabel = platformLabels[platform] || platform;
+
+    // 显示确认对话框
+    const result = await win.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const confirmed = confirm('确认执行 ${actionLabel}？\\n\\n平台: ${platformLabel}${accountId ? '\\n账号: ' + accountId : ''}\\n\\n注意：自动化操作可能被平台检测到，存在账号封禁风险。');
+        resolve(confirmed);
+      })
+    `);
+
+    log.info(`[IPC] automation:confirm - ${action} on ${platform}, result: ${result}`);
+    return result;
+  });
+
   // ============ AI 相关 ============
 
   ipcMain.handle('ai:generate', async (_event, request: AIRequest) => {

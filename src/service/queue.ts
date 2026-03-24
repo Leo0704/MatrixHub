@@ -1,7 +1,36 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from './db.js';
-import type { Task, TaskFilter, TaskStatus, TaskCheckpoint } from '../shared/types.js';
+import type { Task, TaskFilter, TaskStatus, TaskCheckpoint, Platform } from '../shared/types.js';
 import log from 'electron-log';
+
+// 平台维护窗口（北京时间）- 这些时段容易失败
+const PLATFORM_MAINTENANCE_WINDOWS: Record<Platform, { start: number; end: number; reason?: string }[]> = {
+  douyin: [
+    { start: 3, end: 5, reason: '抖音日常维护' },
+    { start: 23, end: 24, reason: '日结时段' },
+  ],
+  kuaishou: [
+    { start: 2, end: 4, reason: '快手日常维护' },
+    { start: 23, end: 24, reason: '日结时段' },
+  ],
+  xiaohongshu: [
+    { start: 2, end: 6, reason: '小红书日常维护' },
+    { start: 22, end: 24, reason: '晚高峰限流' },
+  ],
+};
+
+// 错误类型对应的权重
+const ERROR_WEIGHTS: Record<string, { weight: number; waitMultiplier: number }> = {
+  'selector': { weight: 0.3, waitMultiplier: 1.0 },      // 选择器问题，快速重试
+  'rate_limit': { weight: 0.8, waitMultiplier: 3.0 },   // 限流，增加等待
+  'network': { weight: 0.5, waitMultiplier: 1.5 },     // 网络问题
+  'login': { weight: 0.9, waitMultiplier: 5.0 },       // 登录问题，大幅等待
+  'timeout': { weight: 0.4, waitMultiplier: 1.2 },     // 超时问题
+  'unknown': { weight: 0.5, waitMultiplier: 1.0 },      // 未知问题
+};
+
+// 任务超时时间：运行超过1小时认为是卡住了
+const TASK_STALE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export class TaskQueue {
   /**
@@ -114,6 +143,9 @@ export class TaskQueue {
     const db = getDb();
     const now = Date.now();
 
+    // 首先清理卡住的任务（运行超时）
+    this.cleanupStaleTasks();
+
     // 原子性：SELECT + UPDATE status = 'running' 在同一个语句中
     // 这防止了多个 worker 同时获取同一个任务的问题
     const row = db.prepare(`
@@ -133,6 +165,41 @@ export class TaskQueue {
       return this.rowToTask(row);
     }
     return null;
+  }
+
+  /**
+   * 清理卡住的任务
+   * 将运行超时（超过 TASK_STALE_TIMEOUT_MS）的任务标记为失败
+   */
+  cleanupStaleTasks(): void {
+    const db = getDb();
+    const now = Date.now();
+    const staleThreshold = now - TASK_STALE_TIMEOUT_MS;
+
+    // 查找运行超时且未更新的任务
+    const staleTasks = db.prepare(`
+      SELECT id FROM tasks
+      WHERE status = 'running'
+        AND updated_at < ?
+    `).all(staleThreshold) as { id: string }[];
+
+    if (staleTasks.length > 0) {
+      log.warn(`发现 ${staleTasks.length} 个卡住的任务，将标记为失败`);
+      for (const task of staleTasks) {
+        db.prepare(`
+          UPDATE tasks
+          SET status = 'failed',
+              error = '任务执行超时，系统自动清理',
+              updated_at = ?
+          WHERE id = ? AND status = 'running'
+        `).run(now, task.id);
+
+        // 清除相关检查点
+        this.clearCheckpoint(task.id);
+
+        log.info(`任务已超时标记失败: ${task.id}`);
+      }
+    }
   }
 
   /**
@@ -189,7 +256,7 @@ export class TaskQueue {
   }
 
   /**
-   * 标记任务失败并增加重试计数
+   * 标记任务失败并增加重试计数（智能重试）
    */
   markFailed(taskId: string, error: string): Task | null {
     const db = getDb();
@@ -213,8 +280,30 @@ export class TaskQueue {
     }
 
     const now = Date.now();
-    // 指数退避: 1min, 2min, 4min...
-    const delay = Math.min(60000 * Math.pow(2, retryCount - 1), 300000);
+
+    // 分析错误类型
+    const errorType = this.classifyError(error);
+    const errorInfo = ERROR_WEIGHTS[errorType] || ERROR_WEIGHTS.unknown;
+
+    // 检查是否在维护窗口
+    const maintenanceDelay = this.getMaintenanceDelay(task.platform);
+    const isMaintenanceWindow = maintenanceDelay > 0;
+
+    // 计算智能退避延迟
+    // 基础延迟：指数退避，但根据错误类型调整
+    const baseDelay = Math.min(60000 * Math.pow(2, retryCount - 1), 300000);
+    const adjustedDelay = baseDelay * errorInfo.waitMultiplier;
+
+    // 如果在维护窗口，等待到维护结束 + 随机额外时间
+    let finalDelay: number;
+    if (isMaintenanceWindow) {
+      const waitUntilMaintenanceEnd = maintenanceDelay + Math.random() * 60000;
+      finalDelay = Math.max(adjustedDelay, waitUntilMaintenanceEnd);
+      log.info(`[Queue] 检测到 ${task.platform} 维护窗口，等待 ${maintenanceDelay}ms + 额外 ${Math.round(finalDelay - maintenanceDelay)}ms`);
+    } else {
+      // 添加抖动（±20%）避免所有任务同时重试
+      finalDelay = adjustedDelay * (0.8 + Math.random() * 0.4);
+    }
 
     db.prepare(`
       UPDATE tasks SET
@@ -225,10 +314,71 @@ export class TaskQueue {
         updated_at = ?,
         version = version + 1
       WHERE id = ?
-    `).run(error, retryCount, now + delay, now, taskId);
+    `).run(error, retryCount, now + finalDelay, now, taskId);
 
-    log.info(`任务 ${taskId} 失败，将于 ${delay}ms 后重试 (${retryCount}/${task.maxRetries})`);
+    log.info(`任务 ${taskId} 失败 [${errorType}]，` +
+      `将于 ${Math.round(finalDelay)}ms 后重试 (${retryCount}/${task.maxRetries})`);
     return this.get(taskId);
+  }
+
+  /**
+   * 分类错误类型
+   */
+  private classifyError(error: string): string {
+    const lowerError = error.toLowerCase();
+
+    if (lowerError.includes('selector') || lowerError.includes('元素未找到') || lowerError.includes('找不到')) {
+      return 'selector';
+    }
+    if (lowerError.includes('rate') || lowerError.includes('限流') || lowerError.includes('频繁')) {
+      return 'rate_limit';
+    }
+    if (lowerError.includes('network') || lowerError.includes('网络') || lowerError.includes('连接')) {
+      return 'network';
+    }
+    if (lowerError.includes('login') || lowerError.includes('登录') || lowerError.includes('未登录') || lowerError.includes('session')) {
+      return 'login';
+    }
+    if (lowerError.includes('timeout') || lowerError.includes('超时')) {
+      return 'timeout';
+    }
+
+    return 'unknown';
+  }
+
+  /**
+   * 获取平台维护窗口延迟（返回需要等待的毫秒数，0 表示不在维护窗口）
+   */
+  private getMaintenanceDelay(platform: Platform): number {
+    const windows = PLATFORM_MAINTENANCE_WINDOWS[platform];
+    if (!windows) return 0;
+
+    // 转换为北京时间
+    const now = new Date();
+    const beijingHour = (now.getUTCHours() + 8) % 24;
+
+    for (const window of windows) {
+      if (window.start <= window.end) {
+        // 正常区间，如 3:00-5:00
+        if (beijingHour >= window.start && beijingHour < window.end) {
+          // 计算距离窗口结束还有多久
+          return (window.end - beijingHour) * 60 * 60 * 1000;
+        }
+      } else {
+        // 跨天区间，如 23:00-24:00
+        if (beijingHour >= window.start || beijingHour < window.end) {
+          if (beijingHour >= window.start) {
+            // end=24 表示到午夜(0点)，即 24 - beijingHour
+            const endHours = window.end === 24 ? 0 : window.end;
+            return (24 - beijingHour + endHours) * 60 * 60 * 1000;
+          } else {
+            return (window.end - beijingHour) * 60 * 60 * 1000;
+          }
+        }
+      }
+    }
+
+    return 0;
   }
 
   /**
@@ -258,11 +408,24 @@ export class TaskQueue {
 
   /**
    * 获取检查点
+   * 如果检查点超过24小时，认为已过期并清除
    */
   getCheckpoint(taskId: string): TaskCheckpoint | null {
     const db = getDb();
     const row = db.prepare('SELECT * FROM task_checkpoints WHERE task_id = ?').get(taskId) as any;
     if (!row) return null;
+
+    // 检查点过期时间：24小时
+    const CHECKPOINT_EXPIRY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    if (now - row.created_at > CHECKPOINT_EXPIRY_MS) {
+      // 检查点已过期，清除并返回 null
+      log.warn(`检查点已过期: ${taskId} (${new Date(row.created_at).toISOString()})`);
+      this.clearCheckpoint(taskId);
+      return null;
+    }
+
     return {
       taskId: row.task_id,
       step: row.step,

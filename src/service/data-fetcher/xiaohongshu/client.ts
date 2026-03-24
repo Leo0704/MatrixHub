@@ -73,10 +73,10 @@ export class XiaoHongShuClient {
     );
 
     return {
-      'X-S': signs['X-S'],
-      'X-T': signs['X-T'],
-      'X-S-Common': signs['X-S-Common'],
-      'X-B3-Traceid': signs['X-B3-Traceid'],
+      'x-s': signs['x-s'],
+      'x-t': signs['x-t'],
+      'x-s-common': signs['x-s-common'],
+      'x-b3-traceid': signs['x-b3-traceid'],
     };
   }
 

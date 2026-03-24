@@ -146,7 +146,7 @@ export async function createPage(platform: Platform, accountId?: string): Promis
     const pooled = pagePool.find(
       p => p.platform === platform && p.accountId === accountId && !p.inUse
     );
-    if (pooled && pooled.page.isConnected() && pooled.isLoggedIn) {
+    if (pooled && (pooled.page as any).isConnected?.() && pooled.isLoggedIn) {
       pooled.inUse = true;
       pooled.lastUsed = Date.now();
       pooled.useCount++;
@@ -159,7 +159,7 @@ export async function createPage(platform: Platform, accountId?: string): Promis
   const genericPooled = pagePool.find(
     p => p.platform === platform && p.accountId === null && !p.inUse
   );
-  if (genericPooled && genericPooled.page.isConnected()) {
+  if (genericPooled && (genericPooled.page as any).isConnected?.()) {
     genericPooled.inUse = true;
     genericPooled.lastUsed = Date.now();
     genericPooled.useCount++;

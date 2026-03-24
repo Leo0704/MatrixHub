@@ -1,6 +1,7 @@
 import { getDb } from './db.js';
 import type { Platform, RateLimitConfig } from '../shared/types.js';
 import log from 'electron-log';
+import { sleep } from './utils/sleep.js';
 
 // 各平台限流配置（requests per minute / hour / day）
 const DEFAULT_RATE_LIMITS: Record<Platform, RateLimitConfig> = {
@@ -38,8 +39,11 @@ interface LimitBucket {
 export class RateLimiter {
   private memoryCache: Map<string, LimitBucket> = new Map();
   private config: Record<Platform, RateLimitConfig>;
-  // 简单的互斥锁，防止并发访问时出现竞态条件
-  private locks: Map<string, Promise<void>> = new Map();
+  // 改用 Promise 队列，避免自旋锁的 CPU 浪费
+  private lockQueue: Map<string, {
+    promise: Promise<void>;
+    resolve: () => void;
+  } | null> = new Map();
 
   constructor(config?: Partial<Record<Platform, RateLimitConfig>>) {
     // 合并配置
@@ -50,25 +54,29 @@ export class RateLimiter {
   }
 
   /**
-   * 获取指定 key 的锁
+   * 获取指定 key 的锁（Promise 队列方式，避免 CPU 空转）
    */
   private async acquireLock(key: string): Promise<() => void> {
-    // 等待之前的锁释放
-    while (this.locks.has(key)) {
-      await this.locks.get(key);
+    // 如果已有锁（且未释放），加入队列等待
+    const existing = this.lockQueue.get(key);
+    if (existing != null) {
+      await existing.promise;
     }
 
     // 创建新锁
-    let release: () => void;
-    const lock = new Promise<void>(resolve => {
-      release = resolve;
-    });
-    this.locks.set(key, lock);
+    let resolve: () => void;
+    const promise = new Promise<void>(r => { resolve = r; });
+    this.lockQueue.set(key, { promise, resolve: resolve! });
 
     // 返回释放函数
     return () => {
-      this.locks.delete(key);
-      release!();
+      const current = this.lockQueue.get(key);
+      this.lockQueue.set(key, null); // 标记为已释放
+      // 异步 resolve，让出执行权
+      setImmediate(() => {
+        this.lockQueue.delete(key);
+        resolve!();
+      });
     };
   }
 
@@ -130,9 +138,9 @@ export class RateLimiter {
       const hourBucket = this.getBucket(this.hourKey(platform), 3600000, now, true);
       const dayBucket = this.getBucket(this.dayKey(platform), 86400000, now, true);
 
-      if (minuteBucket.count > cfg.requestsPerMinute) return false;
-      if (hourBucket.count > cfg.requestsPerHour) return false;
-      if (dayBucket.count > cfg.requestsPerDay) return false;
+      if (minuteBucket.count >= cfg.requestsPerMinute) return false;
+      if (hourBucket.count >= cfg.requestsPerHour) return false;
+      if (dayBucket.count >= cfg.requestsPerDay) return false;
 
       // 所有检查通过，消耗配额
       minuteBucket.count++;
@@ -166,7 +174,7 @@ export class RateLimiter {
       const check = this.check(platform);
       const waitTime = Math.min(check.waitMs ?? 1000, 5000);
 
-      await this.sleep(waitTime);
+      await sleep(waitTime);
     }
 
     throw new Error(`RateLimit 获取超时: ${platform} (${timeoutMs}ms)`);
@@ -270,11 +278,12 @@ export class RateLimiter {
     const db = getDb();
 
     // 按时间窗口去重写入
+    // 修复: 使用 bucket.count 而非硬编码 1，使用 excluded.count 而非 count + 1
     db.prepare(`
       INSERT INTO rate_limits (key, count, reset_at)
       VALUES (?, ?, ?)
-      ON CONFLICT(key, reset_at) DO UPDATE SET count = count + 1
-    `).run(key, 1, bucket.resetAt);
+      ON CONFLICT(key, reset_at) DO UPDATE SET count = excluded.count
+    `).run(key, bucket.count, bucket.resetAt);
 
     // 清理过期数据
     const cutoff = Date.now() - 86400000 * 2;
@@ -294,10 +303,6 @@ export class RateLimiter {
   private dayKey(platform: Platform): string {
     const day = Math.floor(Date.now() / 86400000);
     return `${platform}:day:${day}`;
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

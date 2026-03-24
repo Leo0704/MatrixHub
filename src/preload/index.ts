@@ -59,6 +59,14 @@ export interface ElectronAPI {
   }>;
   checkRate: (platform: Platform) => Promise<boolean>;
 
+  // 自动化确认
+  requestAutomationConfirm: (params: {
+    action: string;
+    platform: Platform;
+    accountId?: string;
+    config?: Record<string, unknown>;
+  }) => Promise<boolean>;
+
   // AI
   generateAI: (request: AIRequest) => Promise<AIResponse>;
   iterateAI: (request: AIIterationRequest) => Promise<AIResponse>;
@@ -203,6 +211,9 @@ const api: ElectronAPI = {
   // ============ 限流 ============
   getRateStatus: (platform) => ipcRenderer.invoke('rate:status', { platform }),
   checkRate: (platform) => ipcRenderer.invoke('rate:check', { platform }),
+
+  // ============ 自动化确认 ============
+  requestAutomationConfirm: (params) => ipcRenderer.invoke('automation:confirm', params),
 
   // ============ AI ============
   generateAI: (request) => ipcRenderer.invoke('ai:generate', request),

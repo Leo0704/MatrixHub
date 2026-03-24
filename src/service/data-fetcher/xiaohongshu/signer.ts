@@ -168,7 +168,7 @@ function _build_sign_string(
           value = '';
         }
         // URL encode the value
-        value = encodeURIComponent(value);
+        value = encodeURIComponent(value as string);
         params.push(`${key}=${value}`);
       }
       return `${uri}?${params.join('&')}`;
@@ -219,8 +219,17 @@ function _build_xs_common(a1: string, b1: string, x_s: string, x_t: string): str
  */
 async function get_b1_from_localstorage(page: Page): Promise<string> {
   try {
-    const localStorage = await page.evaluate(() => window.localStorage);
-    return (localStorage as Record<string, string>).get('b1') || '';
+    const lsData = await page.evaluate(() => {
+      const storage: Record<string, string> = {};
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key) {
+          storage[key] = window.localStorage.getItem(key) || '';
+        }
+      }
+      return storage;
+    });
+    return lsData['b1'] || '';
   } catch {
     return '';
   }
@@ -232,9 +241,8 @@ async function get_b1_from_localstorage(page: Page): Promise<string> {
 async function call_mnsv2(page: Page, sign_str: string, md5_str: string): Promise<string> {
   try {
     const result = await page.evaluate(
-      (s: string, m: string) => window.mnsv2(s, m),
-      sign_str,
-      md5_str
+      ([s, m]: [string, string]) => (window as any).mnsv2(s, m),
+      [sign_str, md5_str] as [string, string]
     );
     return (result as string) || '';
   } catch {
@@ -278,10 +286,10 @@ export async function sign_with_playwright(
   const x_t = String(Math.floor(Date.now()));
 
   return {
-    'X-S': x_s,
-    'X-T': x_t,
-    'X-S-Common': _build_xs_common(a1, b1, x_s, x_t),
-    'X-B3-Traceid': get_trace_id(),
+    'x-s': x_s,
+    'x-t': x_t,
+    'x-s-common': _build_xs_common(a1, b1, x_s, x_t),
+    'x-b3-traceid': get_trace_id(),
   };
 }
 
@@ -317,9 +325,9 @@ export async function pre_headers_with_playwright(
   const signs = await sign_with_playwright(page, uri, data, a1_value, method);
 
   return {
-    'X-S': signs['X-S'],
-    'X-T': signs['X-T'],
-    'X-S-Common': signs['X-S-Common'],
-    'X-B3-Traceid': signs['X-B3-Traceid'],
+    'X-S': signs['x-s'],
+    'X-T': signs['x-t'],
+    'X-S-Common': signs['x-s-common'],
+    'X-B3-Traceid': signs['x-b3-traceid'],
   };
 }

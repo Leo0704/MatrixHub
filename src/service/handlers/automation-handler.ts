@@ -7,6 +7,24 @@ import { navigateTo, randomDelay, checkLoginState, humanClick, humanScroll } fro
 import { getAutoSelectors, AUTOMATION_PATHS } from '../config/selectors.js';
 import { markPageLoggedIn } from '../platform-launcher.js';
 import log from 'electron-log';
+import { ipcRenderer } from 'electron';
+
+// 高风险操作需要用户确认
+const HIGH_RISK_ACTIONS = ['auto_reply', 'auto_like', 'auto_follow'];
+
+async function requestAutomationConfirm(params: {
+  action: string;
+  platform: Platform;
+  accountId?: string;
+  config?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    return await ipcRenderer.invoke('automation:confirm', params);
+  } catch (error) {
+    log.error('[Automation] 请求确认失败:', error);
+    return false;
+  }
+}
 
 interface AutoReplyConfig {
   keywords?: string[];
@@ -42,10 +60,24 @@ export async function executeAutomationTask(
   task: Task,
   signal: AbortSignal
 ): Promise<Record<string, unknown>> {
-  const payload = task.payload as AutomationPayload;
+  const payload = task.payload as unknown as AutomationPayload;
   const platform = payload.platform!;
 
   log.info(`[Service] 开始执行自动化任务: ${payload.action}`);
+
+  // 高风险操作需要用户确认
+  if (HIGH_RISK_ACTIONS.includes(payload.action)) {
+    const confirmed = await requestAutomationConfirm({
+      action: payload.action,
+      platform,
+      accountId: payload.accountId,
+      config: payload.config as Record<string, unknown>,
+    });
+    if (!confirmed) {
+      log.info(`[Service] 用户取消自动化任务: ${payload.action}`);
+      throw new Error('用户取消自动化任务');
+    }
+  }
 
   const isLoggedIn = await checkLoginState(page, platform);
   if (!isLoggedIn) {

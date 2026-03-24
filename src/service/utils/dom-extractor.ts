@@ -117,7 +117,7 @@ export function extractInteractiveElements(): InteractiveElement[] {
   const seenElements = new Set<Element>();
 
   for (const selector of interactiveSelectors) {
-    const els = document.querySelectorAll(selector);
+    const els = Array.from(document.querySelectorAll(selector));
     for (const el of els) {
       // 跳过不可见或已处理过的元素
       if (seenElements.has(el)) continue;
@@ -191,17 +191,39 @@ function getElementText(el: Element): string {
 /**
  * 获取元素的相关属性
  */
-function getRelevantAttributes(el: Element): Record<string, string | boolean | undefined> {
-  const result: Record<string, string | boolean | undefined> = {};
+function getRelevantAttributes(el: Element): {
+  type?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  role?: string;
+  value?: string;
+  name?: string;
+  checked?: boolean;
+} {
+  const result: {
+    type?: string;
+    placeholder?: string;
+    ariaLabel?: string;
+    role?: string;
+    value?: string;
+    name?: string;
+    checked?: boolean;
+  } = {};
 
   const htmlEl = el as HTMLElement;
 
-  if (htmlEl.getAttribute('type')) result.type = htmlEl.getAttribute('type');
-  if (htmlEl.getAttribute('placeholder')) result.placeholder = htmlEl.getAttribute('placeholder');
-  if (htmlEl.getAttribute('aria-label')) result.ariaLabel = htmlEl.getAttribute('aria-label');
-  if (htmlEl.getAttribute('role')) result.role = htmlEl.getAttribute('role');
-  if (htmlEl.getAttribute('name')) result.name = htmlEl.getAttribute('name');
-  if (htmlEl.getAttribute('value')) result.value = htmlEl.getAttribute('value');
+  const typeAttr = htmlEl.getAttribute('type');
+  if (typeAttr) result.type = typeAttr;
+  const placeholderAttr = htmlEl.getAttribute('placeholder');
+  if (placeholderAttr) result.placeholder = placeholderAttr;
+  const ariaLabelAttr = htmlEl.getAttribute('aria-label');
+  if (ariaLabelAttr) result.ariaLabel = ariaLabelAttr;
+  const roleAttr = htmlEl.getAttribute('role');
+  if (roleAttr) result.role = roleAttr;
+  const nameAttr = htmlEl.getAttribute('name');
+  if (nameAttr) result.name = nameAttr;
+  const valueAttr = htmlEl.getAttribute('value');
+  if (valueAttr) result.value = valueAttr;
 
   // 处理 checked 状态
   if (htmlEl instanceof HTMLInputElement) {
