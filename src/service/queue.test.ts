@@ -1,4 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, beforeEach as setupBeforeEach } from 'vitest';
+
+// 取消全局 mock，恢复真实数据库（queue.test.ts 需要真实数据库）
+vi.unmock('better-sqlite3');
+vi.unmock('electron-log');
+vi.unmock('uuid');
+vi.unmock('electron');
+
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
