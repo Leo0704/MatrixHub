@@ -318,6 +318,58 @@ interface RetryAdvice {
 
 ---
 
+## AIFailureResult → AIDecision 转换
+
+AI 返回的是 `AIFailureResult`，执行前需先转换为 `AIDecision`：
+
+```typescript
+// 位于 AIDirector 内
+function buildDecision(result: AIFailureResult, task: Task): AIDecision {
+  // 无效 confidence → 当作 0.5
+  const confidence = (result.confidence >= 0 && result.confidence <= 1)
+    ? result.confidence : 0.5
+
+  if (result.shouldRetry && result.retryAdvice) {
+    // 有修复建议 → 用修复参数重试
+    return {
+      action: 'retry_with_fix',
+      reason: result.diagnosis,
+      confidence,
+      params: {
+        type: task.type,
+        platform: task.platform,
+        title: task.title,
+        payload: {
+          ...task.payload,
+          ...result.retryAdvice.params,  // AI 建议的参数覆盖
+        },
+        _retryAdvice: result.retryAdvice, // 记录本次重试用了什么建议
+      }
+    }
+  }
+
+  if (result.shouldRetry && !result.retryAdvice) {
+    // 要重试但没有具体建议 → 只通知人，不自动执行
+    return {
+      action: 'notify',
+      reason: `${result.diagnosis}（AI建议重试但无具体方案）`,
+      confidence,
+      params: { taskId: task.id, result }
+    }
+  }
+
+  // 不重试 → 记录诊断结果，通知人
+  return {
+    action: 'notify',
+    reason: result.diagnosis,
+    confidence,
+    params: { taskId: task.id, result }
+  }
+}
+```
+
+---
+
 ## 决策执行（位于 AIDirector）
 
 ```typescript
