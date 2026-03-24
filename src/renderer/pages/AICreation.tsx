@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { Platform } from '~shared/types';
+import PublishModal from '../components/PublishModal';
+import { useToast } from '../components/Toast';
 
 type AIProvider = 'openai' | 'anthropic' | 'zhipu' | 'deepseek' | 'minimax' | 'kimi' | 'qwen' | 'doubao';
 
@@ -375,6 +377,15 @@ export default function AICreation() {
   const [contentMode, setContentMode] = useState<'text' | 'image' | 'voice'>('text');
   const [imageResult, setImageResult] = useState<{url: string; revisedPrompt?: string} | null>(null);
   const [voiceResult, setVoiceResult] = useState<string | null>(null);
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [voicePrompt, setVoicePrompt] = useState('');
+  const { showToast } = useToast();
+
+  const handlePublishSuccess = (taskIds: string[]) => {
+    setShowPublishModal(false);
+    showToast(`已创建 ${taskIds.length} 个发布任务`, 'success');
+  };
 
   const handleCopy = async () => {
     if (!result) return;
@@ -430,6 +441,7 @@ export default function AICreation() {
       if (response?.success && response.content) {
         const data = JSON.parse(response.content);
         setImageResult(data);
+        setImagePrompt(topic);
       } else {
         setResult(`生成失败：${response?.error || '未知错误'}`);
       }
@@ -462,6 +474,7 @@ export default function AICreation() {
 
       if (response?.success && response.content) {
         setVoiceResult(response.content);
+        setVoicePrompt(topic);
       } else {
         setResult(`生成失败：${response?.error || '未知错误'}`);
       }
@@ -669,7 +682,14 @@ export default function AICreation() {
                 >
                   {isEditing ? '✓ 完成编辑' : '编辑'}
                 </button>
-                <button className="btn btn-ghost" style={{ fontSize: 12 }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => {
+                    if (!result && !imageResult && !voiceResult) return;
+                    setShowPublishModal(true);
+                  }}
+                >
                   一键发布
                 </button>
               </div>
@@ -835,6 +855,18 @@ export default function AICreation() {
           )}
         </div>
       </div>
+
+      {/* 发布弹窗 */}
+      {showPublishModal && (
+        <PublishModal
+          isOpen={showPublishModal}
+          platform={platform}
+          title={contentMode === 'image' ? imagePrompt : contentMode === 'voice' ? voicePrompt : topic}
+          content={contentMode === 'image' && imageResult?.url ? imageResult.url : contentMode === 'voice' && voiceResult ? voiceResult : result || ''}
+          onClose={() => setShowPublishModal(false)}
+          onPublished={handlePublishSuccess}
+        />
+      )}
     </div>
   );
 }
