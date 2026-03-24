@@ -64,6 +64,29 @@ function initializeSchema(db: Database.Database): void {
     db.exec(`ALTER TABLE tasks ADD COLUMN ai_analysis_count INTEGER DEFAULT 0`);
   }
 
+  // 向后兼容：已存在的数据库添加新列（只有列不存在时才添加）
+  const accountTableInfo = db.pragma('table_info(accounts)') as { name: string }[];
+  const hasGroupId = accountTableInfo.some((col) => col.name === 'group_id');
+  const hasTags = accountTableInfo.some((col) => col.name === 'tags');
+  if (!hasGroupId) {
+    db.exec(`ALTER TABLE accounts ADD COLUMN group_id TEXT`);
+  }
+  if (!hasTags) {
+    db.exec(`ALTER TABLE accounts ADD COLUMN tags TEXT DEFAULT '[]'`);
+  }
+
+  // 账号分组表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT DEFAULT '#6366f1',
+      sort_order INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // 任务检查点表（用于崩溃恢复）
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_checkpoints (
