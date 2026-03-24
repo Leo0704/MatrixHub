@@ -230,12 +230,11 @@ async function get_b1_from_localstorage(page: Page): Promise<string> {
  * Call window.mnsv2 function via playwright
  */
 async function call_mnsv2(page: Page, sign_str: string, md5_str: string): Promise<string> {
-  const sign_str_escaped = sign_str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-  const md5_str_escaped = md5_str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
   try {
     const result = await page.evaluate(
-      `window.mnsv2('${sign_str_escaped}', '${md5_str_escaped}')`
+      (s: string, m: string) => window.mnsv2(s, m),
+      sign_str,
+      md5_str
     );
     return (result as string) || '';
   } catch {
@@ -279,10 +278,10 @@ export async function sign_with_playwright(
   const x_t = String(Math.floor(Date.now()));
 
   return {
-    'x-s': x_s,
-    'x-t': x_t,
-    'x-s-common': _build_xs_common(a1, b1, x_s, x_t),
-    'x-b3-traceid': get_trace_id(),
+    'X-S': x_s,
+    'X-T': x_t,
+    'x-S-Common': _build_xs_common(a1, b1, x_s, x_t),
+    'X-B3-Traceid': get_trace_id(),
   };
 }
 
@@ -318,9 +317,9 @@ export async function pre_headers_with_playwright(
   const signs = await sign_with_playwright(page, uri, data, a1_value, method);
 
   return {
-    'X-S': signs['x-s'],
-    'X-T': signs['x-t'],
-    'x-S-Common': signs['x-s-common'],
-    'X-B3-Traceid': signs['x-b3-traceid'],
+    'X-S': signs['X-S'],
+    'X-T': signs['X-T'],
+    'x-S-Common': signs['x-S-Common'],
+    'X-B3-Traceid': signs['X-B3-Traceid'],
   };
 }
