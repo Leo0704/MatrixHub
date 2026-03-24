@@ -102,16 +102,23 @@ async function executeAutoReply(
   const commentInputSelectors = getAutoSelectors(platform, 'comment_input');
 
   for (let i = 0; i < maxReplies && processed < maxReplies; i++) {
-    await randomDelay(1000, 2000);
-    await humanScroll(page, 300);
-    await randomDelay(500, 1000);
+    // 随机延迟 + 偶尔长暂停（阅读内容）
+    const baseDelay = 800 + Math.random() * 1500;
+    await randomDelay(Math.round(baseDelay), Math.round(baseDelay + 500));
+    await humanScroll(page, 200 + Math.random() * 200);
+    await randomDelay(300, 1200);
+
+    // 每5次操作模拟一次"阅读"暂停
+    if (i > 0 && i % 5 === 0) {
+      await randomDelay(3000, 6000);
+    }
 
     for (const sel of commentInputSelectors) {
       try {
         await humanClick(page, sel.value);
-        await randomDelay(300, 600);
+        await randomDelay(200, 800);
         await page.fill(sel.value, replyText);
-        await randomDelay(200, 500);
+        await randomDelay(150, 600);
         await page.keyboard.press('Enter');
         replied++;
         log.info(`[Service] 已回复第 ${replied} 条评论`);
@@ -145,16 +152,22 @@ async function executeAutoLike(
   const likeSelectors = getAutoSelectors(platform, 'video_like') || getAutoSelectors(platform, 'like_button');
 
   for (let i = 0; i < maxLikes; i++) {
-    await randomDelay(1500, 3000);
-    await humanScroll(page, 400);
-    await randomDelay(800, 1500);
+    // 随机延迟
+    await randomDelay(1200, 3500);
+    await humanScroll(page, 300 + Math.random() * 200);
+    await randomDelay(600, 1800);
+
+    // 每5次操作模拟一次"阅读"暂停
+    if (i > 0 && i % 5 === 0) {
+      await randomDelay(3000, 7000);
+    }
 
     for (const sel of likeSelectors) {
       try {
         await humanClick(page, sel.value);
         liked++;
         log.info(`[Service] 已点赞第 ${liked} 个内容`);
-        await randomDelay(500, 1000);
+        await randomDelay(400, 1200);
         break;
       } catch {
         continue;
@@ -185,9 +198,15 @@ async function executeAutoFollow(
   const followSelectors = getAutoSelectors(platform, 'follow_button');
 
   for (let i = 0; i < maxFollows; i++) {
-    await randomDelay(1500, 3000);
-    await humanScroll(page, 300);
-    await randomDelay(500, 1000);
+    // 随机延迟
+    await randomDelay(1200, 3500);
+    await humanScroll(page, 250 + Math.random() * 150);
+    await randomDelay(400, 1200);
+
+    // 每5次操作模拟一次"阅读"暂停
+    if (i > 0 && i % 5 === 0) {
+      await randomDelay(3000, 7000);
+    }
 
     for (const sel of followSelectors) {
       try {
