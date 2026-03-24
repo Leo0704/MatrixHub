@@ -296,6 +296,7 @@ export class AIGateway {
 
   /**
    * 调用具体的 Provider
+   * 根据 request.taskType 分发到不同的生成器
    */
   private async callProvider(provider: AIProvider, request: AIRequest): Promise<string> {
     const model = request.model ?? provider.models[0];
@@ -305,6 +306,21 @@ export class AIGateway {
       throw new Error(`API key not configured for provider: ${provider.type}`);
     }
 
+    // 根据 taskType 分发
+    switch (request.taskType) {
+      case 'image':
+        return this.callImageProvider(provider, model, request, apiKey);
+      case 'voice':
+        return this.callVoiceProvider(provider, model, request, apiKey);
+      default:
+        return this.callTextProvider(provider, model, request, apiKey);
+    }
+  }
+
+  /**
+   * 文本生成调用（根据 provider.type 分发）
+   */
+  private async callTextProvider(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     switch (provider.type) {
       case 'openai':
         return this.callOpenAI(provider, model, request, apiKey);
@@ -333,6 +349,77 @@ export class AIGateway {
       default:
         throw new Error(`Unsupported provider: ${provider.type}`);
     }
+  }
+
+  /**
+   * 图片生成调用
+   */
+  private async callImageProvider(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    // 目前主要支持 OpenAI DALL-E 系列
+    // 其他 provider 的图片生成可以后续扩展
+    const imageModel = model || 'dall-e-3';
+
+    const response = await fetch(`${provider.baseUrl}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: imageModel,
+        prompt: request.prompt,
+        size: '1024x1024',
+        quality: 'standard',
+        n: 1,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Image API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    if (!data.data?.length) {
+      throw new Error('Image generation failed');
+    }
+
+    // 返回图片URL和修订后的prompt
+    return JSON.stringify({
+      url: data.data[0].url,
+      revisedPrompt: data.data[0].revised_prompt
+    });
+  }
+
+  /**
+   * 语音合成调用
+   */
+  private async callVoiceProvider(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    // 目前主要支持 OpenAI TTS
+    const voiceModel = model || 'tts-1';
+
+    const response = await fetch(`${provider.baseUrl}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: voiceModel,
+        input: request.prompt,
+        voice: 'alloy',
+        response_format: 'mp3',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Voice API error: ${response.status} - ${errorText}`);
+    }
+
+    // 返回音频的 base64 编码
+    const buffer = await response.arrayBuffer();
+    return Buffer.from(buffer).toString('base64');
   }
 
   private async callOpenAI(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
