@@ -3,7 +3,7 @@
  * 对应 MediaCrawler: media_platform/douyin/client.py::DouYinClient
  */
 
-import * as urllib.parse from 'url';
+import { stringify as queryStringify } from 'querystring';
 import { Page } from 'playwright';
 import log from 'electron-log';
 import { getABogus, generateWebId } from './signer.js';
@@ -135,7 +135,7 @@ export class DouYinClient {
     Object.assign(params, commonParams);
 
     // 构建 query string
-    const queryString = urllib.parse.stringify(params);
+    const queryString = queryStringify(params);
 
     // 获取 a_bogus 签名（排除搜索接口）
     if (!uri.includes(GENERAL_SEARCH_URI)) {
@@ -160,7 +160,7 @@ export class DouYinClient {
     await this.processRequestParams(uri, params, 'GET');
 
     const headers = { ...this.headers, ...customHeaders };
-    const url = `${this.host}${uri}?${urllib.parse.stringify(params)}`;
+    const url = `${this.host}${uri}?${queryStringify(params)}`;
 
     log.debug(`[DouYinClient] GET ${uri}`);
 
