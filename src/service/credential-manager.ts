@@ -381,7 +381,12 @@ export class AccountManager {
       });
     } catch (err) {
       // 凭证存储失败，回滚 account
-      db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+      try {
+        db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+      } catch (rollbackError) {
+        log.error(`[CredentialManager] 回滚账号失败: ${accountId}`, rollbackError);
+        // 回滚失败也需要抛出原始错误，以便上层知晓操作未完成
+      }
       log.error(`账号添加失败（凭证存储错误）: ${accountId}`, err);
       throw err;
     }
