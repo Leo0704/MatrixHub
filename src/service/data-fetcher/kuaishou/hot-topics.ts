@@ -73,15 +73,6 @@ export class KuaishouFetcher extends BaseFetcher {
   }
 
   /**
-   * 将 cookies 转换为请求头字符串
-   */
-  private cookiesToString(cookies: Record<string, string>): string {
-    return Object.entries(cookies)
-      .map(([key, value]) => `${key}=${value}`)
-      .join('; ');
-  }
-
-  /**
    * 检查登录状态
    */
   async checkLoginStatus(): Promise<boolean> {
@@ -136,16 +127,6 @@ export class KuaishouFetcher extends BaseFetcher {
   }
 
   /**
-   * 确保已登录
-   */
-  private async ensureLoggedIn(): Promise<void> {
-    if (!(await this.checkLoginStatus())) {
-      log.info('[KuaishouFetcher] 未登录，开始登录流程');
-      await this.login();
-    }
-  }
-
-  /**
    * 执行 GraphQL 请求
    */
   private async graphqlRequest(query: string, variables?: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -165,6 +146,9 @@ export class KuaishouFetcher extends BaseFetcher {
             variables: vars || {},
           }),
         });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         return response.json();
       },
       {
@@ -187,7 +171,7 @@ export class KuaishouFetcher extends BaseFetcher {
 
     try {
       // 确保已登录
-      await this.ensureLoggedIn();
+      await this.ensureLogin();
 
       // 执行 GraphQL 请求
       log.info('[KuaishouFetcher] 获取热点话题...');
@@ -257,12 +241,5 @@ export class KuaishouFetcher extends BaseFetcher {
     }
 
     return topics;
-  }
-
-  /**
-   * 关闭 fetcher，释放资源
-   */
-  async close(): Promise<void> {
-    await super.close();
   }
 }
