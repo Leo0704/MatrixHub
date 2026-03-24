@@ -372,6 +372,9 @@ export default function AICreation() {
   const [iterationHistory, setIterationHistory] = useState<{feedback: string; response: string}[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState('');
+  const [contentMode, setContentMode] = useState<'text' | 'image' | 'voice'>('text');
+  const [imageResult, setImageResult] = useState<{url: string; revisedPrompt?: string} | null>(null);
+  const [voiceResult, setVoiceResult] = useState<string | null>(null);
 
   const handleCopy = async () => {
     if (!result) return;
@@ -399,6 +402,68 @@ export default function AICreation() {
         setResult(content);
         setEditedContent(content);
         setIterationHistory(prev => [...prev, { feedback, response: content }]);
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!topic.trim()) return;
+    setGenerating(true);
+    setImageResult(null);
+
+    try {
+      const selectedModel = AI_MODELS[platform].find(m => m.id === model);
+      if (!selectedModel) {
+        setResult('错误：未找到选择的模型');
+        return;
+      }
+
+      const response = await window.electronAPI?.generateAI({
+        taskType: 'image',
+        providerType: selectedModel.provider,
+        model: 'dall-e-3',
+        prompt: topic,
+      });
+
+      if (response?.success && response.content) {
+        const data = JSON.parse(response.content);
+        setImageResult(data);
+      } else {
+        setResult(`生成失败：${response?.error || '未知错误'}`);
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleGenerateVoice = async () => {
+    if (!topic.trim()) return;
+    setGenerating(true);
+    setVoiceResult(null);
+
+    try {
+      const selectedModel = AI_MODELS[platform].find(m => m.id === model);
+      if (!selectedModel) {
+        setResult('错误：未找到选择的模型');
+        return;
+      }
+
+      const prompt = CONTENT_PROMPTS[promptType]?.(topic, platform) ||
+        `请将以下内容转换为语音：${topic}`;
+
+      const response = await window.electronAPI?.generateAI({
+        taskType: 'voice',
+        providerType: selectedModel.provider,
+        model: 'tts-1',
+        prompt: prompt,
+      });
+
+      if (response?.success && response.content) {
+        setVoiceResult(response.content);
+      } else {
+        setResult(`生成失败：${response?.error || '未知错误'}`);
       }
     } finally {
       setGenerating(false);
@@ -471,6 +536,34 @@ export default function AICreation() {
             </div>
           </div>
 
+          {/* 内容模式选择 */}
+          <div style={{ marginBottom: 'var(--space-lg)' }}>
+            <label style={labelStyle}>内容类型</label>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <button
+                className={`btn ${contentMode === 'text' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, fontSize: 13 }}
+                onClick={() => setContentMode('text')}
+              >
+                📝 文案
+              </button>
+              <button
+                className={`btn ${contentMode === 'image' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, fontSize: 13 }}
+                onClick={() => setContentMode('image')}
+              >
+                🖼️ 图片
+              </button>
+              <button
+                className={`btn ${contentMode === 'voice' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, fontSize: 13 }}
+                onClick={() => setContentMode('voice')}
+              >
+                🔊 语音
+              </button>
+            </div>
+          </div>
+
           {/* 模型选择 */}
           <div style={{ marginBottom: 'var(--space-lg)' }}>
             <label style={labelStyle}>AI 模型</label>
@@ -524,7 +617,11 @@ export default function AICreation() {
           <button
             className="btn btn-primary"
             style={{ width: '100%' }}
-            onClick={handleGenerate}
+            onClick={() => {
+              if (contentMode === 'text') handleGenerate();
+              else if (contentMode === 'image') handleGenerateImage();
+              else if (contentMode === 'voice') handleGenerateVoice();
+            }}
             disabled={generating || !topic.trim()}
           >
             {generating ? '🤖 生成中...' : '✨ 开始生成'}
@@ -579,52 +676,106 @@ export default function AICreation() {
             )}
           </div>
 
-          {!result ? (
-            <div className="empty-state" style={{ height: 300 }}>
-              <div style={{ fontSize: 48, opacity: 0.5 }}>🤖</div>
-              <p style={{ color: 'var(--text-muted)', marginTop: 'var(--space-md)' }}>
-                {generating ? 'AI 正在创作中，请稍候...' : '生成结果将显示在这里'}
-              </p>
-              {generating && (
-                <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 'var(--space-xs)' }}>
-                  根据主题复杂度，可能需要 5-30 秒
+          {/* 根据 contentMode 显示不同的结果 */}
+          {contentMode === 'image' ? (
+            !imageResult ? (
+              <div className="empty-state" style={{ height: 300 }}>
+                <div style={{ fontSize: 48, opacity: 0.5 }}>🖼️</div>
+                <p style={{ color: 'var(--text-muted)', marginTop: 'var(--space-md)' }}>
+                  {generating ? 'AI 正在生成图片...' : '生成的图片将显示在这里'}
                 </p>
-              )}
-            </div>
-          ) : isEditing ? (
-            <textarea
-              value={editedContent}
-              onChange={e => setEditedContent(e.target.value)}
-              onBlur={() => {
-                setResult(editedContent);
-                setIsEditing(false);
-              }}
-              style={{
-                width: '100%',
-                minHeight: 300,
+              </div>
+            ) : (
+              <div>
+                <img
+                  src={imageResult.url}
+                  alt="Generated"
+                  style={{ maxWidth: '100%', borderRadius: 'var(--radius)' }}
+                />
+                {imageResult.revisedPrompt && (
+                  <p style={{ marginTop: 'var(--space-sm)', fontSize: 12, color: 'var(--text-muted)' }}>
+                    修订后的描述：{imageResult.revisedPrompt}
+                  </p>
+                )}
+              </div>
+            )
+          ) : contentMode === 'voice' ? (
+            !voiceResult ? (
+              <div className="empty-state" style={{ height: 300 }}>
+                <div style={{ fontSize: 48, opacity: 0.5 }}>🔊</div>
+                <p style={{ color: 'var(--text-muted)', marginTop: 'var(--space-md)' }}>
+                  {generating ? 'AI 正在生成语音...' : '生成的语音将显示在这里'}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <audio
+                  src={`data:audio/mp3;base64,${voiceResult}`}
+                  controls
+                  style={{ width: '100%' }}
+                />
+                <button
+                  className="btn btn-secondary"
+                  style={{ marginTop: 'var(--space-md)', width: '100%' }}
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = `data:audio/mp3;base64,${voiceResult}`;
+                    link.download = `voice_${Date.now()}.mp3`;
+                    link.click();
+                  }}
+                >
+                  下载音频
+                </button>
+              </div>
+            )
+          ) : (
+            !result ? (
+              <div className="empty-state" style={{ height: 300 }}>
+                <div style={{ fontSize: 48, opacity: 0.5 }}>🤖</div>
+                <p style={{ color: 'var(--text-muted)', marginTop: 'var(--space-md)' }}>
+                  {generating ? 'AI 正在创作中，请稍候...' : '生成结果将显示在这里'}
+                </p>
+                {generating && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 'var(--space-xs)' }}>
+                    根据主题复杂度，可能需要 5-30 秒
+                  </p>
+                )}
+              </div>
+            ) : isEditing ? (
+              <textarea
+                value={editedContent}
+                onChange={e => setEditedContent(e.target.value)}
+                onBlur={() => {
+                  setResult(editedContent);
+                  setIsEditing(false);
+                }}
+                style={{
+                  width: '100%',
+                  minHeight: 300,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 13,
+                  lineHeight: 1.8,
+                  padding: 'var(--space-md)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  resize: 'vertical'
+                }}
+              />
+            ) : (
+              <div style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: 13,
                 lineHeight: 1.8,
-                padding: 'var(--space-md)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                resize: 'vertical'
-              }}
-            />
-          ) : (
-            <div style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 13,
-              lineHeight: 1.8,
-              whiteSpace: 'pre-wrap',
-              color: 'var(--text-secondary)'
-            }}>
-              {result}
-            </div>
+                whiteSpace: 'pre-wrap',
+                color: 'var(--text-secondary)'
+              }}>
+                {result}
+              </div>
+            )
           )}
 
-          {/* 迭代优化按钮 */}
-          {result && !isEditing && (
+          {/* 迭代优化按钮 - 仅文本模式 */}
+          {contentMode === 'text' && result && !isEditing && (
             <div style={{ marginTop: 'var(--space-lg)' }}>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-sm)' }}>
                 快速优化：
@@ -666,8 +817,8 @@ export default function AICreation() {
             </div>
           )}
 
-          {/* 迭代历史 */}
-          {iterationHistory.length > 0 && (
+          {/* 迭代历史 - 仅文本模式 */}
+          {contentMode === 'text' && iterationHistory.length > 0 && (
             <div style={{ marginTop: 'var(--space-lg)', padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius)' }}>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-sm)' }}>
                 迭代历史
