@@ -11,6 +11,7 @@ export default function ContentManagement() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -37,11 +38,14 @@ export default function ContentManagement() {
         limit: PAGE_SIZE,
         offset,
       });
+      const data = result ?? [];
       if (offset === 0) {
-        setTasks(result ?? []);
+        setTasks(data);
       } else {
-        setTasks(prev => [...prev, ...(result ?? [])]);
+        setTasks(prev => [...prev, ...data]);
       }
+      // 根据返回数据量判断是否还有更多
+      setHasMore(data.length === PAGE_SIZE);
     } catch (error) {
       showToast('加载任务失败', 'error');
     } finally {
@@ -70,8 +74,6 @@ export default function ContentManagement() {
       return true;
     });
   }, [tasks, filter, selectedPlatform]);
-
-  const hasMore = tasks.length >= PAGE_SIZE;
 
   if (loading) {
     return <div className="empty-state"><div className="empty-state-icon">⏳</div><p>加载中...</p></div>;

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Platform, Account, AccountGroup } from '~shared/types';
+import { useToast } from './Toast';
 
 interface PublishModalProps {
   isOpen: boolean;
@@ -29,9 +30,13 @@ export default function PublishModal({
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [publishing, setPublishing] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (isOpen) {
+      // 重置选择状态
+      setSelectedAccountIds([]);
+      setExpandedGroups(new Set());
       loadGroups();
       loadAccounts();
     }
@@ -91,8 +96,9 @@ export default function PublishModal({
   const handlePublish = async () => {
     if (selectedAccountIds.length === 0) return;
     setPublishing(true);
+    const taskIds: string[] = [];
+    const failedCount = { value: 0 };
     try {
-      const taskIds: string[] = [];
       for (const accountId of selectedAccountIds) {
         const task = await window.electronAPI?.createTask({
           type: 'publish',
@@ -100,7 +106,14 @@ export default function PublishModal({
           title,
           payload: { title, content, accountId },
         });
-        if (task?.id) taskIds.push(task.id);
+        if (task?.id) {
+          taskIds.push(task.id);
+        } else {
+          failedCount.value++;
+        }
+      }
+      if (failedCount.value > 0) {
+        showToast(`部分账号发布失败: ${failedCount.value}个`, 'error');
       }
       onPublished(taskIds);
     } finally {
