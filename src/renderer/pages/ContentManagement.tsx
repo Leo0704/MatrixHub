@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Task, Platform } from '~shared/types';
+import type { Task, Platform, AccountGroup, Account } from '~shared/types';
 
 export default function ContentManagement() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -310,29 +310,128 @@ function CreateTaskModal({
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [creating, setCreating] = useState(false);
+  const [groups, setGroups] = useState<AccountGroup[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadGroups();
+    loadAccounts();
+  }, []);
+
+  const loadGroups = async () => {
+    try {
+      const groupsResult = await window.electronAPI?.listGroups();
+      setGroups(groupsResult ?? []);
+    } catch (error) {
+      console.error('加载分组失败:', error);
+    }
+  };
+
+  const loadAccounts = async () => {
+    try {
+      const result = await window.electronAPI?.listAccounts();
+      setAccounts(result ?? []);
+    } catch (error) {
+      console.error('加载账号失败:', error);
+    }
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  const toggleGroupSelection = (groupId: string) => {
+    const groupAccountIds = accounts
+      .filter(a => a.groupId === groupId)
+      .map(a => a.id);
+    const allSelected = groupAccountIds.every(id => selectedAccountIds.includes(id));
+    if (allSelected) {
+      setSelectedAccountIds(prev => prev.filter(id => !groupAccountIds.includes(id)));
+    } else {
+      setSelectedAccountIds(prev => [...new Set([...prev, ...groupAccountIds])]);
+    }
+  };
+
+  const toggleAccountSelection = (accountId: string) => {
+    setSelectedAccountIds(prev => {
+      if (prev.includes(accountId)) {
+        return prev.filter(id => id !== accountId);
+      } else {
+        return [...prev, accountId];
+      }
+    });
+  };
 
   const handleCreate = async () => {
     if (!title.trim()) return;
+    if (selectedAccountIds.length === 0) {
+      alert('请选择至少一个账号');
+      return;
+    }
 
     setCreating(true);
     try {
-      const task = await window.electronAPI?.createTask({
-        type: 'publish',
-        platform,
-        title: title.trim(),
-        payload: {
+      // Create one task per selected account
+      for (const accountId of selectedAccountIds) {
+        const task = await window.electronAPI?.createTask({
+          type: 'publish',
+          platform,
           title: title.trim(),
-          content: content.trim(),
-        },
-      });
-      if (task) {
-        onCreated(task);
+          payload: {
+            title: title.trim(),
+            content: content.trim(),
+            accountId,
+          },
+        });
+        if (task) {
+          onCreated(task);
+        }
       }
     } catch (error) {
       console.error('创建任务失败:', error);
     } finally {
       setCreating(false);
     }
+  };
+
+  // Group accounts by platform and group
+  const accountsByPlatform = accounts.reduce((acc, account) => {
+    if (!acc[account.platform]) {
+      acc[account.platform] = [];
+    }
+    acc[account.platform].push(account);
+    return acc;
+  }, {} as Record<Platform, Account[]>);
+
+  const getGroupName = (groupId?: string) => {
+    if (!groupId) return '未分组';
+    const group = groups.find(g => g.id === groupId);
+    return group?.name ?? '未知分组';
+  };
+
+  const isGroupFullySelected = (groupId: string) => {
+    const groupAccountIds = accounts
+      .filter(a => a.groupId === groupId)
+      .map(a => a.id);
+    return groupAccountIds.length > 0 && groupAccountIds.every(id => selectedAccountIds.includes(id));
+  };
+
+  const isGroupPartiallySelected = (groupId: string) => {
+    const groupAccountIds = accounts
+      .filter(a => a.groupId === groupId)
+      .map(a => a.id);
+    const selectedCount = groupAccountIds.filter(id => selectedAccountIds.includes(id)).length;
+    return selectedCount > 0 && selectedCount < groupAccountIds.length;
   };
 
   return (
@@ -362,6 +461,122 @@ function CreateTaskModal({
               </button>
             ))}
           </div>
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>选择账号 {selectedAccountIds.length > 0 && `(${selectedAccountIds.length}已选)`}</label>
+          {/* Group chips */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+            {groups.map(group => {
+              const isFullySelected = isGroupFullySelected(group.id);
+              const isPartiallySelected = isGroupPartiallySelected(group.id);
+              const isExpanded = expandedGroups.has(group.id);
+              return (
+                <button
+                  key={group.id}
+                  className={`btn ${isFullySelected ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{
+                    fontSize: 12,
+                    padding: '4px 10px',
+                    borderColor: group.color,
+                    color: isFullySelected ? '#fff' : group.color,
+                    background: isFullySelected ? group.color : 'transparent',
+                  }}
+                  onClick={() => {
+                    toggleGroupSelection(group.id);
+                    toggleGroup(group.id);
+                  }}
+                >
+                  {group.name} {isPartiallySelected && '(部分)'}
+                </button>
+              );
+            })}
+            {groups.length === 0 && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>暂无可用分组</span>
+            )}
+          </div>
+          {/* Expanded group accounts */}
+          {groups.filter(g => expandedGroups.has(g.id)).map(group => {
+            const groupAccounts = accounts.filter(a => a.groupId === group.id);
+            if (groupAccounts.length === 0) return null;
+            return (
+              <div key={group.id} style={{
+                marginTop: 'var(--space-sm)',
+                padding: 'var(--space-sm)',
+                background: 'var(--bg-elevated)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)' }}>
+                  {group.name}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+                  {groupAccounts.map(account => (
+                    <label
+                      key={account.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 12,
+                        padding: '2px 6px',
+                        background: selectedAccountIds.includes(account.id) ? 'var(--primary)' : 'var(--bg-base)',
+                        color: selectedAccountIds.includes(account.id) ? '#fff' : 'inherit',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAccountIds.includes(account.id)}
+                        onChange={() => toggleAccountSelection(account.id)}
+                        style={{ display: 'none' }}
+                      />
+                      {account.displayName || account.username}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {/* Ungrouped accounts */}
+          {accounts.filter(a => !a.groupId).length > 0 && (
+            <div style={{
+              marginTop: 'var(--space-sm)',
+              padding: 'var(--space-sm)',
+              background: 'var(--bg-elevated)',
+              borderRadius: 'var(--radius-md)',
+            }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 'var(--space-xs)' }}>
+                未分组
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-xs)' }}>
+                {accounts.filter(a => !a.groupId).map(account => (
+                  <label
+                    key={account.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 12,
+                      padding: '2px 6px',
+                      background: selectedAccountIds.includes(account.id) ? 'var(--primary)' : 'var(--bg-base)',
+                      color: selectedAccountIds.includes(account.id) ? '#fff' : 'inherit',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAccountIds.includes(account.id)}
+                      onChange={() => toggleAccountSelection(account.id)}
+                      style={{ display: 'none' }}
+                    />
+                    {account.displayName || account.username}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>
@@ -398,7 +613,7 @@ function CreateTaskModal({
           <button
             className="btn btn-primary"
             onClick={handleCreate}
-            disabled={creating || !title.trim()}
+            disabled={creating || !title.trim() || selectedAccountIds.length === 0}
           >
             {creating ? '创建中...' : '创建'}
           </button>
