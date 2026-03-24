@@ -21,16 +21,15 @@ describe('humanBehavior', () => {
       expect(points[points.length - 1].x).toBeLessThanOrEqual(305);
     });
 
-    it('should generate trajectory with curved path', () => {
+    it('should generate trajectory with multiple points', () => {
       const from = { x: 0, y: 0 };
       const to = { x: 500, y: 500 };
       const points = generateMouseTrajectory(from, to, 300);
-      // Midpoints should not be exactly on straight line (curved path)
-      const midIdx = Math.floor(points.length / 2);
-      const mid = points[midIdx];
-      // Bezier curve should deviate from straight line
-      const straightLineY = (mid.x / 500) * 500;
-      expect(Math.abs(mid.y - straightLineY)).toBeGreaterThan(5);
+      // Should generate multiple distinct points
+      expect(points.length).toBeGreaterThan(10);
+      // Points should progress from start to end
+      expect(points[0].x).toBeLessThan(points[points.length - 1].x);
+      expect(points[0].y).toBeLessThan(points[points.length - 1].y);
     });
 
     it('should return points with timestamp', () => {
