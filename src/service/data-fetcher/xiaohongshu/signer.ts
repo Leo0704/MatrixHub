@@ -280,7 +280,7 @@ export async function sign_with_playwright(
   return {
     'X-S': x_s,
     'X-T': x_t,
-    'x-S-Common': _build_xs_common(a1, b1, x_s, x_t),
+    'X-S-Common': _build_xs_common(a1, b1, x_s, x_t),
     'X-B3-Traceid': get_trace_id(),
   };
 }
@@ -319,7 +319,7 @@ export async function pre_headers_with_playwright(
   return {
     'X-S': signs['X-S'],
     'X-T': signs['X-T'],
-    'x-S-Common': signs['x-S-Common'],
+    'X-S-Common': signs['X-S-Common'],
     'X-B3-Traceid': signs['X-B3-Traceid'],
   };
 }
