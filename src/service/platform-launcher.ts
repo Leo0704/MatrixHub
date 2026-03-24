@@ -104,7 +104,7 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
 
   // 启动浏览器
   const browser = await chromium.launch({
-    headless: false,  // 开发模式可见，生产模式可改为 true
+    headless: !process.env.DEV_DEBUG_BROWSER,
     args,
   });
 

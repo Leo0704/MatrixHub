@@ -5,6 +5,19 @@
  */
 
 /**
+ * 防护 Prompt 注入
+ * 转义用户输入中的 XML 特殊字符，防止注入攻击
+ */
+export function sanitizeForPrompt(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/**
  * 系统提示词
  */
 export const PAGE_AGENT_SYSTEM_PROMPT = `You are an AI agent designed to operate in an iterative loop to automate browser tasks. Your ultimate goal is accomplishing the task provided in <user_request>.
@@ -147,7 +160,7 @@ export function buildUserPrompt(params: {
 
   let prompt = '<agent_state>\n';
   prompt += '<user_request>\n';
-  prompt += `${task}\n`;
+  prompt += `${sanitizeForPrompt(task)}\n`;
   prompt += '</user_request>\n';
   prompt += '<step_info>\n';
   prompt += `Step ${step + 1} of ${maxSteps} max possible steps\n`;
