@@ -382,6 +382,8 @@ git commit -m "feat: 新建 StrategyEngine — Prompt 构造和输出解析"
 
 **文件:** `src/service/ai-director.ts` (新建)
 
+**循环依赖说明：** `ai-director.ts` 顶层 import `taskQueue`，`queue.ts` 动态 import `ai-director.js`。ES modules 保证：queue.ts 的 `import('./ai-director.js')` 会等待 ai-director.ts 完全加载完毕（包括其顶层 import）后才 resolve，因此是安全的。
+
 - [ ] **Step 1: 创建文件**
 
 ```typescript
@@ -645,13 +647,6 @@ git add src/service/ai-director.ts
 git commit -m "feat: 新建 AIDirector — 调度总入口"
 ```
 
-- [ ] **Step 3: 提交**
-
-```bash
-git add src/service/ai-director.ts
-git commit -m "feat: 新建 AIDirector — 调度总入口"
-```
-
 ---
 
 ### Task 5: 修改 src/service/queue.ts — 增加 updateField 方法并接入 analyzeFailure
@@ -667,6 +662,11 @@ git commit -m "feat: 新建 AIDirector — 调度总入口"
 updateField(taskId: string, field: string, value: unknown): Task | null {
   const db = getDb()
   const now = Date.now()
+  // field 使用白名单，禁止动态拼接防止 SQL 注入
+  const allowedFields = ['ai_analysis_count']
+  if (!allowedFields.includes(field)) {
+    throw new Error(`updateField: 不允许更新字段 ${field}`)
+  }
   db.prepare(`UPDATE tasks SET ${field} = ?, updated_at = ?, version = version + 1 WHERE id = ?`)
     .run(value, now, taskId)
   return this.get(taskId)
@@ -782,9 +782,12 @@ function scheduleAI(): void {
 
   // 每日简报检查（每分钟）
   const checkDaily = () => {
+    // 北京时间 = UTC时间 + 8小时
     const now = new Date()
-    const beijingHour = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' })).getHours()
-    const beijingMinute = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' })).getMinutes()
+    const beijingMs = now.getTime() + 8 * 60 * 60 * 1000
+    const beijingDate = new Date(beijingMs)
+    const beijingHour = Math.floor((beijingMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000))
+    const beijingMinute = Math.floor((beijingMs % (60 * 60 * 1000)) / (60 * 1000))
     if (beijingHour === 8 && beijingMinute < 5) {
       // 全局视角，所有平台一起分析
       dailyBriefingAll().catch(err => log.error('[Service] 每日简报失败:', err))
