@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { Task, Platform, AccountGroup, Account } from '~shared/types';
+import { useToast } from '../components/Toast';
+
+const PAGE_SIZE = 50;
 
 export default function ContentManagement() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -7,12 +10,14 @@ export default function ContentManagement() {
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | Platform>('all');
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const { showToast } = useToast();
 
   useEffect(() => {
-    loadTasks();
+    loadTasks(0);
 
     window.electronAPI?.onTaskCreated((task) => {
-      setTasks(prev => [task, ...prev]);
+      setTasks(prev => [task, ...prev].slice(0, 1000)); // 最多保留1000条
     });
 
     window.electronAPI?.onTaskUpdated((task) => {
@@ -25,15 +30,29 @@ export default function ContentManagement() {
     };
   }, []);
 
-  const loadTasks = async () => {
+  const loadTasks = async (offset: number) => {
     try {
-      const result = await window.electronAPI?.listTasks({ type: 'publish' });
-      setTasks(result ?? []);
+      const result = await window.electronAPI?.listTasks({
+        type: 'publish',
+        limit: PAGE_SIZE,
+        offset,
+      });
+      if (offset === 0) {
+        setTasks(result ?? []);
+      } else {
+        setTasks(prev => [...prev, ...(result ?? [])]);
+      }
     } catch (error) {
-      console.error('加载任务失败:', error);
+      showToast('加载任务失败', 'error');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    const nextPage = currentPage + 1;
+    setCurrentPage(nextPage);
+    loadTasks(nextPage * PAGE_SIZE);
   };
 
   const handleCancel = async (taskId: string) => {
@@ -44,11 +63,15 @@ export default function ContentManagement() {
     await window.electronAPI?.retryTask(taskId);
   };
 
-  const filteredTasks = tasks.filter(task => {
-    if (filter !== 'all' && task.status !== filter) return false;
-    if (selectedPlatform !== 'all' && task.platform !== selectedPlatform) return false;
-    return true;
-  });
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      if (filter !== 'all' && task.status !== filter) return false;
+      if (selectedPlatform !== 'all' && task.platform !== selectedPlatform) return false;
+      return true;
+    });
+  }, [tasks, filter, selectedPlatform]);
+
+  const hasMore = tasks.length >= PAGE_SIZE;
 
   if (loading) {
     return <div className="empty-state"><div className="empty-state-icon">⏳</div><p>加载中...</p></div>;
@@ -124,6 +147,17 @@ export default function ContentManagement() {
               onRetry={() => handleRetry(task.id)}
             />
           ))
+        )}
+
+        {hasMore && (
+          <div style={{ textAlign: 'center', marginTop: 'var(--space-lg)' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={handleLoadMore}
+            >
+              加载更多
+            </button>
+          </div>
         )}
       </div>
 
@@ -314,11 +348,14 @@ function CreateTaskModal({
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [enableInterval, setEnableInterval] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(5);
 
   useEffect(() => {
     loadGroups();
     loadAccounts();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform]);
 
   const loadGroups = async () => {
     try {
@@ -332,7 +369,8 @@ function CreateTaskModal({
   const loadAccounts = async () => {
     try {
       const result = await window.electronAPI?.listAccounts();
-      setAccounts(result ?? []);
+      // 按选择的平台过滤账号
+      setAccounts((result ?? []).filter(a => a.platform === platform));
     } catch (error) {
       console.error('加载账号失败:', error);
     }
@@ -382,7 +420,16 @@ function CreateTaskModal({
     setCreating(true);
     try {
       // Create one task per selected account
-      for (const accountId of selectedAccountIds) {
+      // If interval is enabled, each task is scheduled at different times
+      const baseTime = enableInterval ? Date.now() : 0;
+
+      for (let i = 0; i < selectedAccountIds.length; i++) {
+        const accountId = selectedAccountIds[i];
+        // Calculate scheduled time: baseTime + (index * intervalMinutes)
+        const scheduledAt = enableInterval
+          ? baseTime + (i * intervalMinutes * 60 * 1000)
+          : undefined;
+
         const task = await window.electronAPI?.createTask({
           type: 'publish',
           platform,
@@ -392,6 +439,7 @@ function CreateTaskModal({
             content: content.trim(),
             accountId,
           },
+          scheduledAt,
         });
         if (task) {
           onCreated(task);
@@ -589,6 +637,56 @@ function CreateTaskModal({
             onChange={e => setContent(e.target.value)}
           />
         </div>
+
+        {/* 间隔发布选项 */}
+        {selectedAccountIds.length > 1 && (
+          <div style={{
+            marginBottom: 'var(--space-lg)',
+            padding: 'var(--space-md)',
+            background: 'var(--bg-overlay)',
+            borderRadius: 'var(--radius-md)',
+          }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-sm)',
+              cursor: 'pointer',
+            }}>
+              <input
+                type="checkbox"
+                checked={enableInterval}
+                onChange={e => setEnableInterval(e.target.checked)}
+              />
+              <span style={{ fontSize: 13, fontWeight: 500 }}>启用间隔发布</span>
+            </label>
+            {enableInterval && (
+              <div style={{
+                marginTop: 'var(--space-sm)',
+                marginLeft: 24,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-sm)',
+              }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>每</span>
+                <input
+                  type="number"
+                  className="input"
+                  style={{ width: 60, textAlign: 'center' }}
+                  min="1"
+                  max="1440"
+                  value={intervalMinutes}
+                  onChange={e => setIntervalMinutes(Math.max(1, parseInt(e.target.value) || 1))}
+                />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>分钟发布下一个</span>
+              </div>
+            )}
+            {enableInterval && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, marginLeft: 24 }}>
+                提示：{selectedAccountIds.length}个账号将分别在 {intervalMinutes} 分钟间隔后依次发布
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary" onClick={onClose}>
