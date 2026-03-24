@@ -78,18 +78,23 @@ export function registerIpcHandlers(): void {
     cookies?: string;
     tokens?: Record<string, string>;
   }) => {
-    const account = accountManager.add({
-      platform: params.platform,
-      username: params.username,
-      displayName: params.displayName,
-      avatar: params.avatar,
-      password: params.password,
-      cookies: params.cookies,
-      tokens: params.tokens,
-    });
+    try {
+      const account = await accountManager.add({
+        platform: params.platform,
+        username: params.username,
+        displayName: params.displayName,
+        avatar: params.avatar,
+        password: params.password,
+        cookies: params.cookies,
+        tokens: params.tokens,
+      });
 
-    broadcastToRenderers('account:added', account);
-    return account;
+      broadcastToRenderers('account:added', account);
+      return account;
+    } catch (error) {
+      log.error('Failed to add account:', error);
+      return { success: false, error: (error as Error).message };
+    }
   });
 
   ipcMain.handle('account:update', async (_event, { accountId, updates }: { accountId: string; updates: any }) => {
@@ -165,8 +170,101 @@ export function registerIpcHandlers(): void {
     }
   });
 
+  // 测试 AI 连接连通性
+  ipcMain.handle('ai:test-connection', async (_event, params: { baseUrl: string; apiKey: string; model: string }) => {
+    try {
+      const response = await fetch(`${params.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${params.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: params.model,
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 5,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return { success: false, error: `HTTP ${response.status}: ${errorText}` };
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        return { success: false, error: data.error.message || JSON.stringify(data.error) };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
   ipcMain.handle('ai:circuit-status', async (_event, { providerType }: { providerType: string }) => {
     return aiGateway.getCircuitBreakerStatus(providerType as any);
+  });
+
+  // ============ 任务类型绑定相关 ============
+
+  ipcMain.handle('ai:bind-task-type', async (_event, params: {
+    taskType: 'text' | 'image' | 'video' | 'voice';
+    providerId: string;
+  }) => {
+    try {
+      await aiGateway.bindTaskType(params.taskType, params.providerId);
+      return { success: true };
+    } catch (error) {
+      log.error('Failed to bind task type:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('ai:get-task-type-bindings', async () => {
+    const bindings = aiGateway.getTaskTypeBindings();
+    const result: Record<string, { id: string; name: string; type: string; models: string[] }> = {};
+    for (const [taskType, provider] of bindings) {
+      result[taskType] = {
+        id: provider.id,
+        name: provider.name,
+        type: provider.type,
+        models: provider.models,
+      };
+    }
+    return result;
+  });
+
+  // 获取任务类型 AI 配置（不返回 apiKey，只返回是否有配置）
+  ipcMain.handle('ai:get-task-ai-configs', async () => {
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM task_ai_configs').all() as any[];
+    const result: Record<string, { baseUrl: string; hasApiKey: boolean; model: string }> = {};
+    for (const row of rows) {
+      result[row.task_type] = {
+        baseUrl: row.base_url || '',
+        hasApiKey: !!(row.api_key), // 只返回是否有 API Key，不返回实际值
+        model: row.model || '',
+      };
+    }
+    return result;
+  });
+
+  // 保存任务类型 AI 配置
+  ipcMain.handle('ai:save-task-ai-config', async (_event, params: { taskType: string; config: { baseUrl: string; apiKey: string; model: string } }) => {
+    const db = getDb();
+    const { taskType, config } = params;
+
+    // 先删除旧的
+    db.prepare('DELETE FROM task_ai_configs WHERE task_type = ?').run(taskType);
+
+    // 插入新的
+    db.prepare(`
+      INSERT INTO task_ai_configs (task_type, base_url, api_key, model, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(taskType, config.baseUrl, config.apiKey, config.model, Date.now(), Date.now());
+
+    return { success: true };
   });
 
   // ============ 选择器相关 ============
@@ -277,7 +375,7 @@ export function registerIpcHandlers(): void {
 /**
  * 向所有渲染进程广播消息
  */
-function broadcastToRenderers(channel: string, data: any): void {
+export function broadcastToRenderers(channel: string, data: any): void {
   BrowserWindow.getAllWindows().forEach(win => {
     win.webContents.send(channel, data);
   });

@@ -8,7 +8,7 @@ export type PromptType = 'failure' | 'daily' | 'hot_topic'
 /**
  * 构造 failure 类型的上下文（从数据库实时查询）
  */
-function buildFailureContext(task: Task): object {
+export function buildFailureContext(task: Task): object {
   const db = getDb()
 
   // 该平台历史失败记录（最近 5 条）
@@ -45,7 +45,7 @@ function buildFailureContext(task: Task): object {
 /**
  * 构造 daily 类型的上下文（从数据库实时查询）
  */
-function buildDailyContext(platform: Platform): object {
+export function buildDailyContext(platform: Platform): object {
   const db = getDb()
   const today = new Date().setHours(0, 0, 0, 0)
   const yesterday = today - 86400000
@@ -94,7 +94,7 @@ function buildDailyContext(platform: Platform): object {
 /**
  * 构造 hot_topic 类型的上下文
  */
-function buildHotTopicContext(platform: Platform, hotTopic: { keyword: string; heatScore: number }): object {
+export function buildHotTopicContext(platform: Platform, hotTopic: { keyword: string; heatScore: number }): object {
   const db = getDb()
 
   // 该平台近 7 天发布的主题

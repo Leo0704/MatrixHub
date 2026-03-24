@@ -107,20 +107,27 @@ export class TaskQueue {
   }
 
   /**
-   * 获取下一个待执行任务
+   * 获取下一个待执行任务（原子性出队，防止竞态条件）
+   * 使用 UPDATE ... RETURNING 确保任务只被一个 worker 拾取
    */
   dequeue(): Task | null {
     const db = getDb();
     const now = Date.now();
 
-    // 查找 pending 或 deferred 且已到执行时间的任务
+    // 原子性：SELECT + UPDATE status = 'running' 在同一个语句中
+    // 这防止了多个 worker 同时获取同一个任务的问题
     const row = db.prepare(`
-      SELECT * FROM tasks
-      WHERE (status = 'pending' OR status = 'deferred')
-        AND (scheduled_at IS NULL OR scheduled_at <= ?)
-      ORDER BY created_at ASC
-      LIMIT 1
-    `).get(now) as any;
+      UPDATE tasks
+      SET status = 'running', updated_at = ?, version = version + 1
+      WHERE id = (
+        SELECT id FROM tasks
+        WHERE (status = 'pending' OR status = 'deferred')
+          AND (scheduled_at IS NULL OR scheduled_at <= ?)
+        ORDER BY created_at ASC
+        LIMIT 1
+      )
+      RETURNING *
+    `).get(now, now) as any;
 
     if (row) {
       return this.rowToTask(row);
@@ -317,6 +324,24 @@ export class TaskQueue {
       updatedAt: row.updated_at,
       version: row.version,
     };
+  }
+
+  /**
+   * 更新任务的任意字段（用于 AI 分析次数跟踪等）
+   */
+  updateField(taskId: string, field: string, value: unknown): Task | null {
+    const db = getDb();
+    const now = Date.now();
+    const validFields = ['ai_analysis_count', 'version'];
+    if (!validFields.includes(field)) {
+      log.warn(`[TaskQueue] updateField: invalid field "${field}"`);
+      return null;
+    }
+    const dbField = field === 'ai_analysis_count' ? 'ai_analysis_count' : field;
+    db.prepare(`
+      UPDATE tasks SET ${dbField} = ?, updated_at = ?, version = version + 1 WHERE id = ?
+    `).run(value, now, taskId);
+    return this.get(taskId);
   }
 }
 
