@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
-  Platform, TaskType, Task, TaskStatus, TaskFilter,
+  Platform, TaskType, Task, TaskFilter,
   Account, AIRequest, AIResponse,
 } from '../shared/types.js';
 
@@ -36,10 +36,20 @@ export interface ElectronAPI {
     password: string;
     cookies?: string;
     tokens?: Record<string, string>;
+    groupId?: string;
+    tags?: string[];
   }) => Promise<Account | { success: false; error: string }>;
-  updateAccount: (accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status'>>) => Promise<Account | null>;
+  updateAccount: (accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status' | 'groupId' | 'tags'>>) => Promise<Account | null>;
   removeAccount: (accountId: string) => Promise<{ success: boolean }>;
   validateAccount: (accountId: string) => Promise<boolean>;
+
+  // 分组管理
+  createGroup: (name: string, color?: string) => Promise<{ id: string; name: string; color: string; sortOrder: number }>;
+  updateGroup: (id: string, updates: { name?: string; color?: string; sortOrder?: number }) => Promise<{ id: string; name: string; color: string; sortOrder: number } | null>;
+  deleteGroup: (groupId: string) => Promise<{ success: boolean }>;
+  listGroups: () => Promise<Array<{ id: string; name: string; color: string; sortOrder: number }>>;
+  getGroup: (groupId: string) => Promise<{ id: string; name: string; color: string; sortOrder: number } | null>;
+  reorderGroups: (groups: { id: string; sortOrder: number }[]) => Promise<{ success: boolean }>;
 
   // 限流
   getRateStatus: (platform: Platform) => Promise<{
@@ -136,7 +146,14 @@ export interface ElectronAPI {
     createdAt: number;
   }>>;
   acknowledgeAlert: (alertId: string) => Promise<{ success: boolean }>;
-  getDashboardData: () => Promise<Record<string, unknown>>;
+  getDashboardData: () => Promise<{
+    todayPublishCount: number;
+    successRate: number;
+    pendingTasks: number;
+    failedTasks24h: number;
+    recentAlerts: { id: string; level: string; message: string; createdAt: number }[];
+    accountHealth: { platform: Platform; status: string }[];
+  }>;
   getMetrics: (name: string, from?: number, to?: number, limit?: number) => Promise<Array<{
     name: string;
     value: number;
@@ -150,6 +167,9 @@ export interface ElectronAPI {
   onAccountAdded: (callback: (account: Account) => void) => void;
   onAccountUpdated: (callback: (account: Account) => void) => void;
   onAccountRemoved: (callback: (data: { accountId: string }) => void) => void;
+  onGroupCreated: (callback: (group: any) => void) => void;
+  onGroupUpdated: (callback: (group: any) => void) => void;
+  onGroupDeleted: (callback: (data: { groupId: string }) => void) => void;
 
   // 移除监听
   removeAllListeners: (channel: string) => void;
@@ -170,6 +190,14 @@ const api: ElectronAPI = {
   updateAccount: (accountId, updates) => ipcRenderer.invoke('account:update', { accountId, updates }),
   removeAccount: (accountId) => ipcRenderer.invoke('account:remove', { accountId }),
   validateAccount: (accountId) => ipcRenderer.invoke('account:validate', { accountId }),
+
+  // ============ 分组管理 ============
+  createGroup: (name, color) => ipcRenderer.invoke('group:create', { name, color }),
+  updateGroup: (id, updates) => ipcRenderer.invoke('group:update', { id, ...updates }),
+  deleteGroup: (groupId) => ipcRenderer.invoke('group:delete', { groupId }),
+  listGroups: () => ipcRenderer.invoke('group:list'),
+  getGroup: (groupId) => ipcRenderer.invoke('group:get', { groupId }),
+  reorderGroups: (groups) => ipcRenderer.invoke('group:reorder', { groups }),
 
   // ============ 限流 ============
   getRateStatus: (platform) => ipcRenderer.invoke('rate:status', { platform }),
@@ -236,6 +264,18 @@ const api: ElectronAPI = {
 
   onAccountRemoved: (callback) => {
     ipcRenderer.on('account:removed', (_event, data) => callback(data));
+  },
+
+  onGroupCreated: (callback) => {
+    ipcRenderer.on('group:created', (_, g) => callback(g));
+  },
+
+  onGroupUpdated: (callback) => {
+    ipcRenderer.on('group:updated', (_, g) => callback(g));
+  },
+
+  onGroupDeleted: (callback) => {
+    ipcRenderer.on('group:deleted', (_, d) => callback(d));
   },
 
   removeAllListeners: (channel) => {
