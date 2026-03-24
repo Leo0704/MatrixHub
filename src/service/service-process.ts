@@ -7,6 +7,7 @@ import { taskQueue } from './queue.js';
 import { rateLimiter } from './rate-limiter.js';
 import { selectorManager } from './selector-versioning.js';
 import { aiGateway, AIProviderType } from './ai-gateway.js';
+import { dailyBriefingAll, checkHotTopics } from './ai-director.js';
 import type { Task, Platform, AIRequest } from '../shared/types.js';
 import log from 'electron-log';
 import { parentPort, workerData } from 'worker_threads';
@@ -34,6 +35,44 @@ export async function startServiceLoop(): Promise<void> {
 
   // 加载 AI Gateway
   aiGateway.loadProviders();
+
+  // 注册每日 08:00 AI 简报（北京时间）
+  // 以及热点检测（每4小时）
+  function scheduleAI(): void {
+    const platforms: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
+
+    // 每日简报检查（每分钟）
+    const checkDaily = () => {
+      // 北京时间 = UTC时间 + 8小时
+      const now = new Date();
+      const beijingMs = now.getTime() + 8 * 60 * 60 * 1000;
+      const beijingHour = Math.floor((beijingMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+      const beijingMinute = Math.floor((beijingMs % (60 * 60 * 1000)) / (60 * 1000));
+      if (beijingHour === 8 && beijingMinute < 5) {
+        // 全局视角，所有平台一起分析
+        dailyBriefingAll().catch(err => log.error('[Service] 每日简报失败:', err));
+      }
+    };
+
+    // 热点检测（每4小时）
+    let lastHotTopicCheck = 0;
+    const HOT_TOPIC_INTERVAL = 4 * 60 * 60 * 1000;  // 4小时
+    const runHotTopicCheck = () => {
+      const now = Date.now();
+      if (now - lastHotTopicCheck >= HOT_TOPIC_INTERVAL) {
+        lastHotTopicCheck = now;
+        for (const platform of platforms) {
+          checkHotTopics(platform).catch(err => log.error('[Service] 热点检测失败:', err));
+        }
+      }
+    };
+
+    setInterval(() => { checkDaily(); runHotTopicCheck(); }, 60000);
+    checkDaily();
+    runHotTopicCheck();
+  }
+
+  scheduleAI();
 
   while (isRunning) {
     try {
