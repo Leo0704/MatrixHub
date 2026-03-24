@@ -270,3 +270,19 @@ export class PlatformAutomation {
 }
 
 export const platformAutomation = new PlatformAutomation();
+
+// ============ Data Fetcher 辅助函数 ============
+
+/**
+ * 为 data-fetcher 创建页面
+ * 与普通 automation 不同的页面设置
+ */
+export async function createFetcherPage(platform: Platform): Promise<Page> {
+  const page = await createPage(platform);
+
+  // 设置更长的超时
+  page.setDefaultTimeout(60000);
+  page.setDefaultNavigationTimeout(120000);
+
+  return page;
+}
