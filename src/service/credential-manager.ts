@@ -327,6 +327,8 @@ export class AccountManager {
     displayName: string;
     avatar?: string;
     password: string;
+    groupId?: string;
+    tags?: string[];
     cookies?: string;
     tokens?: Record<string, string>;
   }): Promise<Account> {
@@ -341,6 +343,8 @@ export class AccountManager {
       displayName: params.displayName,
       avatar: params.avatar,
       status: 'active',
+      groupId: params.groupId,
+      tags: params.tags ?? [],
       createdAt: now,
       updatedAt: now,
     };
@@ -348,8 +352,8 @@ export class AccountManager {
     // 使用事务包装，确保 account 创建和 credential 存储的原子性
     const transaction = db.transaction(() => {
       db.prepare(`
-        INSERT INTO accounts (id, platform, username, display_name, avatar, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO accounts (id, platform, username, display_name, avatar, status, group_id, tags, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         account.id,
         account.platform,
@@ -357,6 +361,8 @@ export class AccountManager {
         account.displayName,
         account.avatar ?? null,
         account.status,
+        account.groupId ?? null,
+        JSON.stringify(account.tags),
         account.createdAt,
         account.updatedAt
       );
@@ -396,19 +402,27 @@ export class AccountManager {
   /**
    * 列出账号
    */
-  list(platform?: Platform): Account[] {
+  list(options?: { platform?: Platform; groupId?: string }): Account[] {
     const db = getDb();
-    const rows = platform
-      ? db.prepare('SELECT * FROM accounts WHERE platform = ? ORDER BY created_at DESC').all(platform)
-      : db.prepare('SELECT * FROM accounts ORDER BY created_at DESC').all();
-
+    let query = 'SELECT * FROM accounts WHERE 1=1';
+    const params: any[] = [];
+    if (options?.platform) {
+      query += ' AND platform = ?';
+      params.push(options.platform);
+    }
+    if (options?.groupId) {
+      query += ' AND group_id = ?';
+      params.push(options.groupId);
+    }
+    query += ' ORDER BY created_at DESC';
+    const rows = db.prepare(query).all(...params);
     return (rows as any[]).map(r => this.rowToAccount(r));
   }
 
   /**
    * 更新账号
    */
-  update(accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status'>>): Account | null {
+  update(accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status' | 'groupId' | 'tags'>>): Account | null {
     const db = getDb();
     const now = Date.now();
 
@@ -426,6 +440,14 @@ export class AccountManager {
     if (updates.status !== undefined) {
       sets.push('status = ?');
       values.push(updates.status);
+    }
+    if (updates.groupId !== undefined) {
+      sets.push('group_id = ?');
+      values.push(updates.groupId);
+    }
+    if (updates.tags !== undefined) {
+      sets.push('tags = ?');
+      values.push(JSON.stringify(updates.tags));
     }
 
     values.push(accountId);
@@ -466,6 +488,8 @@ export class AccountManager {
       displayName: row.display_name,
       avatar: row.avatar ?? undefined,
       status: row.status as Account['status'],
+      groupId: row.group_id ?? undefined,
+      tags: row.tags ? JSON.parse(row.tags) : [],
       lastUsedAt: row.last_used_at ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
