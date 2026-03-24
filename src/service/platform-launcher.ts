@@ -4,10 +4,29 @@ import * as fs from 'fs';
 import { app } from 'electron';
 import log from 'electron-log';
 import type { Platform } from '../shared/types.js';
+import { jitterDelay } from './utils/page-helpers.js';
+import { getFingerprintScript } from './utils/fingerprint-randomizer.js';
 
 // 浏览器实例缓存（按平台区分）
 const browserPool: Map<Platform, Browser> = new Map();
 const contextPool: Map<string, BrowserContext> = new Map();
+
+// 页面池 - 按账号隔离，每个账号保持登录状态
+interface PooledPage {
+  page: Page;
+  platform: Platform;
+  accountId: string | null;  // 账号标识，null 表示未登录
+  inUse: boolean;
+  lastUsed: number;
+  useCount: number;
+  isLoggedIn: boolean;
+  closeHandler?: () => void;  // 保存关闭事件处理器引用，用于清理
+}
+const pagePool: PooledPage[] = [];
+const MAX_POOL_SIZE_PER_PLATFORM = 5;
+
+// 重要：页面池按账号隔离，不复用跨账号页面
+// 登录状态必须保持，不能超时关闭
 
 // 各平台 URL
 const PLATFORM_URLS: Record<Platform, string> = {
@@ -37,6 +56,8 @@ export async function getBrowser(platform: Platform): Promise<Browser> {
     browser.on('disconnected', () => {
       log.warn(`浏览器断开连接: ${platform}`);
       browserPool.delete(platform);
+      // 清理关联的 context
+      contextPool.delete(platform);
     });
   }
 
@@ -99,12 +120,11 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
   contextPool.set(platform, context);
 
   // 注入反检测脚本（运行在浏览器中）
-  await context.addInitScript(`// 反检测
-    Object.defineProperty(navigator, 'webdriver', {
-      get: () => false,
-      configurable: true,
-    });
-    // 模拟 Chrome runtime
+  // 组合：指纹随机化 + Chrome runtime 模拟
+  await context.addInitScript(`
+    ${getFingerprintScript()}
+
+    // 模拟 Chrome runtime（原有功能保留）
     globalThis.chrome = {
       runtime: { id: undefined, getURL: (s) => s },
       app: {},
@@ -117,9 +137,49 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
 }
 
 /**
- * 为指定平台创建新页面
+ * 为指定平台创建新页面（按账号隔离的页面池）
+ * 关键原则：按 (platform, accountId) 隔离，保持登录状态
  */
-export async function createPage(platform: Platform): Promise<Page> {
+export async function createPage(platform: Platform, accountId?: string): Promise<Page> {
+  // 查找匹配的已登录页面（按账号隔离）
+  if (accountId) {
+    const pooled = pagePool.find(
+      p => p.platform === platform && p.accountId === accountId && !p.inUse
+    );
+    if (pooled && pooled.page.isConnected() && pooled.isLoggedIn) {
+      pooled.inUse = true;
+      pooled.lastUsed = Date.now();
+      pooled.useCount++;
+      log.debug(`[PagePool] 复用账号页面: ${platform}/${accountId} (复用次数: ${pooled.useCount})`);
+      return pooled.page;
+    }
+  }
+
+  // 查找通用未登录页面
+  const genericPooled = pagePool.find(
+    p => p.platform === platform && p.accountId === null && !p.inUse
+  );
+  if (genericPooled && genericPooled.page.isConnected()) {
+    genericPooled.inUse = true;
+    genericPooled.lastUsed = Date.now();
+    genericPooled.useCount++;
+    log.debug(`[PagePool] 复用通用页面: ${platform} (复用次数: ${genericPooled.useCount})`);
+    return genericPooled.page;
+  }
+
+  // 池已满，关闭一个空闲的同平台页面
+  const poolCount = pagePool.filter(p => p.platform === platform).length;
+  if (poolCount >= MAX_POOL_SIZE_PER_PLATFORM) {
+    const oldest = pagePool
+      .filter(p => p.platform === platform && !p.inUse && p.useCount > 1)
+      .sort((a, b) => a.lastUsed - b.lastUsed)[0];
+    if (oldest) {
+      log.debug(`[PagePool] 关闭多余页面: ${oldest.platform}/${oldest.accountId || '通用'}`);
+      removeFromPool(oldest);
+    }
+  }
+
+  // 创建新页面
   const browser = await getBrowser(platform);
   let context = contextPool.get(platform);
   if (!context) {
@@ -136,7 +196,101 @@ export async function createPage(platform: Platform): Promise<Page> {
   page.setDefaultTimeout(30000);
   page.setDefaultNavigationTimeout(60000);
 
+  // 添加到池
+  const pooledPage: PooledPage = {
+    page,
+    platform,
+    accountId: accountId ?? null,
+    inUse: true,
+    lastUsed: Date.now(),
+    useCount: 1,
+    isLoggedIn: false,
+  };
+
+  // 监听页面关闭事件
+  const closeHandler = () => {
+    const pooled = pagePool.find(p => p.page === page);
+    if (pooled) {
+      removeFromPool(pooled);
+    }
+  };
+  pooledPage.closeHandler = closeHandler;
+  page.on('close', closeHandler);
+
+  pagePool.push(pooledPage);
+
+  log.debug(`[PagePool] 创建新页面: ${platform}/${accountId || '通用'} (池大小: ${pagePool.length})`);
   return page;
+}
+
+/**
+ * 标记页面为已登录状态
+ */
+export function markPageLoggedIn(page: Page, accountId: string): void {
+  const pooled = pagePool.find(p => p.page === page);
+  if (pooled) {
+    pooled.isLoggedIn = true;
+    pooled.accountId = accountId;
+    log.debug(`[PagePool] 页面已登录: ${pooled.platform}/${accountId}`);
+  }
+}
+
+/**
+ * 归还页面到池中（不关闭，保持登录状态）
+ */
+export async function releasePage(page: Page): Promise<void> {
+  const pooled = pagePool.find(p => p.page === page);
+  if (pooled) {
+    pooled.inUse = false;
+    pooled.lastUsed = Date.now();
+    log.debug(`[PagePool] 归还页面: ${pooled.platform}/${pooled.accountId || '通用'} (登录状态: ${pooled.isLoggedIn})`);
+  }
+}
+
+/**
+ * 从池中移除页面
+ */
+function removeFromPool(pooled: PooledPage): void {
+  const idx = pagePool.indexOf(pooled);
+  if (idx !== -1) {
+    pagePool.splice(idx, 1);
+  }
+
+  // 移除事件监听器，避免内存泄漏
+  if (pooled.closeHandler) {
+    pooled.page.removeListener('close', pooled.closeHandler);
+  }
+
+  try {
+    pooled.page.close();
+  } catch (err) {
+    log.warn(`[PagePool] 关闭页面失败:`, err);
+  }
+}
+
+/**
+ * 获取页面池状态
+ */
+export function getPagePoolStatus(): {
+  total: number;
+  byPlatform: Record<string, { total: number; inUse: number; idle: number; loggedIn: number }>;
+} {
+  const byPlatform: Record<string, { total: number; inUse: number; idle: number; loggedIn: number }> = {};
+  for (const pooled of pagePool) {
+    if (!byPlatform[pooled.platform]) {
+      byPlatform[pooled.platform] = { total: 0, inUse: 0, idle: 0, loggedIn: 0 };
+    }
+    byPlatform[pooled.platform].total++;
+    if (pooled.inUse) {
+      byPlatform[pooled.platform].inUse++;
+    } else {
+      byPlatform[pooled.platform].idle++;
+    }
+    if (pooled.isLoggedIn) {
+      byPlatform[pooled.platform].loggedIn++;
+    }
+  }
+  return { total: pagePool.length, byPlatform };
 }
 
 /**
