@@ -4,16 +4,37 @@
 import type { Page } from 'playwright';
 import type { Platform } from '../../shared/types.js';
 import { getBaseUrl, getPublishSelectors, type SelectorItem } from '../config/selectors.js';
+import { generateMouseTrajectory, generateClickDelay, generateScrollPattern } from './human-behavior.js';
 import log from 'electron-log';
 
 // ============ 随机延迟 ============
 
 /**
  * 随机延迟（模拟真人操作，降低被检测风险）
+ * 使用 Box-Muller 变换生成正态分布随机数，更接近真人操作节奏
  */
 export async function randomDelay(minMs: number = 1000, maxMs: number = 3000): Promise<void> {
-  const delay = Math.floor(Math.random() * (maxMs - minMs)) + minMs;
-  await new Promise(resolve => setTimeout(resolve, delay));
+  // 使用正态分布（均值在中间，边缘概率低）
+  const mean = (minMs + maxMs) / 2;
+  const sigma = (maxMs - minMs) / 6; // 约 99.7% 的值落在 [min, max] 范围内
+
+  // Box-Muller 变换
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const delay = Math.round(mean + z * sigma);
+
+  // 限制在合理范围内
+  const boundedDelay = Math.max(minMs, Math.min(maxMs, delay));
+  await new Promise(resolve => setTimeout(resolve, boundedDelay));
+}
+
+/**
+ * 带抖动的延迟（用于轮询等场景）
+ */
+export async function jitterDelay(baseMs: number, jitterPercent: number = 0.3): Promise<void> {
+  const jitter = baseMs * jitterPercent * (Math.random() * 2 - 1);
+  await new Promise(resolve => setTimeout(resolve, Math.round(baseMs + jitter)));
 }
 
 // ============ 导航 ============
@@ -69,6 +90,59 @@ export async function trySelectors(
     }
   }
   return false;
+}
+
+// ============ 人类行为模拟 ============
+
+/**
+ * 人类般的点击：鼠标移动 + 犹豫 + 点击
+ */
+export async function humanClick(page: Page, selector: string): Promise<void> {
+  // 1. 获取元素位置
+  const box = await page.locator(selector).boundingBox();
+  if (!box) throw new Error(`Element not found: ${selector}`);
+
+  // 2. 获取当前鼠标位置（从 viewport 中心开始）
+  const viewport = page.viewportSize();
+  const startX = viewport ? viewport.width / 2 : 640;
+  const startY = viewport ? viewport.height / 2 : 480;
+
+  // 3. 目标位置（元素中心 + 随机偏移，模拟点击不精确）
+  const targetX = box.x + box.width / 2 + (Math.random() - 0.5) * box.width * 0.5;
+  const targetY = box.y + box.height / 2 + (Math.random() - 0.5) * box.height * 0.5;
+
+  // 4. 生成并执行鼠标轨迹
+  const trajectory = generateMouseTrajectory(
+    { x: startX, y: startY },
+    { x: targetX, y: targetY },
+    200 + Math.random() * 200
+  );
+
+  for (const point of trajectory) {
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(1);
+  }
+
+  // 5. 点击前犹豫
+  const clickDelay = generateClickDelay();
+  await page.waitForTimeout(clickDelay);
+
+  // 6. 点击
+  await page.mouse.click(targetX, targetY);
+}
+
+/**
+ * 人类般的滚动
+ */
+export async function humanScroll(page: Page, deltaY: number): Promise<void> {
+  const pattern = generateScrollPattern(Math.abs(deltaY));
+  const direction = deltaY > 0 ? 1 : -1;
+
+  for (const chunk of pattern) {
+    await page.waitForTimeout(chunk.pauseMs);
+    await page.mouse.wheel(0, chunk.deltaY * direction);
+    await page.waitForTimeout(20 + Math.random() * 30);
+  }
 }
 
 // ============ 登录状态检查 ============

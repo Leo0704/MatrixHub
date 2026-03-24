@@ -3,8 +3,9 @@
  */
 import type { Page } from 'playwright';
 import type { Platform, Task } from '../../shared/types.js';
-import { navigateTo, randomDelay, checkLoginState } from '../utils/page-helpers.js';
+import { navigateTo, randomDelay, checkLoginState, humanClick, humanScroll } from '../utils/page-helpers.js';
 import { getAutoSelectors, AUTOMATION_PATHS } from '../config/selectors.js';
+import { markPageLoggedIn } from '../platform-launcher.js';
 import log from 'electron-log';
 
 interface AutoReplyConfig {
@@ -49,6 +50,11 @@ export async function executeAutomationTask(
   const isLoggedIn = await checkLoginState(page, platform);
   if (!isLoggedIn) {
     throw new Error('账号未登录或 Session 已过期');
+  }
+
+  // 标记页面为已登录状态
+  if (payload.accountId) {
+    markPageLoggedIn(page, payload.accountId);
   }
 
   signal.throwIfAborted();
@@ -97,12 +103,12 @@ async function executeAutoReply(
 
   for (let i = 0; i < maxReplies && processed < maxReplies; i++) {
     await randomDelay(1000, 2000);
-    await page.evaluate(() => window.scrollBy(0, 300));
+    await humanScroll(page, 300);
     await randomDelay(500, 1000);
 
     for (const sel of commentInputSelectors) {
       try {
-        await page.click(sel.value);
+        await humanClick(page, sel.value);
         await randomDelay(300, 600);
         await page.fill(sel.value, replyText);
         await randomDelay(200, 500);
@@ -140,12 +146,12 @@ async function executeAutoLike(
 
   for (let i = 0; i < maxLikes; i++) {
     await randomDelay(1500, 3000);
-    await page.evaluate(() => window.scrollBy(0, 400));
+    await humanScroll(page, 400);
     await randomDelay(800, 1500);
 
     for (const sel of likeSelectors) {
       try {
-        await page.click(sel.value);
+        await humanClick(page, sel.value);
         liked++;
         log.info(`[Service] 已点赞第 ${liked} 个内容`);
         await randomDelay(500, 1000);
@@ -180,7 +186,7 @@ async function executeAutoFollow(
 
   for (let i = 0; i < maxFollows; i++) {
     await randomDelay(1500, 3000);
-    await page.evaluate(() => window.scrollBy(0, 300));
+    await humanScroll(page, 300);
     await randomDelay(500, 1000);
 
     for (const sel of followSelectors) {
@@ -192,7 +198,7 @@ async function executeAutoFollow(
             continue;
           }
         }
-        await page.click(sel.value);
+        await humanClick(page, sel.value);
         followed++;
         log.info(`[Service] 已关注第 ${followed} 个用户`);
         await randomDelay(800, 1500);
@@ -226,7 +232,7 @@ async function executeCommentManagement(
   const commentSelectors = getAutoSelectors(platform, 'comment_item');
 
   for (let i = 0; i < 20; i++) {
-    await page.evaluate(() => window.scrollBy(0, 200));
+    await humanScroll(page, 200);
     await randomDelay(500, 1000);
 
     for (const sel of commentSelectors) {
