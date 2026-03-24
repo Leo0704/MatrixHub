@@ -144,10 +144,17 @@ export async function createPage(platform: Platform): Promise<Page> {
  */
 export async function closeBrowser(platform: Platform): Promise<void> {
   const browser = browserPool.get(platform);
+  const context = contextPool.get(platform);
+
+  // 先关闭 context（释放资源）
+  if (context) {
+    await context.close();
+    contextPool.delete(platform);
+  }
+
   if (browser && browser.isConnected()) {
     await browser.close();
     browserPool.delete(platform);
-    contextPool.delete(platform);
     log.info(`浏览器已关闭: ${platform}`);
   }
 }

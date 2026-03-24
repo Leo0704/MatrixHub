@@ -31,13 +31,14 @@ test.describe('MatrixHub App', () => {
   test('should have navigation items', async ({ page }) => {
     await page.goto('http://localhost:3000');
 
-    // Check nav items exist
-    await expect(page.locator('text=概览')).toBeVisible();
-    await expect(page.locator('text=内容管理')).toBeVisible();
-    await expect(page.locator('text=AI 创作')).toBeVisible();
-    await expect(page.locator('text=定时发布')).toBeVisible();
-    await expect(page.locator('text=数据洞察')).toBeVisible();
-    await expect(page.locator('text=账号管理')).toBeVisible();
+    // Check nav items exist in sidebar navigation
+    const sidebar = page.locator('.sidebar');
+    await expect(sidebar.getByText('概览')).toBeVisible();
+    await expect(sidebar.getByText('内容管理')).toBeVisible();
+    await expect(sidebar.getByText('AI 创作')).toBeVisible();
+    await expect(sidebar.getByText('定时发布')).toBeVisible();
+    await expect(sidebar.getByText('数据洞察')).toBeVisible();
+    await expect(sidebar.getByText('账号管理')).toBeVisible();
   });
 
   test('should navigate between pages', async ({ page }) => {

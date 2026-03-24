@@ -39,6 +39,7 @@ export interface AIProvider {
  * AI 生成请求
  */
 export interface AIRequest {
+  taskType?: TaskType;
   providerType?: AIProviderType;
   model?: string;
   prompt: string;
@@ -148,15 +149,19 @@ class Breaker {
 
 // ============ AI Gateway ============
 
+export type TaskType = 'text' | 'image' | 'video' | 'voice';
+
 /**
  * AI Gateway
  * - 多 Provider 路由
  * - 熔断保护
  * - Prompt 模板管理
+ * - 每个任务类型独立选择 AI Provider
  */
 export class AIGateway {
   private _providers: Map<AIProviderType, AIProvider> = new Map();
   private circuitBreakers: Map<AIProviderType, Breaker> = new Map();
+  private taskTypeBindings: Map<TaskType, AIProvider> = new Map();
 
   get providers(): Map<AIProviderType, AIProvider> {
     return this._providers;
@@ -176,32 +181,51 @@ export class AIGateway {
 
   /**
    * 生成内容
+   * 优先级：explicit providerType > taskType binding > default provider
    */
   async generate(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now();
-    const providerType = request.providerType ?? this.getDefaultProvider()?.type;
 
-    if (!providerType) {
-      return { success: false, error: 'No AI provider configured' };
+    // 确定使用哪个 provider
+    let provider: AIProvider | undefined;
+    let providerType: AIProviderType | undefined;
+
+    if (request.providerType) {
+      // 显式指定了 provider 类型
+      providerType = request.providerType;
+      provider = this._providers.get(providerType);
+    } else if (request.taskType) {
+      // 按任务类型路由
+      provider = this.getProviderForTaskType(request.taskType);
+      if (provider) {
+        providerType = provider.type;
+      } else {
+        return { success: false, error: `No AI provider bound for task type: ${request.taskType}` };
+      }
+    } else {
+      // 使用默认 provider
+      providerType = this.getDefaultProvider()?.type;
+      if (providerType) {
+        provider = this._providers.get(providerType);
+      }
     }
 
-    const provider = this._providers.get(providerType);
-    if (!provider) {
-      return { success: false, error: `Provider not configured: ${providerType}` };
+    if (!provider || !providerType) {
+      return { success: false, error: 'No AI provider configured' };
     }
 
     const circuitBreaker = this.circuitBreakers.get(providerType)!;
 
     try {
       const content = await circuitBreaker.execute(async () => {
-        return this.callProvider(provider, request);
+        return this.callProvider(provider!, request);
       });
 
       return {
         success: true,
         content,
-        provider: provider.name,
-        model: request.model ?? provider.models[0],
+        provider: provider!.name,
+        model: request.model ?? provider!.models[0],
         latencyMs: Date.now() - startTime,
       };
     } catch (error) {
@@ -211,7 +235,7 @@ export class AIGateway {
       return {
         success: false,
         error: err.message,
-        provider: provider.name,
+        provider: provider!.name,
         latencyMs: Date.now() - startTime,
       };
     }
@@ -501,6 +525,76 @@ export class AIGateway {
     }
 
     log.info(`Loaded ${this._providers.size} AI providers`);
+
+    // 加载任务类型绑定
+    await this.loadTaskTypeBindings();
+  }
+
+  /**
+   * 加载任务类型 AI 绑定
+   */
+  async loadTaskTypeBindings(): Promise<void> {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT tb.task_type, tb.provider_id,
+             p.id as p_id, p.name as p_name, p.provider_type, p.api_key_keychain_key,
+             p.base_url, p.models, p.is_default, p.status
+      FROM task_type_bindings tb
+      JOIN ai_providers p ON p.id = tb.provider_id
+    `).all() as any[];
+
+    this.taskTypeBindings.clear();
+    for (const row of rows) {
+      const provider: AIProvider = {
+        id: row.p_id,
+        name: row.p_name,
+        type: row.provider_type,
+        apiKeyKeychainKey: row.api_key_keychain_key,
+        baseUrl: row.base_url,
+        models: JSON.parse(row.models),
+        isDefault: row.p_is_default === 1,
+        status: row.status,
+      };
+      this.taskTypeBindings.set(row.task_type as TaskType, provider);
+    }
+
+    log.info(`Loaded ${this.taskTypeBindings.size} task type bindings`);
+  }
+
+  /**
+   * 绑定任务类型到 AI Provider
+   */
+  async bindTaskType(taskType: TaskType, providerId: string): Promise<void> {
+    const db = getDb();
+    const now = Date.now();
+
+    const provider = Array.from(this._providers.values()).find(p => p.id === providerId);
+    if (!provider) {
+      throw new Error(`Provider not found: ${providerId}`);
+    }
+
+    db.prepare(`
+      INSERT INTO task_type_bindings (task_type, provider_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(task_type) DO UPDATE SET provider_id = ?, updated_at = ?
+    `).run(taskType, providerId, now, now, providerId, now);
+
+    this.taskTypeBindings.set(taskType, provider);
+    log.info(`Task type ${taskType} bound to provider ${provider.name}`);
+  }
+
+  /**
+   * 获取任务类型对应的 Provider
+   */
+  getProviderForTaskType(taskType: TaskType): AIProvider | undefined {
+    return this.taskTypeBindings.get(taskType);
+  }
+
+  /**
+   * 获取所有任务类型绑定
+   */
+  getTaskTypeBindings(): Map<TaskType, AIProvider> {
+    return this.taskTypeBindings;
   }
 
   /**

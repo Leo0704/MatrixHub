@@ -37,8 +37,10 @@ export class CredentialManager {
       fs.writeFileSync(storePath, encrypted);
       log.info(`凭证已加密存储: ${accountId}`);
     } else {
-      // 回退: 使用 Keychain CLI
-      this.storeKeychain(keychainKey, data);
+      // 安全要求: 拒绝存储 - safeStorage 不可用意味着无法安全加密
+      const error = 'safeStorage encryption is not available. Please ensure your OS has screen lock enabled.';
+      log.error(`凭证存储失败: ${error}`);
+      throw new Error(`Credential storage failed: ${error}`);
     }
 
     // 更新数据库引用
@@ -198,8 +200,10 @@ export class AIKeyManager {
       fs.writeFileSync(storePath, encrypted);
       log.info(`AI API Key 已加密存储: ${providerType}`);
     } else {
-      // 回退: 使用 Keychain CLI
-      this.storeKeychain(key, apiKey);
+      // 安全要求: 拒绝存储 - safeStorage 不可用意味着无法安全加密
+      const error = 'safeStorage encryption is not available. Please ensure your OS has screen lock enabled.';
+      log.error(`AI API Key 存储失败: ${error}`);
+      throw new Error(`API Key storage failed: ${error}`);
     }
   }
 
@@ -315,9 +319,9 @@ export const aiKeyManager = new AIKeyManager();
 
 export class AccountManager {
   /**
-   * 添加账号
+   * 添加账号（事务保证：account 和 credential 同时创建或都不创建）
    */
-  add(params: {
+  async add(params: {
     platform: Platform;
     username: string;
     displayName: string;
@@ -325,12 +329,13 @@ export class AccountManager {
     password: string;
     cookies?: string;
     tokens?: Record<string, string>;
-  }): Account {
+  }): Promise<Account> {
     const db = getDb();
     const now = Date.now();
 
+    const accountId = uuidv4();
     const account: Account = {
-      id: uuidv4(),
+      id: accountId,
       platform: params.platform,
       username: params.username,
       displayName: params.displayName,
@@ -340,27 +345,40 @@ export class AccountManager {
       updatedAt: now,
     };
 
-    db.prepare(`
-      INSERT INTO accounts (id, platform, username, display_name, avatar, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      account.id,
-      account.platform,
-      account.username,
-      account.displayName,
-      account.avatar ?? null,
-      account.status,
-      account.createdAt,
-      account.updatedAt
-    );
-
-    // 存储凭证
-    credentialManager.storeCredential(account.id, {
-      username: params.username,
-      password: params.password,
-      cookies: params.cookies,
-      tokens: params.tokens,
+    // 使用事务包装，确保 account 创建和 credential 存储的原子性
+    const transaction = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO accounts (id, platform, username, display_name, avatar, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        account.id,
+        account.platform,
+        account.username,
+        account.displayName,
+        account.avatar ?? null,
+        account.status,
+        account.createdAt,
+        account.updatedAt
+      );
     });
+
+    // 执行 account 插入
+    transaction();
+
+    // 存储凭证（如果失败，事务不会回滚，需要手动清理）
+    try {
+      await credentialManager.storeCredential(account.id, {
+        username: params.username,
+        password: params.password,
+        cookies: params.cookies,
+        tokens: params.tokens,
+      });
+    } catch (err) {
+      // 凭证存储失败，回滚 account
+      db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+      log.error(`账号添加失败（凭证存储错误）: ${accountId}`, err);
+      throw err;
+    }
 
     log.info(`账号添加: ${account.id} [${account.platform}] ${account.username}`);
     return account;

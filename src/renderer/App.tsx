@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Account } from './types';
+import type { Account } from '~shared/types';
 import Overview from './pages/Overview';
 import ContentManagement from './pages/ContentManagement';
 import AICreation from './pages/AICreation';

@@ -2,7 +2,7 @@
   "name": "matrixhub",
   "version": "0.1.0",
   "description": "MatrixHub - 多平台内容创作与发布管理工具",
-  "main": "dist/main/index.js",
+  "main": "dist/main/main/index.js",
   "author": "",
   "license": "MIT",
   "scripts": {
@@ -16,6 +16,7 @@
     "start": "electron .",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
+    "postinstall": "electron-rebuild",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -23,19 +24,21 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
     "better-sqlite3": "^11.7.0",
     "electron-log": "^5.2.4",
     "playwright": "^1.49.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "recharts": "^3.8.0",
     "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@playwright/test": "^1.58.2",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.7",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
     "@vitest/ui": "^4.1.0",
     "concurrently": "^9.1.2",

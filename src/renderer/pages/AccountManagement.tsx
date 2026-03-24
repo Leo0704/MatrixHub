@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Account, Platform } from '../types';
+import type { Account, Platform } from '~shared/types';
 
 export default function AccountManagement() {
   const [accounts, setAccounts] = useState<Account[]>([]);

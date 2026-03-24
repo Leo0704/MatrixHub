@@ -1,35 +1,65 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type {
+  Platform, TaskType, Task, TaskStatus, TaskFilter,
+  Account, AIRequest, AIResponse,
+} from '../shared/types.js';
 
 export interface ElectronAPI {
   // 任务
   createTask: (params: {
-    type: string;
-    platform: string;
+    type: TaskType;
+    platform: Platform;
     title: string;
     payload: Record<string, unknown>;
     scheduledAt?: number;
-  }) => Promise<any>;
+  }) => Promise<Task>;
 
-  getTask: (taskId: string) => Promise<any>;
-  listTasks: (filter?: any) => Promise<any[]>;
-  cancelTask: (taskId: string) => Promise<any>;
-  retryTask: (taskId: string) => Promise<any>;
-  getTaskStats: () => Promise<any>;
+  getTask: (taskId: string) => Promise<Task | null>;
+  listTasks: (filter?: TaskFilter) => Promise<Task[]>;
+  cancelTask: (taskId: string) => Promise<Task | null>;
+  retryTask: (taskId: string) => Promise<Task | null>;
+  getTaskStats: () => Promise<{
+    total: number;
+    pending: number;
+    running: number;
+    completed: number;
+    failed: number;
+  }>;
 
   // 账号
-  listAccounts: (platform?: string) => Promise<any[]>;
-  addAccount: (params: any) => Promise<any>;
-  updateAccount: (accountId: string, updates: any) => Promise<any>;
-  removeAccount: (accountId: string) => Promise<any>;
+  listAccounts: (platform?: Platform) => Promise<Account[]>;
+  addAccount: (params: {
+    platform: Platform;
+    username: string;
+    displayName: string;
+    avatar?: string;
+    password: string;
+    cookies?: string;
+    tokens?: Record<string, string>;
+  }) => Promise<Account | { success: false; error: string }>;
+  updateAccount: (accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status'>>) => Promise<Account | null>;
+  removeAccount: (accountId: string) => Promise<{ success: boolean }>;
   validateAccount: (accountId: string) => Promise<boolean>;
 
   // 限流
-  getRateStatus: (platform: string) => Promise<any>;
-  checkRate: (platform: string) => Promise<any>;
+  getRateStatus: (platform: Platform) => Promise<{
+    minute: { count: number; limit: number; resetAt: number };
+    hour: { count: number; limit: number; resetAt: number };
+    day: { count: number; limit: number; resetAt: number };
+  }>;
+  checkRate: (platform: Platform) => Promise<boolean>;
 
   // AI
-  generateAI: (request: any) => Promise<any>;
-  getAIProviders: () => Promise<any[]>;
+  generateAI: (request: AIRequest) => Promise<AIResponse>;
+  getAIProviders: () => Promise<Array<{
+    id: string;
+    name: string;
+    type: string;
+    baseUrl: string;
+    models: string[];
+    isDefault: boolean;
+    status: string;
+  }>>;
   addAIProvider: (params: {
     name: string;
     type: string;
@@ -37,36 +67,88 @@ export interface ElectronAPI {
     baseUrl: string;
     models: string[];
     isDefault?: boolean;
-  }) => Promise<any>;
-  getCircuitStatus: (providerType: string) => Promise<any>;
+  }) => Promise<{ success: boolean; error?: string }>;
+  testAIConnection: (params: { baseUrl: string; apiKey: string; model: string }) => Promise<{ success: boolean; error?: string }>;
+  getCircuitStatus: (providerType: string) => Promise<{
+    state: 'closed' | 'open' | 'half_open';
+    failures: number;
+    lastFailure?: string;
+  }>;
+  bindTaskType: (taskType: 'text' | 'image' | 'video' | 'voice', providerId: string) => Promise<{ success: boolean; error?: string }>;
+  getTaskTypeBindings: () => Promise<Record<string, { id: string; name: string; type: string; models: string[] }>>;
+  getTaskAIConfigs: () => Promise<Record<string, { baseUrl: string; hasApiKey: boolean; model: string }>>;
+  saveTaskAIConfig: (taskType: string, config: { baseUrl: string; apiKey: string; model: string }) => Promise<{ success: boolean; error?: string }>;
 
   // 选择器
-  getSelector: (platform: string, selectorKey: string) => Promise<any>;
-  listSelectors: (platform: string) => Promise<any[]>;
-  getSelectorVersions: (platform: string, selectorKey: string) => Promise<any[]>;
-  registerSelector: (params: any) => Promise<any>;
-  reportSelectorSuccess: (platform: string, selectorKey: string) => Promise<any>;
-  reportSelectorFailure: (platform: string, selectorKey: string) => Promise<any>;
+  getSelector: (platform: Platform, selectorKey: string) => Promise<{
+    selectorKey: string;
+    value: string;
+    type: string;
+    version: number;
+    successRate: number;
+  } | null>;
+  listSelectors: (platform: Platform) => Promise<Array<{
+    selectorKey: string;
+    value: string;
+    type: string;
+    version: number;
+    successRate: number;
+    failureCount: number;
+    updatedAt: number;
+  }>>;
+  getSelectorVersions: (platform: Platform, selectorKey: string) => Promise<Array<{
+    version: number;
+    value: string;
+    successRate: number;
+    failureCount: number;
+    updatedAt: number;
+  }>>;
+  registerSelector: (params: {
+    platform: Platform;
+    selectorKey: string;
+    value: string;
+    type?: 'css' | 'xpath' | 'text' | 'aria';
+  }) => Promise<{ success: boolean; error?: string }>;
+  reportSelectorSuccess: (platform: Platform, selectorKey: string) => Promise<{ success: boolean }>;
+  reportSelectorFailure: (platform: Platform, selectorKey: string) => Promise<{ success: boolean }>;
 
   // 系统
-  getSystemStats: () => Promise<any>;
-  openDevTools: () => Promise<any>;
+  getSystemStats: () => Promise<{
+    tasks: { total: number; pending: number; running: number; completed: number; failed: number };
+    dbPath: string;
+  }>;
+  openDevTools: () => Promise<{ success: boolean }>;
   getVersion: () => Promise<string>;
   getPath: (name: string) => Promise<string>;
 
   // 监控
-  getHealthStatus: () => Promise<any>;
-  getAlerts: (options?: { limit?: number; unacknowledgedOnly?: boolean }) => Promise<any[]>;
-  acknowledgeAlert: (alertId: string) => Promise<any>;
-  getDashboardData: () => Promise<any>;
-  getMetrics: (name: string, from?: number, to?: number, limit?: number) => Promise<any[]>;
+  getHealthStatus: () => Promise<{
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    services: Record<string, boolean>;
+    timestamp: number;
+  }>;
+  getAlerts: (options?: { limit?: number; unacknowledgedOnly?: boolean }) => Promise<Array<{
+    id: string;
+    type: string;
+    message: string;
+    severity: string;
+    acknowledged: boolean;
+    createdAt: number;
+  }>>;
+  acknowledgeAlert: (alertId: string) => Promise<{ success: boolean }>;
+  getDashboardData: () => Promise<Record<string, unknown>>;
+  getMetrics: (name: string, from?: number, to?: number, limit?: number) => Promise<Array<{
+    name: string;
+    value: number;
+    timestamp: number;
+  }>>;
 
   // 事件监听
   onMenuAction: (channel: string, callback: () => void) => void;
-  onTaskCreated: (callback: (task: any) => void) => void;
-  onTaskUpdated: (callback: (task: any) => void) => void;
-  onAccountAdded: (callback: (account: any) => void) => void;
-  onAccountUpdated: (callback: (account: any) => void) => void;
+  onTaskCreated: (callback: (task: Task) => void) => void;
+  onTaskUpdated: (callback: (task: Task) => void) => void;
+  onAccountAdded: (callback: (account: Account) => void) => void;
+  onAccountUpdated: (callback: (account: Account) => void) => void;
   onAccountRemoved: (callback: (data: { accountId: string }) => void) => void;
 
   // 移除监听
@@ -97,7 +179,12 @@ const api: ElectronAPI = {
   generateAI: (request) => ipcRenderer.invoke('ai:generate', request),
   getAIProviders: () => ipcRenderer.invoke('ai:providers'),
   addAIProvider: (params) => ipcRenderer.invoke('ai:add-provider', params),
+  testAIConnection: (params) => ipcRenderer.invoke('ai:test-connection', params),
   getCircuitStatus: (providerType) => ipcRenderer.invoke('ai:circuit-status', { providerType }),
+  bindTaskType: (taskType, providerId) => ipcRenderer.invoke('ai:bind-task-type', { taskType, providerId }),
+  getTaskTypeBindings: () => ipcRenderer.invoke('ai:get-task-type-bindings'),
+  getTaskAIConfigs: () => ipcRenderer.invoke('ai:get-task-ai-configs'),
+  saveTaskAIConfig: (taskType, config) => ipcRenderer.invoke('ai:save-task-ai-config', { taskType, config }),
 
   // ============ 选择器 ============
   getSelector: (platform, selectorKey) =>

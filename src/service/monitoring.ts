@@ -60,10 +60,21 @@ export class MonitoringService {
   private aiLatencies: number[] = [];
   private lastHealthCheck = 0;
   private healthCheckInterval = 5 * 60 * 1000; // 5分钟
+  private healthCheckTimer?: ReturnType<typeof setInterval>;
 
   constructor() {
     // Schedule periodic health check
     this.scheduleHealthCheck();
+  }
+
+  /**
+   * 停止监控服务（清理定时器）
+   */
+  stop(): void {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
   }
 
   /**
@@ -398,7 +409,7 @@ export class MonitoringService {
    * 定时健康检查
    */
   private scheduleHealthCheck(): void {
-    setInterval(() => {
+    this.healthCheckTimer = setInterval(() => {
       this.healthCheck().catch(err => {
         log.error('Health check failed:', err);
       });

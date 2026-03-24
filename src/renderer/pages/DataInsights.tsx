@@ -1,27 +1,69 @@
+import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import type { Platform } from '~shared/types';
+
+interface DashboardData {
+  todayPublishCount: number;
+  successRate: number;
+  pendingTasks: number;
+  failedTasks24h: number;
+  recentAlerts: { id: string; level: string; message: string; createdAt: number }[];
+  accountHealth: { platform: Platform; status: string }[];
+}
+
+interface MetricPoint {
+  timestamp: number;
+  value: number;
+}
+
+const PLATFORM_NAMES: Record<Platform, { name: string; icon: string; color: string }> = {
+  douyin: { name: '抖音', icon: '🎵', color: '#fe2c55' },
+  kuaishou: { name: '快手', icon: '📱', color: '#ff4906' },
+  xiaohongshu: { name: '小红书', icon: '📕', color: '#fe2c55' },
+};
+
 export default function DataInsights() {
-  const platformData = {
-    douyin: {
-      views: 125000,
-      likes: 8900,
-      comments: 450,
-      followers: 1200,
-      growth: 5.2,
-    },
-    kuaishou: {
-      views: 89000,
-      likes: 6200,
-      comments: 320,
-      followers: 850,
-      growth: 3.8,
-    },
-    xiaohongshu: {
-      views: 45000,
-      likes: 3800,
-      comments: 210,
-      followers: 560,
-      growth: 8.1,
-    },
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [trendData, setTrendData] = useState<MetricPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = async () => {
+    try {
+      const [dashData, metricsData] = await Promise.all([
+        window.electronAPI?.getDashboardData(),
+        window.electronAPI?.getMetrics('platform_views', undefined, undefined, 30),
+      ]);
+
+      setDashboard(dashData ?? null);
+      setTrendData(
+        (metricsData ?? []).map((m: any) => ({
+          timestamp: m.timestamp,
+          value: m.value,
+        }))
+      );
+      setError(null);
+    } catch (err) {
+      console.error('Failed to load insights data:', err);
+      setError('加载数据失败');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Compute per-platform stats from dashboard data
+  const platformStats = dashboard?.accountHealth ?? [];
+
+  const totalViews = platformStats.reduce(() => 0, 0);
+  const totalLikes = 0;
+  const totalComments = 0;
+  const totalFollowers = 0;
 
   return (
     <div>
@@ -32,62 +74,195 @@ export default function DataInsights() {
         gap: 'var(--space-lg)',
         marginBottom: 'var(--space-xl)'
       }}>
-        <StatCard label="总观看" value="259k" icon="👁️" color="var(--primary)" />
-        <StatCard label="总点赞" value="18.9k" icon="❤️" color="var(--error)" />
-        <StatCard label="总评论" value="980" icon="💬" color="var(--info)" />
-        <StatCard label="总粉丝" value="2.6k" icon="👥" color="var(--success)" />
+        <StatCard
+          label="今日发布"
+          value={dashboard?.todayPublishCount?.toString() ?? '--'}
+          icon="📤"
+          color="var(--primary)"
+          loading={loading}
+        />
+        <StatCard
+          label="成功率"
+          value={dashboard ? `${(dashboard.successRate * 100).toFixed(1)}%` : '--'}
+          icon="✅"
+          color="var(--success)"
+          loading={loading}
+        />
+        <StatCard
+          label="待处理任务"
+          value={dashboard?.pendingTasks?.toString() ?? '--'}
+          icon="⏳"
+          color="var(--accent-orange)"
+          loading={loading}
+        />
+        <StatCard
+          label="24h失败"
+          value={dashboard?.failedTasks24h?.toString() ?? '--'}
+          icon="❌"
+          color="var(--error)"
+          loading={loading}
+        />
       </div>
 
       {/* 平台对比 */}
       <div className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-        <h3 style={{ marginBottom: 'var(--space-lg)' }}>平台数据对比</h3>
+        <h3 style={{ marginBottom: 'var(--space-lg)' }}>平台状态</h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-xl)' }}>
-          {Object.entries(platformData).map(([platform, data]) => (
-            <PlatformDataCard key={platform} platform={platform as any} data={data} />
-          ))}
-        </div>
+        {loading ? (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 'var(--space-xl)'
+          }}>
+            {[1, 2, 3].map(i => (
+              <div key={i} style={{ height: 120, borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
+            ))}
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--error)' }}>
+            <p>{error}</p>
+            <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={loadData}>
+              重试
+            </button>
+          </div>
+        ) : platformStats.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--text-muted)' }}>
+            暂无平台数据
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-xl)' }}>
+            {platformStats.map(({ platform, status }) => {
+              const info = PLATFORM_NAMES[platform];
+              return (
+                <div key={platform} style={{
+                  padding: 'var(--space-lg)',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-sm)',
+                    marginBottom: 'var(--space-lg)'
+                  }}>
+                    <span style={{ fontSize: 20 }}>{info?.icon ?? '📦'}</span>
+                    <span style={{ fontWeight: 600 }}>{info?.name ?? platform}</span>
+                    <span style={{
+                      marginLeft: 'auto',
+                      fontSize: 12,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      background: status === 'active' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: status === 'active' ? 'var(--success)' : 'var(--error)',
+                      fontWeight: 500,
+                    }}>
+                      {status === 'active' ? '正常' : '异常'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* 趋势图表占位 */}
+      {/* 趋势图表 */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-xl)' }}>
         <div className="card">
           <h3 style={{ marginBottom: 'var(--space-lg)' }}>数据趋势</h3>
-          <div style={{
-            height: 200,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--bg-elevated)',
-            borderRadius: 'var(--radius-md)'
-          }}>
-            <span style={{ color: 'var(--text-muted)' }}>📈 趋势图表</span>
-          </div>
+          {loading ? (
+            <div style={{ height: 200, borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
+          ) : trendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={trendData}>
+                <XAxis
+                  dataKey="timestamp"
+                  tickFormatter={ts => new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis hide />
+                <Tooltip
+                  labelFormatter={ts => new Date(ts).toLocaleString('zh-CN')}
+                  contentStyle={{
+                    background: 'var(--bg-overlay)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: 12,
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="var(--primary)"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{
+              height: 200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--bg-elevated)',
+              borderRadius: 'var(--radius-md)'
+            }}>
+              <span style={{ color: 'var(--text-muted)' }}>📈 暂无趋势数据</span>
+            </div>
+          )}
         </div>
 
         <div className="card">
-          <h3 style={{ marginBottom: 'var(--space-lg)' }}>粉丝增长</h3>
-          <div style={{
-            height: 200,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--bg-elevated)',
-            borderRadius: 'var(--radius-md)'
-          }}>
-            <span style={{ color: 'var(--text-muted)' }}>📊 环形图</span>
-          </div>
+          <h3 style={{ marginBottom: 'var(--space-lg)' }}>账号健康</h3>
+          {loading ? (
+            <div style={{ height: 200, borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
+          ) : dashboard && dashboard.accountHealth.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', height: 200, justifyContent: 'center' }}>
+              {dashboard.accountHealth.map(({ platform, status }) => {
+                const info = PLATFORM_NAMES[platform];
+                return (
+                  <div key={platform} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                    <span>{info?.icon ?? '📦'}</span>
+                    <span style={{ fontSize: 13 }}>{info?.name ?? platform}</span>
+                    <span style={{
+                      marginLeft: 'auto',
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: status === 'active' ? 'var(--success)' : 'var(--error)',
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{
+              height: 200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--bg-elevated)',
+              borderRadius: 'var(--radius-md)'
+            }}>
+              <span style={{ color: 'var(--text-muted)' }}>📊 暂无数据</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, icon, color }: {
+function StatCard({ label, value, icon, color, loading }: {
   label: string;
   value: string;
   icon: string;
   color: string;
+  loading: boolean;
 }) {
   return (
     <div className="card">
@@ -96,98 +271,43 @@ function StatCard({ label, value, icon, color }: {
         alignItems: 'center',
         gap: 'var(--space-md)'
       }}>
-        <div style={{
-          width: 40,
-          height: 40,
-          borderRadius: 'var(--radius-md)',
-          background: `${color}15`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 20,
-        }}>
-          {icon}
-        </div>
-        <div>
+        {loading ? (
           <div style={{
-            fontSize: 22,
-            fontWeight: 600,
-            fontFamily: 'var(--font-mono)'
+            width: 40,
+            height: 40,
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-elevated)',
+            animation: 'pulse 1.5s infinite'
+          }} />
+        ) : (
+          <div style={{
+            width: 40,
+            height: 40,
+            borderRadius: 'var(--radius-md)',
+            background: `${color}15`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 20,
           }}>
-            {value}
+            {icon}
           </div>
+        )}
+        <div>
+          {loading ? (
+            <div style={{ width: 60, height: 22, borderRadius: 4, background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
+          ) : (
+            <div style={{
+              fontSize: 22,
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {value}
+            </div>
+          )}
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
         </div>
       </div>
     </div>
   );
-}
-
-function PlatformDataCard({ platform, data }: {
-  platform: 'douyin' | 'kuaishou' | 'xiaohongshu';
-  data: { views: number; likes: number; comments: number; followers: number; growth: number };
-}) {
-  const info = {
-    douyin: { name: '抖音', icon: '🎵', color: 'var(--platform-douyin)' },
-    kuaishou: { name: '快手', icon: '📱', color: 'var(--platform-kuaishou)' },
-    xiaohongshu: { name: '小红书', icon: '📕', color: 'var(--platform-xiaohongshu)' },
-  };
-
-  return (
-    <div style={{
-      padding: 'var(--space-lg)',
-      borderRadius: 'var(--radius-lg)',
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-subtle)'
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-sm)',
-        marginBottom: 'var(--space-lg)'
-      }}>
-        <span style={{ fontSize: 20 }}>{info[platform].icon}</span>
-        <span style={{ fontWeight: 600 }}>{info[platform].name}</span>
-        <span style={{
-          marginLeft: 'auto',
-          fontSize: 12,
-          padding: '2px 8px',
-          borderRadius: 'var(--radius-full)',
-          background: data.growth > 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-          color: data.growth > 0 ? 'var(--success)' : 'var(--error)',
-          fontWeight: 500,
-        }}>
-          {data.growth > 0 ? '+' : ''}{data.growth}%
-        </span>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
-        <DataPoint label="观看" value={formatNumber(data.views)} />
-        <DataPoint label="点赞" value={formatNumber(data.likes)} />
-        <DataPoint label="评论" value={formatNumber(data.comments)} />
-        <DataPoint label="粉丝" value={formatNumber(data.followers)} />
-      </div>
-    </div>
-  );
-}
-
-function DataPoint({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{
-        fontSize: 18,
-        fontWeight: 600,
-        fontFamily: 'var(--font-mono)'
-      }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{label}</div>
-    </div>
-  );
-}
-
-function formatNumber(n: number): string {
-  if (n >= 10000) return (n / 10000).toFixed(1) + 'w';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return n.toString();
 }

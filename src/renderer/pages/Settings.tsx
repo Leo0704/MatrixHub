@@ -1,96 +1,5 @@
 import { useState, useEffect } from 'react';
 
-type AIProvider = {
-  id: string;
-  name: string;
-  type: string;
-  baseUrl: string;
-  models: string[];
-  isDefault: boolean;
-  status: string;
-};
-
-// 支持的 AI 提供商模板
-const PROVIDER_TEMPLATES: Record<string, {
-  name: string;
-  type: string;
-  baseUrl: string;
-  models: string[];
-}> = {
-  openai: {
-    name: 'OpenAI',
-    type: 'openai',
-    baseUrl: 'https://api.openai.com/v1',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  },
-  anthropic: {
-    name: 'Claude (Anthropic)',
-    type: 'anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'],
-  },
-  minimax: {
-    name: 'MiniMax (海螺AI)',
-    type: 'minimax',
-    baseUrl: 'https://api.minimax.chat/v1',
-    models: ['MiniMax-Text-01', 'abab6.5s-chat'],
-  },
-  zhipu: {
-    name: '智谱 GLM',
-    type: 'zhipu',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    models: ['glm-4-flash', 'glm-4-plus', 'glm-4', 'glm-3-turbo'],
-  },
-  kimi: {
-    name: 'Kimi (月之暗面)',
-    type: 'kimi',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
-  },
-  qwen: {
-    name: '通义千问 (阿里)',
-    type: 'qwen',
-    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-    models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-max-longcontext'],
-  },
-  doubao: {
-    name: '豆包 (字节)',
-    type: 'doubao',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    models: ['doubao-pro-32k', 'doubao-lite-32k'],
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    type: 'deepseek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    models: ['deepseek-chat', 'deepseek-coder'],
-  },
-  spark: {
-    name: '讯飞星火',
-    type: 'spark',
-    baseUrl: 'https://spark-api.xf-yun.com/v3.5/chat',
-    models: ['Spark4.0 Ultra', 'Spark3.5 Pro', 'Spark3.5 Standard'],
-  },
-  yi: {
-    name: '零一万物 Yi',
-    type: 'yi',
-    baseUrl: 'https://api.lingyiwanwu.com/v1',
-    models: ['yi-medium', 'yi-large', 'yi-large-rag'],
-  },
-  ollama: {
-    name: 'Ollama (本地)',
-    type: 'ollama',
-    baseUrl: 'http://localhost:11434',
-    models: ['llama3', 'mistral', 'codellama', 'qwen2'],
-  },
-  siliconflow: {
-    name: 'SiliconFlow (聚合)',
-    type: 'siliconflow',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    models: ['Qwen/Qwen2.5-7B-Instruct', 'deepseek-ai/DeepSeek-V2.5', 'Anthropic/claude-3.5-sonnet'],
-  },
-};
-
 export default function Settings() {
   const [settings, setSettings] = useState({
     theme: 'dark',
@@ -101,62 +10,103 @@ export default function Settings() {
     browserHeadless: false,
   });
 
-  const [providers, setProviders] = useState<AIProvider[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // 任务类型绑定状态
+  type TaskType = 'text' | 'image' | 'video' | 'voice';
+  const TASK_TYPES: { type: TaskType; label: string; desc: string }[] = [
+    { type: 'text', label: '文案生成', desc: '用于生成短视频脚本、种草文案等' },
+    { type: 'image', label: '图片生成', desc: '用于 AI 生成配图、海报等' },
+    { type: 'video', label: '视频生成', desc: '用于 AI 生成视频内容' },
+    { type: 'voice', label: '配音', desc: '用于文字转语音、配音合成' },
+  ];
+
+  // 每个任务类型的 AI 配置（apiKey 只在保存时填写，不从服务端加载）
+  const [taskAIConfigs, setTaskAIConfigs] = useState<Record<TaskType, { baseUrl: string; hasApiKey: boolean; model: string; apiKey: string }>>({
+    text: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
+    image: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
+    video: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
+    voice: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
+  });
+  const [testingTask, setTestingTask] = useState<TaskType | null>(null);
+  const [savingTask, setSavingTask] = useState<TaskType | null>(null);
+  const [taskMsg, setTaskMsg] = useState<Record<TaskType, { type: 'success' | 'error'; text: string } | null>>({
+    text: null,
+    image: null,
+    video: null,
+    voice: null,
+  });
+  const [expandedTask, setExpandedTask] = useState<TaskType | null>('text');
 
   useEffect(() => {
-    loadProviders();
+    loadTaskBindings();
   }, []);
 
-  const loadProviders = async () => {
+  const loadTaskBindings = async () => {
     try {
-      const list = await window.electronAPI?.getAIProviders();
-      setProviders(list || []);
+      const configs = await window.electronAPI?.getTaskAIConfigs();
+      if (configs) {
+        setTaskAIConfigs({
+          text: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.text, apiKey: '' },
+          image: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.image, apiKey: '' },
+          video: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.video, apiKey: '' },
+          voice: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.voice, apiKey: '' },
+        });
+      }
     } catch (error) {
-      console.error('Failed to load providers:', error);
+      console.error('Failed to load task AI configs:', error);
     }
   };
 
-  const handleAddProvider = async () => {
-    if (!selectedProvider || !apiKey.trim()) {
-      setMessage({ type: 'error', text: '请选择提供商并输入 API Key' });
+  const handleTestTaskAI = async (taskType: TaskType) => {
+    const config = taskAIConfigs[taskType];
+    // 需要用户输入新的 API Key 才能测试（安全设计：不回传已存储的 key）
+    if (!config.baseUrl || !config.apiKey || !config.model) {
+      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '请填写完整信息（包括 API Key）' } });
       return;
     }
-
-    const template = PROVIDER_TEMPLATES[selectedProvider as keyof typeof PROVIDER_TEMPLATES];
-    if (!template) {
-      setMessage({ type: 'error', text: '未知的提供商' });
-      return;
-    }
-
-    setSaving(true);
-    setMessage(null);
-
+    setTestingTask(taskType);
+    setTaskMsg({ ...taskMsg, [taskType]: null });
     try {
-      const result = await window.electronAPI?.addAIProvider({
-        name: template.name,
-        type: template.type,
-        apiKey: apiKey.trim(),
-        baseUrl: template.baseUrl,
-        models: template.models,
-        isDefault: providers.length === 0,
+      const result = await window.electronAPI?.testAIConnection({
+        baseUrl: config.baseUrl.trim().replace(/\/$/, ''),
+        apiKey: config.apiKey.trim(),
+        model: config.model.trim(),
       });
-
       if (result?.success) {
-        setMessage({ type: 'success', text: `${template.name} 配置成功` });
-        setApiKey('');
-        loadProviders();
+        setTaskMsg({ ...taskMsg, [taskType]: { type: 'success', text: '连接成功！' } });
       } else {
-        setMessage({ type: 'error', text: result?.error || '配置失败' });
+        setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: result?.error || '连接失败' } });
       }
     } catch (error) {
-      setMessage({ type: 'error', text: '保存失败' });
+      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '连接失败' } });
     } finally {
-      setSaving(false);
+      setTestingTask(null);
+    }
+  };
+
+  const handleSaveTaskAI = async (taskType: TaskType) => {
+    const config = taskAIConfigs[taskType];
+    // 允许保存：baseUrl + model 必须填写，且必须有 API Key（已有或新输入）
+    if (!config.baseUrl || !config.model || (!config.apiKey && !config.hasApiKey)) {
+      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '请填写完整信息' } });
+      return;
+    }
+    setSavingTask(taskType);
+    setTaskMsg({ ...taskMsg, [taskType]: null });
+    try {
+      const result = await window.electronAPI?.saveTaskAIConfig(taskType, {
+        baseUrl: config.baseUrl.trim().replace(/\/$/, ''),
+        apiKey: config.apiKey.trim(),
+        model: config.model.trim(),
+      });
+      if (result?.success) {
+        setTaskMsg({ ...taskMsg, [taskType]: { type: 'success', text: '保存成功！' } });
+      } else {
+        setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: result?.error || '保存失败' } });
+      }
+    } catch (error) {
+      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '保存失败' } });
+    } finally {
+      setSavingTask(null);
     }
   };
 
@@ -267,128 +217,126 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* AI 设置 */}
+      {/* 任务类型 AI 配置 */}
       <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
-        <h3 style={{ marginBottom: 'var(--space-lg)' }}>AI 设置</h3>
+        <h3 style={{ marginBottom: 'var(--space-sm)' }}>AI 配置</h3>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 'var(--space-lg)' }}>
+          为每个任务类型配置 AI（Base URL + API Key + 模型）
+        </div>
 
-        {/* 已配置的提供商 */}
-        {providers.length > 0 && (
-          <div style={{ marginBottom: 'var(--space-lg)' }}>
-            <div style={{ fontWeight: 500, marginBottom: 'var(--space-sm)' }}>已配置的提供商</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>
-              {providers.map(p => (
-                <div key={p.id} style={{
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {TASK_TYPES.map(({ type, label, desc }) => (
+            <div key={type} style={{
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              overflow: 'hidden',
+            }}>
+              {/* Header - 可点击展开/收起 */}
+              <div
+                onClick={() => setExpandedTask(expandedTask === type ? null : type)}
+                style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: 'var(--space-sm) var(--space-md)',
-                  background: 'var(--bg-elevated)',
-                  borderRadius: 'var(--radius-md)',
-                }}>
-                  <div>
-                    <span style={{ fontWeight: 500 }}>{p.name}</span>
-                    <span style={{ marginLeft: 'var(--space-sm)', fontSize: 12, color: 'var(--text-muted)' }}>
-                      {p.models[0]}
-                    </span>
-                    {p.isDefault && (
-                      <span style={{
-                        marginLeft: 'var(--space-sm)',
-                        fontSize: 10,
-                        padding: '2px 6px',
-                        background: 'var(--primary)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'white',
-                      }}>
-                        默认
-                      </span>
-                    )}
-                  </div>
-                  <span style={{
-                    fontSize: 12,
-                    color: p.status === 'active' ? 'var(--success)' : 'var(--text-muted)'
-                  }}>
-                    {p.status === 'active' ? '✓ 已连接' : '未配置'}
+                  padding: 'var(--space-md)',
+                  background: expandedTask === type ? 'var(--bg-elevated)' : 'transparent',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 500 }}>{label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{desc}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  {taskAIConfigs[type].baseUrl && (
+                    <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ 已配置</span>
+                  )}
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {expandedTask === type ? '▲' : '▼'}
                   </span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 添加新提供商 */}
-        <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-lg)' }}>
-          <div style={{ fontWeight: 500, marginBottom: 'var(--space-md)' }}>添加 AI 提供商</div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-            <div style={settingRow}>
-              <div>
-                <div style={{ fontWeight: 500 }}>选择提供商</div>
               </div>
-              <select
-                className="input"
-                style={{ width: 180 }}
-                value={selectedProvider}
-                onChange={e => setSelectedProvider(e.target.value)}
-              >
-                <option value="">请选择...</option>
-                {Object.entries(PROVIDER_TEMPLATES).map(([key, t]) => (
-                  <option key={key} value={key}>{t.name}</option>
-                ))}
-              </select>
-            </div>
 
-            {selectedProvider && (
-              <>
-                <div style={settingRow}>
-                  <div>
-                    <div style={{ fontWeight: 500 }}>API Key</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {PROVIDER_TEMPLATES[selectedProvider as keyof typeof PROVIDER_TEMPLATES]?.baseUrl}
+              {/* 展开的内容 */}
+              {expandedTask === type && (
+                <div style={{
+                  padding: 'var(--space-md)',
+                  borderTop: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-surface)',
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 'var(--space-xs)' }}>Base URL</div>
+                      <input
+                        className="input"
+                        placeholder="https://api.deepseek.com/v1"
+                        value={taskAIConfigs[type].baseUrl}
+                        onChange={e => setTaskAIConfigs({
+                          ...taskAIConfigs,
+                          [type]: { ...taskAIConfigs[type], baseUrl: e.target.value }
+                        })}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 'var(--space-xs)' }}>API Key</div>
+                      <input
+                        className="input"
+                        type="password"
+                        placeholder={taskAIConfigs[type].hasApiKey ? '已配置（输入新值以更新）' : 'sk-...'}
+                        value={taskAIConfigs[type].apiKey}
+                        onChange={e => setTaskAIConfigs({
+                          ...taskAIConfigs,
+                          [type]: { ...taskAIConfigs[type], apiKey: e.target.value }
+                        })}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 'var(--space-xs)' }}>模型</div>
+                      <input
+                        className="input"
+                        placeholder="deepseek-chat"
+                        value={taskAIConfigs[type].model}
+                        onChange={e => setTaskAIConfigs({
+                          ...taskAIConfigs,
+                          [type]: { ...taskAIConfigs[type], model: e.target.value }
+                        })}
+                      />
+                    </div>
+
+                    {taskMsg[type] && (
+                      <div style={{
+                        padding: 'var(--space-sm) var(--space-md)',
+                        borderRadius: 'var(--radius-md)',
+                        background: taskMsg[type]?.type === 'error' ? 'var(--error-muted)' : 'var(--success-muted)',
+                        color: taskMsg[type]?.type === 'error' ? 'var(--error)' : 'var(--success)',
+                        fontSize: 13,
+                      }}>
+                        {taskMsg[type]?.text}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' }}>
+                      <button
+                        className="btn btn-secondary"
+                        disabled={testingTask === type || !taskAIConfigs[type].baseUrl || !taskAIConfigs[type].apiKey || !taskAIConfigs[type].model}
+                        onClick={() => handleTestTaskAI(type)}
+                      >
+                        {testingTask === type ? '测试中...' : '测试连接'}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        disabled={savingTask === type || !taskAIConfigs[type].baseUrl || (!taskAIConfigs[type].apiKey && !taskAIConfigs[type].hasApiKey) || !taskAIConfigs[type].model}
+                        onClick={() => handleSaveTaskAI(type)}
+                      >
+                        {savingTask === type ? '保存中...' : '保存'}
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-                    <input
-                      type={showApiKey ? 'text' : 'password'}
-                      className="input"
-                      style={{ width: 250 }}
-                      placeholder="sk-..."
-                      value={apiKey}
-                      onChange={e => setApiKey(e.target.value)}
-                    />
-                    <button
-                      className="btn btn-ghost"
-                      style={{ padding: 'var(--space-xs) var(--space-sm)' }}
-                      onClick={() => setShowApiKey(!showApiKey)}
-                    >
-                      {showApiKey ? '隐藏' : '显示'}
-                    </button>
-                  </div>
                 </div>
-
-                {message && (
-                  <div style={{
-                    padding: 'var(--space-sm) var(--space-md)',
-                    borderRadius: 'var(--radius-md)',
-                    background: message.type === 'error' ? 'var(--error-muted)' : 'var(--success-muted)',
-                    color: message.type === 'error' ? 'var(--error)' : 'var(--success)',
-                    fontSize: 13,
-                  }}>
-                    {message.text}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' }}>
-                  <button
-                    className="btn btn-primary"
-                    disabled={saving || !apiKey.trim()}
-                    onClick={handleAddProvider}
-                  >
-                    {saving ? '保存中...' : '保存配置'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 

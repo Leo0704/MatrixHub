@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Platform } from '../types';
+import type { Platform } from '~shared/types';
 
 type Selector = {
   selectorKey: string;

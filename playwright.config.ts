@@ -4,15 +4,15 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30000,
   retries: process.env.CI ? 2 : 0,
-  reporter: 'html',
+  reporter: 'list',
   use: {
     headless: true,
     viewport: { width: 1280, height: 720 },
   },
   webServer: {
-    command: 'npm run build && npm run start',
+    command: 'cd dist/renderer && python3 -m http.server 3000',
     port: 3000,
-    timeout: 120000,
     reuseExistingServer: !process.env.CI,
+    timeout: 120000,
   },
 });

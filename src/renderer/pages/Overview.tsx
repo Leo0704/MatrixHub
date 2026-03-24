@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { PlatformStats, Task } from '../types';
+import type { Task } from '~shared/types';
 
 export default function Overview() {
   const [stats, setStats] = useState<{

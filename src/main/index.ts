@@ -5,6 +5,7 @@ import { getDb, closeDb } from '../service/db.js';
 import { registerIpcHandlers } from '../service/ipc-handlers.js';
 import { createServiceRunner } from '../service/service-process.js';
 import { closeAllBrowsers } from '../service/platform-launcher.js';
+import { monitoringService } from '../service/monitoring.js';
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -39,7 +40,7 @@ function createWindow(): void {
     minWidth: 1200,
     minHeight: 700,
     backgroundColor: '#0a0a0b',
-    show: false,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -50,7 +51,6 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     log.info('窗口 ready-to-show');
-    mainWindow?.show();
   });
 
   if (isDev) {
@@ -58,7 +58,7 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    const indexPath = path.join(__dirname, '../renderer/index.html');
+    const indexPath = path.join(__dirname, '../../renderer/index.html');
     log.info(`加载生产文件: ${indexPath}`);
     mainWindow.loadFile(indexPath);
   }
@@ -232,11 +232,13 @@ async function initializeServices(): Promise<void> {
   log.info('注册 IPC 处理器...');
   registerIpcHandlers();
 
-  // 3. 启动服务循环（在主进程中直接运行）
-  // 注意：生产环境应该 fork 到独立进程
+  // 3. 启动任务服务循环（在后台运行，不阻塞窗口创建）
   log.info('启动任务服务循环...');
   serviceRunner = createServiceRunner();
-  await serviceRunner.start();
+  // 注意：不使用 await，让服务在后台无限循环运行
+  serviceRunner.start().catch((error) => {
+    log.error('服务循环异常退出:', error);
+  });
 
   log.info('服务初始化完成');
 }
@@ -248,6 +250,9 @@ async function shutdownServices(): Promise<void> {
   if (serviceRunner) {
     serviceRunner.stop();
   }
+
+  // 停止监控定时器
+  monitoringService.stop();
 
   // 关闭所有浏览器
   await closeAllBrowsers();

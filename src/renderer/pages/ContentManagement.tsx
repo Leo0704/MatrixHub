@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Task, Platform } from '../types';
+import type { Task, Platform } from '~shared/types';
 
 export default function ContentManagement() {
   const [tasks, setTasks] = useState<Task[]>([]);
