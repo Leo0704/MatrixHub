@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   Platform, TaskType, Task, TaskFilter,
-  Account, AIRequest, AIResponse,
+  Account, AIRequest, AIResponse, AIIterationRequest,
 } from '../shared/types.js';
 
 export interface ElectronAPI {
@@ -61,6 +61,7 @@ export interface ElectronAPI {
 
   // AI
   generateAI: (request: AIRequest) => Promise<AIResponse>;
+  iterateAI: (request: AIIterationRequest) => Promise<AIResponse>;
   getAIProviders: () => Promise<Array<{
     id: string;
     name: string;
@@ -205,6 +206,7 @@ const api: ElectronAPI = {
 
   // ============ AI ============
   generateAI: (request) => ipcRenderer.invoke('ai:generate', request),
+  iterateAI: (request) => ipcRenderer.invoke('ai:iterate', request),
   getAIProviders: () => ipcRenderer.invoke('ai:providers'),
   addAIProvider: (params) => ipcRenderer.invoke('ai:add-provider', params),
   testAIConnection: (params) => ipcRenderer.invoke('ai:test-connection', params),

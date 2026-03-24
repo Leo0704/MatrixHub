@@ -8,10 +8,11 @@ import { selectorManager } from './selector-versioning.js';
 import { monitoringService } from './monitoring.js';
 import { closeAllBrowsers } from './platform-launcher.js';
 import { getDb } from './db.js';
-import type { Task, TaskFilter, Platform, AIRequest, AITriggerType } from '../shared/types.js';
+import type { Task, TaskFilter, Platform, AIRequest, AIIterationRequest, AITriggerType } from '../shared/types.js';
 import type { AIProviderType } from './ai-gateway.js';
 import { dailyBriefing, checkHotTopics, analyzeNow } from './ai-director.js';
 import { registerGroupHandlers } from './handlers/group-handlers.js';
+import { z } from 'zod';
 
 // 数据库行类型定义
 interface TaskAIConfigRow {
@@ -34,6 +35,79 @@ interface SelectorVersionRow {
   updated_at: number;
 }
 
+// ============ 输入验证 Schema ============
+
+const taskCreateSchema = z.object({
+  type: z.enum(['publish', 'ai_generate', 'fetch', 'automation', 'page_agent']),
+  platform: z.enum(['douyin', 'kuaishu', 'xiaohongshu']),
+  title: z.string().min(1).max(200),
+  payload: z.record(z.string(), z.unknown()),
+  scheduledAt: z.number().optional(),
+});
+
+const accountUpdateSchema = z.object({
+  displayName: z.string().optional(),
+  avatar: z.string().optional(),
+  status: z.enum(['active', 'inactive', 'error']).optional(),
+  groupId: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+const aiTestConnectionSchema = z.object({
+  baseUrl: z.string().url(),
+  apiKey: z.string().min(1),
+  model: z.string().min(1),
+});
+
+/**
+ * SSRF 防护：检查 URL 是否指向内部网络
+ */
+function isUrlSafe(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+
+    // 只允许 HTTPS（生产环境应强制要求）
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return false;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+
+    // 阻止回环地址
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return false;
+    }
+
+    // 阻止私有 IP 地址
+    const privateIpPatterns = [
+      /^10\./,                    // 10.0.0.0/8
+      /^172\.(1[6-9]|2\d|3[01])\./,  // 172.16.0.0/12
+      /^192\.168\./,              // 192.168.0.0/16
+      /^169\.254\./,              //链路本地地址 (AWS 元数据)
+      /^0\./,                    // 0.0.0.0/8
+    ];
+
+    if (privateIpPatterns.some(pattern => pattern.test(hostname))) {
+      return false;
+    }
+
+    // 阻止 IPv6 链接本地地址
+    if (hostname.startsWith('fe80:') || hostname.startsWith('fc') || hostname.startsWith('fd')) {
+      return false;
+    }
+
+    // 阻止内网域名
+    const blockedDomains = ['localhost', 'invalid', 'example.com'];
+    if (blockedDomains.includes(hostname)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 注册所有 IPC 处理器
  */
@@ -49,12 +123,19 @@ export function registerIpcHandlers(): void {
     payload: Record<string, unknown>;
     scheduledAt?: number;
   }) => {
+    // 输入验证
+    const parsed = taskCreateSchema.safeParse(params);
+    if (!parsed.success) {
+      log.warn('task:create validation failed:', parsed.error.issues);
+      return { success: false, error: `Invalid params: ${parsed.error.issues[0]?.message}` };
+    }
+
     const task = taskQueue.create({
-      type: params.type as Task['type'],
-      platform: params.platform as Platform,
-      title: params.title,
-      payload: params.payload,
-      scheduledAt: params.scheduledAt,
+      type: parsed.data.type as Task['type'],
+      platform: parsed.data.platform as Platform,
+      title: parsed.data.title,
+      payload: parsed.data.payload,
+      scheduledAt: parsed.data.scheduledAt,
     });
 
     // 通知渲染进程
@@ -90,7 +171,7 @@ export function registerIpcHandlers(): void {
   // ============ 账号相关 ============
 
   ipcMain.handle('account:list', async (_event, { platform }: { platform?: Platform }) => {
-    return accountManager.list(platform);
+    return accountManager.list({ platform });
   });
 
   ipcMain.handle('account:add', async (_event, params: {
@@ -122,7 +203,18 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('account:update', async (_event, { accountId, updates }: { accountId: string; updates: any }) => {
-    const account = accountManager.update(accountId, updates);
+    // 输入验证
+    const parsed = accountUpdateSchema.safeParse(updates);
+    if (!parsed.success) {
+      log.warn('account:update validation failed:', parsed.error.issues);
+      return { success: false, error: `Invalid updates: ${parsed.error.issues[0]?.message}` };
+    }
+
+    const account = accountManager.update(accountId, {
+      ...parsed.data,
+      // Convert null to undefined for groupId
+      groupId: parsed.data.groupId ?? undefined,
+    });
     broadcastToRenderers('account:updated', account);
     return account;
   });
@@ -151,6 +243,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('ai:generate', async (_event, request: AIRequest) => {
     return aiGateway.generate(request);
+  });
+
+  ipcMain.handle('ai:iterate', async (_event, request: AIIterationRequest) => {
+    return aiGateway.iterate(request);
   });
 
   ipcMain.handle('ai:providers', async () => {
@@ -197,14 +293,26 @@ export function registerIpcHandlers(): void {
   // 测试 AI 连接连通性
   ipcMain.handle('ai:test-connection', async (_event, params: { baseUrl: string; apiKey: string; model: string }) => {
     try {
-      const response = await fetch(`${params.baseUrl}/chat/completions`, {
+      // 输入验证
+      const parsed = aiTestConnectionSchema.safeParse(params);
+      if (!parsed.success) {
+        log.warn('ai:test-connection validation failed:', parsed.error.issues);
+        return { success: false, error: `Invalid params: ${parsed.error.issues[0]?.message}` };
+      }
+
+      // SSRF 防护：验证 URL 不指向内部网络
+      if (!isUrlSafe(parsed.data.baseUrl)) {
+        return { success: false, error: 'Invalid URL: internal network addresses are not allowed' };
+      }
+
+      const response = await fetch(`${parsed.data.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${params.apiKey}`,
+          'Authorization': `Bearer ${parsed.data.apiKey}`,
         },
         body: JSON.stringify({
-          model: params.model,
+          model: parsed.data.model,
           messages: [{ role: 'user', content: 'hello' }],
           max_tokens: 5,
         }),
