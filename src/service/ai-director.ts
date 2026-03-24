@@ -1,4 +1,5 @@
 import { taskQueue } from './queue.js'
+import { getDb } from './db.js'
 import { broadcastToRenderers } from './ipc-handlers.js'
 import { callAI } from './strategy-engine.js'
 import { getHotTopics } from './hot-topic-detector.js'
@@ -87,10 +88,10 @@ async function executeDecision(decision: AIDecision): Promise<void> {
 // ============ 核心实现 ============
 
 async function analyzeFailureImpl(task: Task): Promise<void> {
-  // 循环保护：检查分析次数
-  const current = taskQueue.get(task.id)
-  if (!current) return
-  const analysisCount = (current as any).aiAnalysisCount ?? 0
+  // 循环保护：检查分析次数（直接从数据库读取）
+  const db = getDb()
+  const row = db.prepare('SELECT ai_analysis_count FROM tasks WHERE id = ?').get(task.id) as any
+  const analysisCount = row?.ai_analysis_count ?? 0
 
   if (analysisCount >= MAX_ANALYSIS_PER_TASK) {
     broadcastToRenderers('ai:feedback', {
