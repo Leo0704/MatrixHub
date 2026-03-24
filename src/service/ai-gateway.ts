@@ -182,63 +182,116 @@ export class AIGateway {
   /**
    * 生成内容
    * 优先级：explicit providerType > taskType binding > default provider
+   * 支持故障转移：当主 provider 失败时，自动尝试其他 provider
    */
   async generate(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now();
 
-    // 确定使用哪个 provider
-    let provider: AIProvider | undefined;
-    let providerType: AIProviderType | undefined;
+    // 获取所有可用 provider，按优先级排序
+    const providers = this.getOrderedProviders(request);
 
-    if (request.providerType) {
-      // 显式指定了 provider 类型
-      providerType = request.providerType;
-      provider = this._providers.get(providerType);
-    } else if (request.taskType) {
-      // 按任务类型路由
-      provider = this.getProviderForTaskType(request.taskType);
-      if (provider) {
-        providerType = provider.type;
-      } else {
-        return { success: false, error: `No AI provider bound for task type: ${request.taskType}` };
-      }
-    } else {
-      // 使用默认 provider
-      providerType = this.getDefaultProvider()?.type;
-      if (providerType) {
-        provider = this._providers.get(providerType);
-      }
-    }
-
-    if (!provider || !providerType) {
+    if (providers.length === 0) {
       return { success: false, error: 'No AI provider configured' };
     }
 
-    const circuitBreaker = this.circuitBreakers.get(providerType)!;
+    // 尝试每个 provider，直到成功
+    let lastError: Error | null = null;
+    for (const { provider, providerType } of providers) {
+      const circuitBreaker = this.circuitBreakers.get(providerType)!;
 
-    try {
-      const content = await circuitBreaker.execute(async () => {
-        return this.callProvider(provider!, request);
-      });
+      try {
+        const content = await circuitBreaker.execute(async () => {
+          return this.callProvider(provider, request);
+        });
 
-      return {
-        success: true,
-        content,
-        provider: provider!.name,
-        model: request.model ?? provider!.models[0],
-        latencyMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      const err = error as Error;
-      log.error(`AI Gateway error: ${providerType} - ${err.message}`);
+        // 如果请求了 JSON 格式响应，尝试解析
+        if (request.responseFormat === 'json') {
+          try {
+            const structuredContent = JSON.parse(content);
+            return {
+              success: true,
+              content,
+              structuredContent,
+              contentType: 'text',
+              provider: provider.name,
+              model: request.model ?? provider.models[0],
+              latencyMs: Date.now() - startTime,
+            };
+          } catch {
+            // JSON 解析失败，返回错误而不是 fallback
+            return {
+              success: false,
+              error: `JSON解析失败: ${content.substring(0, 100)}...`,
+              content,
+              provider: provider.name,
+              model: request.model ?? provider.models[0],
+              latencyMs: Date.now() - startTime,
+            };
+          }
+        }
 
-      return {
-        success: false,
-        error: err.message,
-        provider: provider!.name,
-        latencyMs: Date.now() - startTime,
-      };
+        return {
+          success: true,
+          content,
+          provider: provider.name,
+          model: request.model ?? provider.models[0],
+          latencyMs: Date.now() - startTime,
+        };
+      } catch (error) {
+        lastError = error as Error;
+        log.warn(`AI Gateway provider ${providerType} failed: ${lastError.message}, trying next...`);
+        continue; // 尝试下一个 provider
+      }
     }
+
+    // 所有 provider 都失败了
+    log.error(`AI Gateway all providers failed: ${lastError?.message}`);
+    return {
+      success: false,
+      error: lastError?.message ?? 'All AI providers failed',
+      provider: providers[0]?.provider.name,
+      latencyMs: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * 获取按优先级排序的 provider 列表
+   */
+  private getOrderedProviders(request: AIRequest): Array<{ provider: AIProvider; providerType: AIProviderType }> {
+    const result: Array<{ provider: AIProvider; providerType: AIProviderType }> = [];
+
+    if (request.providerType) {
+      // 显式指定了 provider 类型
+      const provider = this._providers.get(request.providerType);
+      if (provider) {
+        result.push({ provider, providerType: request.providerType });
+      }
+    } else if (request.taskType) {
+      // 按任务类型路由 - 首先尝试绑定的 provider
+      const boundProvider = this.getProviderForTaskType(request.taskType);
+      if (boundProvider) {
+        result.push({ provider: boundProvider, providerType: boundProvider.type });
+      }
+      // 然后添加其他可用 provider 作为后备
+      for (const [type, provider] of this._providers) {
+        if (type !== boundProvider?.type && this.circuitBreakers.get(type)?.getState().state !== 'open') {
+          result.push({ provider, providerType: type });
+        }
+      }
+    } else {
+      // 使用默认 provider，然后是其他活跃 provider
+      const defaultProvider = this.getDefaultProvider();
+      if (defaultProvider) {
+        result.push({ provider: defaultProvider, providerType: defaultProvider.type });
+      }
+      for (const [type, provider] of this._providers) {
+        if (type !== defaultProvider?.type && this.circuitBreakers.get(type)?.getState().state !== 'open') {
+          result.push({ provider, providerType: type });
+        }
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -297,6 +350,7 @@ export class AIGateway {
         ],
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 2000,
+        ...(request.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
 
@@ -382,6 +436,7 @@ export class AIGateway {
         ],
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 2000,
+        ...(request.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
 
