@@ -115,6 +115,7 @@ export interface IpcChannels {
 
 // AI 生成请求
 export interface AIRequest {
+  taskType?: 'text' | 'image' | 'video' | 'voice';
   providerType?: 'openai' | 'anthropic' | 'ollama' | 'zhipu'
     | 'minimax' | 'kimi' | 'qwen' | 'doubao'
     | 'deepseek' | 'spark' | 'yi' | 'siliconflow';
@@ -135,3 +136,57 @@ export interface AIResponse {
   latencyMs?: number;
   tokensUsed?: number;
 }
+
+// RetryAdvice 白名单 action
+export type RetryAction = 'update_selector' | 'increase_timeout' | 'use_backup_account' | 'skip'
+
+// AI 建议的重试参数（结构化，防注入）
+export interface RetryAdvice {
+  action: RetryAction
+  params: {
+    selectorKey?: string      // 选择器 key，如 'publish_confirm'
+    fallbackIndex?: number    // 使用第几个备用选择器
+    timeoutMs?: number        // 超时毫秒数，如 30000
+    accountId?: string        // 备用账号 ID
+  }
+}
+
+// AI 失败分析结果
+export interface AIFailureResult {
+  taskId: string
+  diagnosis: string           // 最多 50 字
+  suggestions: string[]       // 每条最多 30 字
+  confidence: number        // 0.0-1.0
+  shouldRetry: boolean
+  retryAdvice?: RetryAdvice
+}
+
+// AI 每日策略结果
+export interface DailyPlan {
+  date: string
+  platform: Platform
+  recommendedTopics: string[]
+  bestTimes: number[]         // 北京时间小时，如 [9, 12, 20]
+  warnings: string[]
+  confidence: number
+}
+
+// AI 热点检测结果
+export interface HotTopicDecision {
+  topic: string
+  shouldChase: boolean
+  reason: string
+  contentAngle: string
+  confidence: number
+}
+
+// AI 决策（执行层使用）
+export interface AIDecision {
+  action: 'retry_with_fix' | 'create_task' | 'notify' | 'skip'
+  reason: string
+  confidence: number
+  params: Record<string, unknown>
+}
+
+// AI 手动触发类型
+export type AITriggerType = 'failure' | 'daily' | 'hot_topic'
