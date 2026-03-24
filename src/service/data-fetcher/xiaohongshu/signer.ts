@@ -296,7 +296,7 @@ export async function pre_headers_with_playwright(
   params?: Record<string, unknown>,
   payload?: Record<string, unknown>
 ): Promise<Record<string, string>> {
-  const a1_value = cookie_dict.get('a1') || '';
+  const a1_value = cookie_dict['a1'] || '';
 
   // Parse URL to get path
   const urlObj = new URL(url);

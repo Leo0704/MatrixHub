@@ -38,7 +38,7 @@ export class XiaoHongShuClient {
     params?: Record<string, unknown>,
     payload?: Record<string, unknown>
   ): Promise<Record<string, string>> {
-    const a1_value = this.cookieDict.get('a1') || '';
+    const a1_value = this.cookieDict['a1'] || '';
 
     // Parse URL to get path
     let uri: string;
