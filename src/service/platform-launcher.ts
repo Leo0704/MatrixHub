@@ -1,7 +1,7 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
-import { app } from 'electron';
+import * as os from 'os';
 import log from 'electron-log';
 import type { Platform } from '../shared/types.js';
 import { jitterDelay } from './utils/page-helpers.js';
@@ -335,7 +335,9 @@ export function getBrowserPoolStatus(): { activeBrowsers: number; platforms: Pla
  * 截图保存（调试用）
  */
 export async function screenshot(page: Page, name: string): Promise<string> {
-  const screenshotsDir = path.join(app.getPath('userData'), 'screenshots');
+  const screenshotsDir = process.env.MATRIX_USER_DATA
+  ? path.join(process.env.MATRIX_USER_DATA, 'screenshots')
+  : path.join(os.tmpdir(), 'matrixhub-screenshots');
   fs.mkdirSync(screenshotsDir, { recursive: true });
 
   const filePath = path.join(screenshotsDir, `${name}-${Date.now()}.png`);
@@ -379,6 +381,7 @@ function getRandomUserAgent(): string {
 }
 
 function getUserDataDir(platform: Platform): string {
-  const base = app.getPath('userData');
-  return path.join(base, 'browser-profiles', platform);
+  const base = process.env.MATRIX_USER_DATA
+    || path.join(os.tmpdir(), 'matrixhub-browser-profiles');
+  return path.join(base, platform);
 }
