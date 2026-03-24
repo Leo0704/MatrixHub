@@ -57,8 +57,12 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
   `);
 
-  // 向后兼容：已存在的数据库添加新列
-  db.exec(`ALTER TABLE tasks ADD COLUMN ai_analysis_count INTEGER DEFAULT 0`);
+  // 向后兼容：已存在的数据库添加新列（只有列不存在时才添加）
+  const tableInfo = db.pragma('table_info(tasks)') as { name: string }[];
+  const hasAiAnalysisCount = tableInfo.some((col) => col.name === 'ai_analysis_count');
+  if (!hasAiAnalysisCount) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN ai_analysis_count INTEGER DEFAULT 0`);
+  }
 
   // 任务检查点表（用于崩溃恢复）
   db.exec(`
