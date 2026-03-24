@@ -62,14 +62,14 @@ describe('RateLimiter', () => {
   });
 
   describe('acquire()', () => {
-    it('should acquire permit when under limit', () => {
-      const result = limiter.acquire('douyin');
+    it('should acquire permit when under limit', async () => {
+      const result = await limiter.acquire('douyin');
 
       expect(result).toBe(true);
     });
 
-    it('should persist count to database on acquire', () => {
-      limiter.acquire('douyin');
+    it('should persist count to database on acquire', async () => {
+      await limiter.acquire('douyin');
 
       expect(mockDbInstance.prepare).toHaveBeenCalled();
     });

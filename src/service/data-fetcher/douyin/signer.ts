@@ -1,11 +1,11 @@
 /**
  * 抖音 a_bogus 签名获取
  * 基于 MediaCrawler 的实现
+ *
+ * 安全说明: 此文件不再使用 vm.runInContext() 加载外部 JS，
+ * 仅使用 page.evaluate() 从已加载的页面获取签名，避免 RCE 风险
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as vm from 'vm';
 import { Page } from 'playwright';
 import log from 'electron-log';
 
@@ -32,56 +32,11 @@ export function generateWebId(): string {
   return webId.replace(/-/g, '').slice(0, 19);
 }
 
-// 缓存 douyin.js 上下文
-let signContext: vm.Context | null = null;
-
 /**
- * 加载并执行 douyin.js 获取签名函数
- */
-async function getSignFunction(): Promise<(params: string, userAgent: string) => string> {
-  // 如果已经有缓存的上下文，直接返回
-  if (signContext) {
-    return (signContext as vm.Context)['sign_datail'];
-  }
-
-  // 读取 douyin.js
-  const douyinJsPath = path.resolve(__dirname, '../../../../libs/douyin.js');
-  const douyinJsCode = fs.readFileSync(douyinJsPath, 'utf-8');
-
-  // 创建沙箱上下文
-  const sandbox = {
-    console: {
-      log: () => {},
-      error: () => {},
-    },
-    Math: Math,
-    JSON: JSON,
-    encodeURIComponent: encodeURIComponent,
-    String: String,
-    Object: Object,
-    Array: Array,
-    parseInt: parseInt,
-    Date: Date,
-  };
-
-  signContext = vm.createContext(sandbox);
-
-  // 执行 JS 代码
-  try {
-    vm.runInContext(douyinJsCode, signContext, { timeout: 5000 });
-    log.debug('[DouYinSigner] douyin.js loaded successfully');
-  } catch (err) {
-    log.error('[DouYinSigner] Failed to load douyin.js:', err);
-    throw new Error('Failed to initialize DouYin signer');
-  }
-
-  return (signContext as vm.Context)['sign_datail'];
-}
-
-/**
- * 通过 Playwright page 获取 a_bogus (优先方案)
+ * 通过 Playwright page 获取 a_bogus
  * 对应 Python 实现: help.py::get_a_bogus_from_playwright()
- * @deprecated 此方法已弃用，仅作为后备方案
+ *
+ * 注意: 此方法依赖于页面中已加载抖音的 bdms SDK
  */
 async function getABogusFromPage(
   page: Page,
@@ -101,30 +56,13 @@ async function getABogusFromPage(
 }
 
 /**
- * 通过本地 JS 执行获取 a_bogus
- * 对应 Python 实现: help.py::get_a_bogus_from_js()
- */
-async function getABogusFromJs(
-  params: string,
-  userAgent: string
-): Promise<string> {
-  try {
-    const signFn = await getSignFunction();
-    return signFn(params, userAgent);
-  } catch (err) {
-    log.error('[DouYinSigner] JS execution failed:', err);
-    throw new Error('Failed to generate a_bogus signature');
-  }
-}
-
-/**
  * 获取 a_bogus 签名
- * 优先尝试 page.evaluate，失败后回退到本地 JS 执行
+ * 使用 page.evaluate 从页面获取签名
  *
  * @param url 请求 URL (不含 query string)
- * @param params  query string 参数
+ * @param params query string 参数
  * @param userAgent User-Agent 字符串
- * @param page Playwright page 实例（可选，用于优先方案）
+ * @param page Playwright page 实例（必需）
  */
 export async function getABogus(
   url: string,
@@ -132,23 +70,18 @@ export async function getABogus(
   userAgent: string,
   page?: Page
 ): Promise<string> {
-  // 优先尝试 page.evaluate
-  if (page) {
-    try {
-      log.debug('[DouYinSigner] Trying page.evaluate approach...');
-      return await getABogusFromPage(page, params, userAgent);
-    } catch {
-      log.debug('[DouYinSigner] page.evaluate failed, falling back to local JS');
-    }
+  if (!page) {
+    throw new Error('getABogus requires a Playwright page instance');
   }
 
-  // 回退到本地 JS 执行
-  return await getABogusFromJs(params, userAgent);
+  log.debug('[DouYinSigner] Using page.evaluate approach...');
+  return await getABogusFromPage(page, params, userAgent);
 }
 
 /**
- * 清除签名上下文缓存
+ * 清除签名上下文缓存（保留此函数以保持 API 兼容性）
  */
 export function clearSignContext(): void {
-  signContext = null;
+  // 不再需要清理，因为不再使用 vm 上下文
+  log.debug('[DouYinSigner] clearSignContext called (no-op, VM context no longer used)');
 }

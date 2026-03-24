@@ -85,16 +85,19 @@ export class PlatformAutomation {
 
         case 'confirm_publish':
           await this.confirmPublish(platform);
-          rateLimiter.acquire(platform);
+          await rateLimiter.acquire(platform);
           taskQueue.clearCheckpoint(task.id);
           break;
       }
 
       selectorManager.reportSuccess(platform, 'publish_button');
 
+      // 获取发布后的真实 URL
+      const publishedUrl = this.page ? this.page.url() : null;
+
       return {
         success: true,
-        data: { published: true, url: `https://${platform}.com/item/xxx` },
+        data: { published: true, url: publishedUrl },
       };
     } catch (error) {
       const err = error as Error;

@@ -12,7 +12,8 @@ export type TaskType =
   | 'publish'      // 发布内容
   | 'ai_generate'  // AI 生成
   | 'fetch_data'   // 获取数据
-  | 'automation';  // 浏览器自动化
+  | 'automation'   // 浏览器自动化
+  | 'page_agent';  // Page Agent 自动化
 
 export interface Task {
   id: string;
@@ -201,3 +202,13 @@ export interface AIDecision {
 
 // AI 手动触发类型
 export type AITriggerType = 'failure' | 'daily' | 'hot_topic'
+
+// Page Agent Payload
+export interface PageAgentPayload {
+  goal: string;           // 自然语言目标
+  platform: Platform;
+  accountId: string;
+  url?: string;           // 目标 URL，默认导航到发布页
+  maxSteps?: number;      // 最大步数，默认 20
+  taskType?: 'text' | 'image' | 'video' | 'voice';
+}

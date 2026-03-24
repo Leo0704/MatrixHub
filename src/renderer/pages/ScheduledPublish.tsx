@@ -5,7 +5,7 @@ interface ScheduledTask {
   id: string;
   title: string;
   platform: Platform;
-  scheduledAt: number;
+  scheduledAt?: number;
   status: TaskStatus;
   type: string;
   retryCount: number;
@@ -103,8 +103,6 @@ export default function ScheduledPublish() {
     }
   };
 
-  const now = Date.now();
-
   return (
     <div>
       {/* 快捷操作 */}
@@ -189,8 +187,9 @@ function ScheduledTaskRow({
   onCancel: () => void;
   onRetry: () => void;
 }) {
-  const scheduledDate = new Date(task.scheduledAt);
-  const timeUntil = task.scheduledAt - Date.now();
+  const scheduledAt = task.scheduledAt ?? 0;
+  const scheduledDate = new Date(scheduledAt);
+  const timeUntil = scheduledAt - Date.now();
   const hoursUntil = Math.floor(timeUntil / 3600000);
   const minutesUntil = Math.floor((timeUntil % 3600000) / 60000);
 

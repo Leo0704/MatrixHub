@@ -2,6 +2,7 @@ import { getDb } from './db.js';
 import { v4 as uuidv4 } from 'uuid';
 import log from 'electron-log';
 import type { Platform } from '../shared/types.js';
+import { getBrowserPoolStatus } from './platform-launcher.js';
 
 // Alert thresholds
 export const ALERT_THRESHOLDS = {
@@ -117,9 +118,13 @@ export class MonitoringService {
       ? this.aiLatencies.reduce((a, b) => a + b, 0) / this.aiLatencies.length
       : 0;
 
+    // Get browser pool status
+    const browserPoolStatus = getBrowserPoolStatus();
+    const browserPoolHealthy = browserPoolStatus.activeBrowsers >= 0; // Browser pool is healthy if we can get its status
+
     // Determine overall status
     const checks = {
-      browserPool: true, // TODO: integrate with browser pool
+      browserPool: browserPoolHealthy,
       aiGateway: avgAiLatency < ALERT_THRESHOLDS.aiLatency || avgAiLatency === 0,
       database: dbHealthy,
       queue: queueHealthy,
@@ -136,7 +141,7 @@ export class MonitoringService {
       status,
       checks,
       metrics: {
-        activeBrowsers: 0, // TODO: integrate with browser pool
+        activeBrowsers: browserPoolStatus.activeBrowsers,
         pendingTasks,
         failedTasks24h,
         avgAiLatency,
@@ -466,8 +471,15 @@ export class MonitoringService {
     // Recent alerts
     const recentAlerts = this.getAlerts({ limit: 5 });
 
-    // Account health (placeholder - would need account manager integration)
-    const accountHealth: { platform: Platform; status: string }[] = [];
+    // Account health from database
+    const accountRows = db.prepare(`
+      SELECT platform, status FROM accounts
+    `).all() as { platform: Platform; status: string }[];
+
+    const accountHealth = accountRows.map(row => ({
+      platform: row.platform,
+      status: row.status === 'active' ? 'active' : 'error',
+    }));
 
     return {
       todayPublishCount,

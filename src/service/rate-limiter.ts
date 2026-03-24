@@ -38,6 +38,8 @@ interface LimitBucket {
 export class RateLimiter {
   private memoryCache: Map<string, LimitBucket> = new Map();
   private config: Record<Platform, RateLimitConfig>;
+  // 简单的互斥锁，防止并发访问时出现竞态条件
+  private locks: Map<string, Promise<void>> = new Map();
 
   constructor(config?: Partial<Record<Platform, RateLimitConfig>>) {
     // 合并配置
@@ -45,6 +47,29 @@ export class RateLimiter {
     for (const platform of Object.keys(config ?? {}) as Platform[]) {
       this.config[platform] = { ...DEFAULT_RATE_LIMITS[platform], ...config![platform] };
     }
+  }
+
+  /**
+   * 获取指定 key 的锁
+   */
+  private async acquireLock(key: string): Promise<() => void> {
+    // 等待之前的锁释放
+    while (this.locks.has(key)) {
+      await this.locks.get(key);
+    }
+
+    // 创建新锁
+    let release: () => void;
+    const lock = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    this.locks.set(key, lock);
+
+    // 返回释放函数
+    return () => {
+      this.locks.delete(key);
+      release!();
+    };
   }
 
   /**
@@ -91,31 +116,39 @@ export class RateLimiter {
   /**
    * 尝试获取执行许可（消耗配额）
    * 如果成功返回 true，失败返回 false
+   * 使用互斥锁防止并发竞态条件
    */
-  acquire(platform: Platform): boolean {
+  async acquire(platform: Platform): Promise<boolean> {
     const cfg = this.config[platform];
     const now = Date.now();
 
-    const minuteBucket = this.getBucket(this.minuteKey(platform), 60000, now, true);
-    const hourBucket = this.getBucket(this.hourKey(platform), 3600000, now, true);
-    const dayBucket = this.getBucket(this.dayKey(platform), 86400000, now, true);
+    // 使用锁保护读-改-写操作
+    const release = await this.acquireLock(platform);
 
-    if (minuteBucket.count > cfg.requestsPerMinute) return false;
-    if (hourBucket.count > cfg.requestsPerHour) return false;
-    if (dayBucket.count > cfg.requestsPerDay) return false;
+    try {
+      const minuteBucket = this.getBucket(this.minuteKey(platform), 60000, now, true);
+      const hourBucket = this.getBucket(this.hourKey(platform), 3600000, now, true);
+      const dayBucket = this.getBucket(this.dayKey(platform), 86400000, now, true);
 
-    // 所有检查通过，消耗配额
-    minuteBucket.count++;
-    hourBucket.count++;
-    dayBucket.count++;
+      if (minuteBucket.count > cfg.requestsPerMinute) return false;
+      if (hourBucket.count > cfg.requestsPerHour) return false;
+      if (dayBucket.count > cfg.requestsPerDay) return false;
 
-    // 持久化到数据库
-    this.persistCount(this.minuteKey(platform), minuteBucket);
-    this.persistCount(this.hourKey(platform), hourBucket);
-    this.persistCount(this.dayKey(platform), dayBucket);
+      // 所有检查通过，消耗配额
+      minuteBucket.count++;
+      hourBucket.count++;
+      dayBucket.count++;
 
-    log.debug(`RateLimit 获取成功: ${platform} (min:${minuteBucket.count}/${cfg.requestsPerMinute})`);
-    return true;
+      // 持久化到数据库
+      this.persistCount(this.minuteKey(platform), minuteBucket);
+      this.persistCount(this.hourKey(platform), hourBucket);
+      this.persistCount(this.dayKey(platform), dayBucket);
+
+      log.debug(`RateLimit 获取成功: ${platform} (min:${minuteBucket.count}/${cfg.requestsPerMinute})`);
+      return true;
+    } finally {
+      release();
+    }
   }
 
   /**
@@ -126,7 +159,7 @@ export class RateLimiter {
     const start = Date.now();
 
     while (Date.now() - start < timeoutMs) {
-      if (this.acquire(platform)) {
+      if (await this.acquire(platform)) {
         return;
       }
 

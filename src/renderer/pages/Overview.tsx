@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Task } from '~shared/types';
+import { StatCard } from '../components/StatCard';
+import { TaskRow } from '../components/TaskRow';
 
 export default function Overview() {
   const [stats, setStats] = useState<{
@@ -8,7 +10,6 @@ export default function Overview() {
     running: number;
     completed: number;
     failed: number;
-    deferred: number;
   } | null>(null);
   const [recentTasks, setRecentTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export default function Overview() {
         window.electronAPI?.getTaskStats(),
         window.electronAPI?.listTasks({ limit: 5 }),
       ]);
-      setStats(taskStats);
+      setStats(taskStats ?? null);
       setRecentTasks(tasks ?? []);
     } catch (error) {
       console.error('加载数据失败:', error);
@@ -49,7 +50,7 @@ export default function Overview() {
 
   const loadStats = async () => {
     const taskStats = await window.electronAPI?.getTaskStats();
-    setStats(taskStats);
+    setStats(taskStats ?? null);
   };
 
   if (loading) {
@@ -59,7 +60,7 @@ export default function Overview() {
   const totalTasks = stats?.total ?? 0;
   const totalCompleted = stats?.completed ?? 0;
   const totalFailed = stats?.failed ?? 0;
-  const totalPending = (stats?.pending ?? 0) + (stats?.running ?? 0) + (stats?.deferred ?? 0);
+  const totalPending = (stats?.pending ?? 0) + (stats?.running ?? 0);
   const successRate = totalCompleted + totalFailed > 0
     ? ((totalCompleted / (totalCompleted + totalFailed)) * 100).toFixed(1)
     : '0';
@@ -88,13 +89,6 @@ export default function Overview() {
           marginBottom: 'var(--space-lg)'
         }}>
           <h3>最近任务</h3>
-          <button
-            className="btn btn-ghost"
-            style={{ fontSize: 13 }}
-            onClick={() => {/* 导航到内容管理 */}}
-          >
-            查看全部 →
-          </button>
         </div>
 
         {recentTasks.length === 0 ? (
@@ -112,129 +106,4 @@ export default function Overview() {
       </div>
     </div>
   );
-}
-
-function StatCard({ label, value, icon, color }: {
-  label: string;
-  value: string | number;
-  icon: string;
-  color: string;
-}) {
-  return (
-    <div className="card" style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 'var(--space-lg)'
-    }}>
-      <div style={{
-        width: 48,
-        height: 48,
-        borderRadius: 'var(--radius-lg)',
-        background: `${color}15`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 24,
-      }}>
-        {icon}
-      </div>
-      <div>
-        <div style={{
-          fontSize: 24,
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          fontFamily: 'var(--font-mono)'
-        }}>
-          {value}
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function TaskRow({ task }: { task: Task }) {
-  const statusConfig = {
-    pending: { label: '等待中', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
-    running: { label: '执行中', color: 'var(--primary)', bg: 'rgba(59,130,246,0.1)' },
-    completed: { label: '已完成', color: 'var(--success)', bg: 'rgba(34,197,94,0.1)' },
-    failed: { label: '失败', color: 'var(--error)', bg: 'rgba(239,68,68,0.1)' },
-    cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
-    deferred: { label: '延迟', color: 'var(--warning)', bg: 'rgba(234,179,8,0.1)' },
-  };
-
-  const status = statusConfig[task.status];
-  const platformName = task.platform === 'douyin' ? '抖音' :
-                        task.platform === 'kuaishou' ? '快手' : '小红书';
-
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 'var(--space-md)',
-      padding: 'var(--space-md)',
-      borderRadius: 'var(--radius-md)',
-      background: 'var(--bg-elevated)',
-    }}>
-      <span className={`badge badge-platform-${task.platform}`}>
-        {platformName}
-      </span>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 14,
-          fontWeight: 500,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}>
-          {task.title}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          {formatTime(task.createdAt)}
-        </div>
-      </div>
-
-      {task.status === 'running' && task.progress !== undefined && (
-        <div style={{
-          width: 60,
-          height: 4,
-          borderRadius: 2,
-          background: 'var(--border-subtle)',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            width: `${task.progress}%`,
-            height: '100%',
-            background: 'var(--primary)',
-            transition: 'width 300ms ease'
-          }} />
-        </div>
-      )}
-
-      <span style={{
-        fontSize: 12,
-        padding: '2px 8px',
-        borderRadius: 'var(--radius-sm)',
-        background: status.bg,
-        color: status.color,
-        fontWeight: 500,
-      }}>
-        {status.label}
-      </span>
-    </div>
-  );
-}
-
-function formatTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (hours < 24) return `${hours} 小时前`;
-  return `${days} 天前`;
 }

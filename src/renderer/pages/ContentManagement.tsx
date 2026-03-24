@@ -404,21 +404,6 @@ function CreateTaskModal({
     }
   };
 
-  // Group accounts by platform and group
-  const accountsByPlatform = accounts.reduce((acc, account) => {
-    if (!acc[account.platform]) {
-      acc[account.platform] = [];
-    }
-    acc[account.platform].push(account);
-    return acc;
-  }, {} as Record<Platform, Account[]>);
-
-  const getGroupName = (groupId?: string) => {
-    if (!groupId) return '未分组';
-    const group = groups.find(g => g.id === groupId);
-    return group?.name ?? '未知分组';
-  };
-
   const isGroupFullySelected = (groupId: string) => {
     const groupAccountIds = accounts
       .filter(a => a.groupId === groupId)
@@ -470,7 +455,6 @@ function CreateTaskModal({
             {groups.map(group => {
               const isFullySelected = isGroupFullySelected(group.id);
               const isPartiallySelected = isGroupPartiallySelected(group.id);
-              const isExpanded = expandedGroups.has(group.id);
               return (
                 <button
                   key={group.id}

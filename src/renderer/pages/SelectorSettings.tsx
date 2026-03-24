@@ -12,12 +12,11 @@ type Selector = {
 };
 
 type SelectorVersion = {
-  selectorKey: string;
-  value: string;
-  type: string;
   version: number;
+  value: string;
   successRate: number;
   failureCount: number;
+  updatedAt: number;
 };
 
 const PLATFORMS: { key: Platform; label: string }[] = [
@@ -153,10 +152,6 @@ export default function SelectorSettings() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString('zh-CN');
   };
 
   const getSuccessRateColor = (rate: number) => {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import type { Platform } from '~shared/types';
+import { StatCard } from '../components/StatCard';
 
 interface DashboardData {
   todayPublishCount: number;
@@ -59,11 +60,6 @@ export default function DataInsights() {
 
   // Compute per-platform stats from dashboard data
   const platformStats = dashboard?.accountHealth ?? [];
-
-  const totalViews = platformStats.reduce(() => 0, 0);
-  const totalLikes = 0;
-  const totalComments = 0;
-  const totalFollowers = 0;
 
   return (
     <div>
@@ -251,61 +247,6 @@ export default function DataInsights() {
               <span style={{ color: 'var(--text-muted)' }}>📊 暂无数据</span>
             </div>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, icon, color, loading }: {
-  label: string;
-  value: string;
-  icon: string;
-  color: string;
-  loading: boolean;
-}) {
-  return (
-    <div className="card">
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-md)'
-      }}>
-        {loading ? (
-          <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--bg-elevated)',
-            animation: 'pulse 1.5s infinite'
-          }} />
-        ) : (
-          <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 'var(--radius-md)',
-            background: `${color}15`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 20,
-          }}>
-            {icon}
-          </div>
-        )}
-        <div>
-          {loading ? (
-            <div style={{ width: 60, height: 22, borderRadius: 4, background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
-          ) : (
-            <div style={{
-              fontSize: 22,
-              fontWeight: 600,
-              fontFamily: 'var(--font-mono)'
-            }}>
-              {value}
-            </div>
-          )}
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
         </div>
       </div>
     </div>

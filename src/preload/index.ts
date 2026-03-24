@@ -44,11 +44,11 @@ export interface ElectronAPI {
   validateAccount: (accountId: string) => Promise<boolean>;
 
   // 分组管理
-  createGroup: (name: string, color?: string) => Promise<{ id: string; name: string; color: string; sortOrder: number }>;
-  updateGroup: (id: string, updates: { name?: string; color?: string; sortOrder?: number }) => Promise<{ id: string; name: string; color: string; sortOrder: number } | null>;
+  createGroup: (name: string, color?: string) => Promise<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number }>;
+  updateGroup: (id: string, updates: { name?: string; color?: string; sortOrder?: number }) => Promise<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number } | null>;
   deleteGroup: (groupId: string) => Promise<{ success: boolean }>;
-  listGroups: () => Promise<Array<{ id: string; name: string; color: string; sortOrder: number }>>;
-  getGroup: (groupId: string) => Promise<{ id: string; name: string; color: string; sortOrder: number } | null>;
+  listGroups: () => Promise<Array<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number }>>;
+  getGroup: (groupId: string) => Promise<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number } | null>;
   reorderGroups: (groups: { id: string; sortOrder: number }[]) => Promise<{ success: boolean }>;
 
   // 限流

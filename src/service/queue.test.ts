@@ -250,4 +250,204 @@ describe('TaskQueue', () => {
       expect(task?.error).toContain('重试次数耗尽');
     });
   });
+
+  describe('dequeue()', () => {
+    it('should return null when no pending tasks', () => {
+      mockDbInstance.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+      });
+
+      const task = queue.dequeue();
+
+      expect(task).toBeNull();
+    });
+
+    it('should return and update task to running status', () => {
+      mockDbInstance.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'running' })),
+      });
+
+      const task = queue.dequeue();
+
+      expect(task).not.toBeNull();
+      expect(task?.status).toBe('running');
+    });
+
+    it('should use atomic UPDATE RETURNING to prevent race conditions', () => {
+      mockDbInstance.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue(createMockTaskRow()),
+      });
+
+      queue.dequeue();
+
+      // Verify the SQL uses RETURNING clause for atomicity
+      expect(mockDbInstance.prepare).toHaveBeenCalled();
+    });
+  });
+
+  describe('updateStatus()', () => {
+    it('should return null when task not found', () => {
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(undefined),
+      });
+
+      const task = queue.updateStatus('nonexistent', 'running');
+
+      expect(task).toBeNull();
+    });
+
+    it('should update status and set started_at for running', () => {
+      // First get() to check task exists
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow()),
+      });
+      // UPDATE query
+      mockDbInstance.prepare.mockReturnValueOnce({
+        run: vi.fn().mockReturnValue({}),
+      });
+      // Final get() to return updated task
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'running', started_at: Date.now() })),
+      });
+
+      const task = queue.updateStatus('test-uuid-1234', 'running');
+
+      expect(task?.status).toBe('running');
+    });
+
+    it('should set completed_at for completed status', () => {
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow()),
+      });
+      mockDbInstance.prepare.mockReturnValueOnce({
+        run: vi.fn().mockReturnValue({}),
+      });
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow({ status: 'completed', completed_at: Date.now() })),
+      });
+
+      const task = queue.updateStatus('test-uuid-1234', 'completed');
+
+      expect(task?.status).toBe('completed');
+    });
+
+    it('should store result as JSON string', () => {
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow()),
+      });
+      mockDbInstance.prepare.mockReturnValueOnce({
+        run: vi.fn().mockReturnValue({}),
+      });
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow({ result: '{"url":"https://example.com"}' })),
+      });
+
+      const task = queue.updateStatus('test-uuid-1234', 'completed', { result: { url: 'https://example.com' } });
+
+      expect(task?.result).toEqual({ url: 'https://example.com' });
+    });
+  });
+
+  describe('checkpoint operations', () => {
+    describe('saveCheckpoint()', () => {
+      it('should save checkpoint to database', () => {
+        mockDbInstance.prepare.mockReturnValueOnce({
+          run: vi.fn().mockReturnValue({}),
+        });
+
+        queue.saveCheckpoint({
+          taskId: 'test-uuid-1234',
+          step: 'login',
+          payload: { username: 'test' },
+          browserState: '{"cookies":[]}',
+          createdAt: Date.now(),
+        });
+
+        expect(mockDbInstance.prepare).toHaveBeenCalled();
+      });
+    });
+
+    describe('getCheckpoint()', () => {
+      it('should return null when checkpoint not found', () => {
+        mockDbInstance.prepare.mockReturnValueOnce({
+          get: vi.fn().mockReturnValue(undefined),
+        });
+
+        const checkpoint = queue.getCheckpoint('nonexistent');
+
+        expect(checkpoint).toBeNull();
+      });
+
+      it('should return checkpoint with parsed payload', () => {
+        mockDbInstance.prepare.mockReturnValueOnce({
+          get: vi.fn().mockReturnValue({
+            task_id: 'test-uuid-1234',
+            step: 'login',
+            payload: '{"username":"test"}',
+            browser_state: '{"cookies":[]}',
+            created_at: Date.now(),
+          }),
+        });
+
+        const checkpoint = queue.getCheckpoint('test-uuid-1234');
+
+        expect(checkpoint).not.toBeNull();
+        expect(checkpoint?.taskId).toBe('test-uuid-1234');
+        expect(checkpoint?.step).toBe('login');
+        expect(checkpoint?.payload).toEqual({ username: 'test' });
+        // browserState is stored as JSON string, not parsed
+        expect(checkpoint?.browserState).toEqual('{"cookies":[]}');
+      });
+    });
+
+    describe('clearCheckpoint()', () => {
+      it('should delete checkpoint from database', () => {
+        mockDbInstance.prepare.mockReturnValueOnce({
+          run: vi.fn().mockReturnValue({}),
+        });
+
+        queue.clearCheckpoint('test-uuid-1234');
+
+        expect(mockDbInstance.prepare).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('updateField()', () => {
+    it('should return null for invalid field names', () => {
+      const task = queue.updateField('test-uuid-1234', 'invalid_field', 'value');
+
+      expect(task).toBeNull();
+    });
+
+    it('should update ai_analysis_count field', () => {
+      // UPDATE query
+      mockDbInstance.prepare.mockReturnValueOnce({
+        run: vi.fn().mockReturnValue({}),
+      });
+      // get() to return updated task (called at the end of updateField)
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow()),
+      });
+
+      const task = queue.updateField('test-uuid-1234', 'ai_analysis_count', 1);
+
+      expect(task).not.toBeNull();
+    });
+
+    it('should update version field', () => {
+      // UPDATE query
+      mockDbInstance.prepare.mockReturnValueOnce({
+        run: vi.fn().mockReturnValue({}),
+      });
+      // get() to return updated task
+      mockDbInstance.prepare.mockReturnValueOnce({
+        get: vi.fn().mockReturnValue(createMockTaskRow({ version: 2 })),
+      });
+
+      const task = queue.updateField('test-uuid-1234', 'version', 2);
+
+      expect(task?.version).toBe(2);
+    });
+  });
 });

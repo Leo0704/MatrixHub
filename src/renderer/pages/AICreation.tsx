@@ -82,13 +82,13 @@ const CONTENT_PROMPTS: Record<string, (topic: string, platform: Platform) => str
 
 【爆款话题标签】
 生成 5-8 个相关话题标签
-#xxx #xxx #xxx
+格式示例：#话题1 #话题2 #话题3
 
 ---
 要求：输出可直接使用的文案，直接复制就能拍视频`;
   },
 
-  '2': (topic, platform) => {
+  '2': (topic, _platform) => {
     // 种草文案
     return `🌟 【小红书爆款种草文案】
 
@@ -118,7 +118,7 @@ const CONTENT_PROMPTS: Record<string, (topic: string, platform: Platform) => str
 要求：真实感、有温度、能引发共鸣，直接可发布`;
   },
 
-  '3': (topic, platform) => {
+  '3': (topic, _platform) => {
     // 产品测评
     return `📦 【真实测评文案】
 
@@ -151,7 +151,7 @@ const CONTENT_PROMPTS: Record<string, (topic: string, platform: Platform) => str
 要求：真实、有细节、不浮夸，让人看完就想下单`;
   },
 
-  '4': (topic, platform) => {
+  '4': (topic, _platform) => {
     // 话题讨论
     return `💬 【互动话题生成】
 

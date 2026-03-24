@@ -7,6 +7,7 @@ export default function AccountManagement() {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadAccounts();

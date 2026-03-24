@@ -45,7 +45,7 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -317,7 +317,5 @@ app.on('before-quit', async () => {
   await shutdownServices();
 });
 
-// 防止 app 退出时数据库连接未关闭
-app.on('will-quit', async () => {
-  await shutdownServices();
-});
+// 注意: 不再在 will-quit 中调用 shutdownServices，
+// 因为 before-quit 已经正确关闭所有服务

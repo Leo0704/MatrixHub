@@ -169,6 +169,15 @@ export async function closeAllBrowsers(): Promise<void> {
 }
 
 /**
+ * 获取浏览器池状态
+ */
+export function getBrowserPoolStatus(): { activeBrowsers: number; platforms: Platform[] } {
+  const activeBrowsers = browserPool.size;
+  const platforms = Array.from(browserPool.keys());
+  return { activeBrowsers, platforms };
+}
+
+/**
  * 截图保存（调试用）
  */
 export async function screenshot(page: Page, name: string): Promise<string> {

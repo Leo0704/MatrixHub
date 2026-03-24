@@ -1,5 +1,6 @@
 import log from 'electron-log'
 import type { Platform } from '../shared/types.js'
+import { createFetcher } from './data-fetcher/index.js'
 
 export interface HotTopic {
   keyword: string
@@ -8,50 +9,43 @@ export interface HotTopic {
 
 /**
  * 获取热点话题列表
- * 框架先搭，爬虫逻辑后续填充；空数据时用默认热点兜底
+ * 使用各平台数据抓取器获取真实热点数据
+ * @throws 如果无法获取数据则抛出错误
  */
 export async function getHotTopics(platform: Platform): Promise<HotTopic[]> {
+  const fetcher = createFetcher(platform)
+
   try {
-    // TODO: 后续填充各平台爬虫逻辑
-    // 目前返回默认热点列表作为兜底
-    const defaults = getDefaultHotTopics(platform)
-    log.info(`[HotTopicDetector] ${platform} 热点话题（默认列表）:`, defaults.length)
-    return defaults
+    log.info(`[HotTopicDetector] 开始获取 ${platform} 热点话题...`)
+
+    const result = await fetcher.fetchHotTopics({ limit: 50 })
+
+    if (result.error) {
+      log.error(`[HotTopicDetector] ${platform} 获取热点话题失败:`, result.error)
+      throw new Error(`获取 ${platform} 热点话题失败: ${result.error}`)
+    }
+
+    if (result.topics.length === 0) {
+      log.error(`[HotTopicDetector] ${platform} 未获取到任何热点话题`)
+      throw new Error(`获取 ${platform} 热点话题返回空数据`)
+    }
+
+    // 转换格式并按热度排序
+    const topics = result.topics
+      .map(t => ({
+        keyword: t.title,
+        heatScore: t.heat,
+      }))
+      .sort((a, b) => b.heatScore - a.heatScore)
+
+    log.info(`[HotTopicDetector] ${platform} 获取到 ${topics.length} 条热点话题`)
+    return topics
+
   } catch (err) {
-    log.error('[HotTopicDetector] 获取热点失败:', err)
-    return []
+    const error = err as Error
+    log.error(`[HotTopicDetector] 获取 ${platform} 热点失败:`, error.message)
+    throw error
+  } finally {
+    await fetcher.close()
   }
-}
-
-/**
- * 默认热点列表（节假日、重要节点等兜底）
- */
-function getDefaultHotTopics(platform: Platform): HotTopic[] {
-  const now = new Date()
-  const month = now.getMonth() + 1
-  const day = now.getDate()
-
-  // 季节性热点
-  const seasonal: Record<number, HotTopic[]> = {
-    1: [{ keyword: '新年目标', heatScore: 8500 }, { keyword: '春节准备', heatScore: 9200 }],
-    2: [{ keyword: '情人节', heatScore: 9800 }, { keyword: '元宵节', heatScore: 7800 }],
-    3: [{ keyword: '妇女节', heatScore: 7500 }, { keyword: '植树节', heatScore: 6000 }],
-    4: [{ keyword: '愚人节', heatScore: 7000 }, { keyword: '清明节', heatScore: 8500 }],
-    5: [{ keyword: '劳动节', heatScore: 9500 }, { keyword: '母亲节', heatScore: 8800 }],
-    6: [{ keyword: '儿童节', heatScore: 9000 }, { keyword: '父亲节', heatScore: 8200 }],
-    7: [{ keyword: '暑假', heatScore: 8700 }, { keyword: '建党节', heatScore: 6500 }],
-    8: [{ keyword: '建军节', heatScore: 6200 }, { keyword: '七夕节', heatScore: 9100 }],
-    9: [{ keyword: '开学季', heatScore: 9400 }, { keyword: '中秋节', heatScore: 8900 }],
-    10: [{ keyword: '国庆节', heatScore: 9800 }, { keyword: '重阳节', heatScore: 6800 }],
-    11: [{ keyword: '双十一', heatScore: 9900 }, { keyword: '感恩节', heatScore: 7500 }],
-    12: [{ keyword: '双十二', heatScore: 9600 }, { keyword: '圣诞节', heatScore: 8800 }, { keyword: '年终总结', heatScore: 8500 }],
-  }
-
-  const topics = seasonal[month] || [{ keyword: '今日话题', heatScore: 7000 }]
-
-  // 平台适配
-  return topics.map(t => ({
-    ...t,
-    keyword: `[${platform}] ${t.keyword}`
-  }))
 }
