@@ -11,7 +11,7 @@
 ## 能干啥
 
 ### 1. 多平台发布
-把同一篇内容**一次编写，同时发布**到抖音、快手、小红书三个平台。不用一个个平台登录一个个上传了。
+把同一篇内容**一次编写，同时发布**到抖音、快手、小红书三个平台的多个账号。不用一个个平台登录一个个上传了。
 
 ### 2. AI帮你写内容
 接入了十几个AI模型（OpenAI、Claude、各种国产大模型等），能帮你：
@@ -27,6 +27,9 @@
 
 ### 5. 数据分析
 把各平台的数据扒回来，看看发的东西效果咋样。
+
+### 6. 账号分组管理
+上百个账号怎么办？给它们分组打标签，按组筛选、按组发布，效率翻倍。
 
 ## 技术架构
 
@@ -50,9 +53,22 @@ service/
 ├── platform-launcher.ts  # 浏览器控制，操控Chrome干活
 ├── rate-limiter.ts       # 限流器，防止请求太快被平台封
 ├── credential-manager.ts # 密码管家，安全存账号密码
+├── account-group.ts      # 账号分组，管理分组增删改查
 ├── monitoring.ts         # 健康检查，盯着系统状态
 ├── hot-topic-detector.ts # 热点探测，刷各平台的热榜
-└── data-fetcher/         # 数据抓取，按平台分的爬虫
+├── data-fetcher/         # 数据抓取，按平台分的爬虫
+├── handlers/             # 任务处理器
+│   ├── publish-handler.ts      # 发布任务
+│   ├── ai-generate-handler.ts  # AI生成任务
+│   ├── fetch-handler.ts        # 数据获取任务
+│   ├── automation-handler.ts   # 自动化任务
+│   └── page-agent-handler.ts   # 页面智能体任务
+├── config/               # 配置
+│   ├── selectors.ts      # 平台UI元素选择器
+│   └── prompts.ts         # AI提示词模板
+└── utils/                # 工具函数
+    ├── page-helpers.ts   # 浏览器页面操作辅助
+    └── dom-extractor.ts  # DOM数据提取
 ```
 
 ## 核心概念
@@ -61,12 +77,13 @@ service/
 
 软件里所有要干的事都变成一个个**任务**，排着队等着执行。
 
-任务有五种状态：
+任务有六种状态：
 - `pending` - 排队等着
 - `running` - 正在执行
 - `completed` - 干完了
 - `failed` - 失败了
 - `cancelled` - 被取消了
+- `deferred` - 延迟中（等限流）
 
 失败了的任务会自动重试，用的策略是"越等越长"（指数退避），避免一下把人家服务器打爆。
 
@@ -91,6 +108,15 @@ service/
 - 快手：每分钟15次、每小时300次、每天2000次
 - 小红书：每分钟5次、每小时100次、每天500次
 
+### 账号分组
+
+上百账号不乱套？给它们分组打标签：
+- 按客户分组（美妆客户、3C客户）
+- 按地区分组（华东、华南）
+- 按品类分组（服装、食品）
+
+发布的时候按组选，一键勾一组，省时省力。
+
 ## 目录结构
 
 ```
@@ -100,19 +126,23 @@ src/
 ├── renderer/             # 前端界面
 │   ├── pages/           # 各个页面
 │   │   ├── Overview.tsx         # 总览/仪表盘
-│   │   ├── ContentManagement.tsx # 内容管理
+│   │   ├── ContentManagement.tsx # 内容管理/发布
 │   │   ├── AICreation.tsx       # AI创作
 │   │   ├── ScheduledPublish.tsx  # 定时发布
 │   │   ├── DataInsights.tsx     # 数据洞察
-│   │   ├── AccountManagement.tsx # 账号管理
+│   │   ├── AccountManagement.tsx # 账号管理（含分组）
 │   │   ├── SelectorSettings.tsx  # UI选择器设置
 │   │   └── Settings.tsx          # 设置页
-│   └── components/      # 公共组件
+│   ├── components/      # 公共组件
+│   └── utils/          # 前端工具函数
 ├── service/             # 后台服务
 │   ├── db.ts            # 数据库操作
 │   ├── queue.ts         # 任务队列
 │   ├── ipc-handlers.ts  # IPC消息处理
-│   └── ...              # 其他服务
+│   ├── account-group.ts # 账号分组
+│   ├── handlers/        # 任务处理器
+│   ├── config/          # 配置文件
+│   └── utils/           # 工具函数
 └── shared/              # 共享类型定义
 ```
 
@@ -121,10 +151,14 @@ src/
 用SQLite存数据，简单轻量。主要存这些表：
 
 - `tasks` - 任务记录
-- `accounts` - 平台账号
+- `task_checkpoints` - 任务检查点（崩溃恢复用）
+- `accounts` - 平台账号（含分组、标签）
+- `account_groups` - 账号分组
 - `credentials` - 加密的密码
 - `rate_limits` - 限流计数
 - `ai_providers` - AI服务商配置
+- `task_type_bindings` - 任务类型绑定AI
+- `task_ai_configs` - 任务AI配置
 - `selector_versions` - UI元素选择器版本（平台UI变了要跟着改）
 - `alerts` - 系统告警
 - `metrics` - 各种指标数据
