@@ -46,7 +46,8 @@ function initializeSchema(db: Database.Database): void {
       completed_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      version INTEGER DEFAULT 1
+      version INTEGER DEFAULT 1,
+      ai_analysis_count INTEGER DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -55,6 +56,9 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_at);
     CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
   `);
+
+  // 向后兼容：已存在的数据库添加新列
+  db.exec(`ALTER TABLE tasks ADD COLUMN ai_analysis_count INTEGER DEFAULT 0`);
 
   // 任务检查点表（用于崩溃恢复）
   db.exec(`
@@ -120,6 +124,29 @@ function initializeSchema(db: Database.Database): void {
       models TEXT NOT NULL DEFAULT '[]',
       is_default INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'error')),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // 任务类型 AI 绑定表（每个任务类型独立选择 AI Provider）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_type_bindings (
+      task_type TEXT PRIMARY KEY CHECK(task_type IN ('text', 'image', 'video', 'voice')),
+      provider_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE CASCADE
+    );
+  `);
+
+  // 任务类型 AI 配置表（存储每个任务类型的 AI 配置：Base URL + API Key + 模型）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_ai_configs (
+      task_type TEXT PRIMARY KEY CHECK(task_type IN ('text', 'image', 'video', 'voice')),
+      base_url TEXT NOT NULL,
+      api_key TEXT NOT NULL,
+      model TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
