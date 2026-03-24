@@ -136,17 +136,28 @@ export interface AIRequest {
   system?: string;
   temperature?: number;
   maxTokens?: number;
+  responseFormat?: 'text' | 'json';  // 新增：要求返回格式
 }
 
 // AI 生成响应
 export interface AIResponse {
   success: boolean;
   content?: string;
+  structuredContent?: Record<string, unknown>;  // 新增：结构化解析结果
+  contentType?: 'text' | 'image' | 'audio';  // 新增：内容类型
   error?: string;
   provider?: string;
   model?: string;
   latencyMs?: number;
   tokensUsed?: number;
+}
+
+// AI 迭代请求
+export interface AIIterationRequest {
+  originalPrompt: string;
+  originalResponse: string;
+  feedback: string;
+  iterationCount: number;
 }
 
 // RetryAdvice 白名单 action
