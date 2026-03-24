@@ -1,15 +1,38 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import log from 'electron-log';
 import { taskQueue } from './queue.js';
-import { accountManager, credentialManager } from './credential-manager.js';
+import { accountManager, credentialManager, aiKeyManager } from './credential-manager.js';
 import { rateLimiter } from './rate-limiter.js';
 import { aiGateway } from './ai-gateway.js';
 import { selectorManager } from './selector-versioning.js';
 import { monitoringService } from './monitoring.js';
 import { closeAllBrowsers } from './platform-launcher.js';
 import { getDb } from './db.js';
-import type { TaskFilter, Platform, AIRequest, AITriggerType } from '../shared/types.js';
+import type { Task, TaskFilter, Platform, AIRequest, AITriggerType } from '../shared/types.js';
+import type { AIProviderType } from './ai-gateway.js';
 import { dailyBriefing, checkHotTopics, analyzeNow } from './ai-director.js';
+import { registerGroupHandlers } from './handlers/group-handlers.js';
+
+// 数据库行类型定义
+interface TaskAIConfigRow {
+  task_type: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  created_at: number;
+  updated_at: number;
+}
+
+interface SelectorVersionRow {
+  platform: string;
+  selector_key: string;
+  selector_value: string;
+  is_active: number;
+  version: number;
+  success_rate: number;
+  failure_count: number;
+  updated_at: number;
+}
 
 /**
  * 注册所有 IPC 处理器
@@ -27,7 +50,7 @@ export function registerIpcHandlers(): void {
     scheduledAt?: number;
   }) => {
     const task = taskQueue.create({
-      type: params.type as any,
+      type: params.type as Task['type'],
       platform: params.platform as Platform,
       title: params.title,
       payload: params.payload,
@@ -158,7 +181,7 @@ export function registerIpcHandlers(): void {
     try {
       const provider = await aiGateway.addProvider({
         name: params.name,
-        type: params.type as any,
+        type: params.type as AIProviderType,
         apiKey: params.apiKey,
         baseUrl: params.baseUrl,
         models: params.models,
@@ -204,7 +227,7 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('ai:circuit-status', async (_event, { providerType }: { providerType: string }) => {
-    return aiGateway.getCircuitBreakerStatus(providerType as any);
+    return aiGateway.getCircuitBreakerStatus(providerType as AIProviderType);
   });
 
   // ============ 任务类型绑定相关 ============
@@ -239,31 +262,38 @@ export function registerIpcHandlers(): void {
   // 获取任务类型 AI 配置（不返回 apiKey，只返回是否有配置）
   ipcMain.handle('ai:get-task-ai-configs', async () => {
     const db = getDb();
-    const rows = db.prepare('SELECT * FROM task_ai_configs').all() as any[];
+    const rows = db.prepare('SELECT * FROM task_ai_configs').all() as TaskAIConfigRow[];
     const result: Record<string, { baseUrl: string; hasApiKey: boolean; model: string }> = {};
     for (const row of rows) {
+      // API Key 存储在加密文件中，数据库中只存标记 '[ENCRYPTED]'
+      const hasApiKey = row.api_key === '[ENCRYPTED]';
       result[row.task_type] = {
         baseUrl: row.base_url || '',
-        hasApiKey: !!(row.api_key), // 只返回是否有 API Key，不返回实际值
+        hasApiKey,
         model: row.model || '',
       };
     }
     return result;
   });
 
-  // 保存任务类型 AI 配置
+  // 保存任务类型 AI 配置（API Key 使用 safeStorage 加密存储）
   ipcMain.handle('ai:save-task-ai-config', async (_event, params: { taskType: string; config: { baseUrl: string; apiKey: string; model: string } }) => {
     const db = getDb();
     const { taskType, config } = params;
 
+    // 使用 aiKeyManager 加密存储 API Key
+    if (config.apiKey) {
+      await aiKeyManager.storeAPIKey(`task:${taskType}`, config.apiKey);
+    }
+
     // 先删除旧的
     db.prepare('DELETE FROM task_ai_configs WHERE task_type = ?').run(taskType);
 
-    // 插入新的
+    // 插入新的（API Key 不存储在数据库中，只存储标记）
     db.prepare(`
       INSERT INTO task_ai_configs (task_type, base_url, api_key, model, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(taskType, config.baseUrl, config.apiKey, config.model, Date.now(), Date.now());
+    `).run(taskType, config.baseUrl, '[ENCRYPTED]', config.model, Date.now(), Date.now());
 
     return { success: true };
   });
@@ -280,10 +310,19 @@ export function registerIpcHandlers(): void {
       SELECT * FROM selector_versions
       WHERE platform = ? AND is_active = 1
       ORDER BY selector_key, version DESC
-    `).all(platform) as any[];
+    `).all(platform) as SelectorVersionRow[];
 
     // 按 selector_key 分组，只取最新版本
-    const grouped = new Map<string, any>();
+    interface SelectorInfo {
+      selectorKey: string;
+      value: string;
+      type: 'xpath' | 'css';
+      version: number;
+      successRate: number;
+      failureCount: number;
+      updatedAt: number;
+    }
+    const grouped = new Map<string, SelectorInfo>();
     for (const row of rows) {
       if (!grouped.has(row.selector_key)) {
         grouped.set(row.selector_key, {
@@ -398,6 +437,9 @@ export function registerIpcHandlers(): void {
     await analyzeNow(type, platform, taskId)
     return { success: true }
   })
+
+  // ============ 分组相关 ============
+  registerGroupHandlers(ipcMain);
 
   log.info('IPC 处理器注册完成');
 }
