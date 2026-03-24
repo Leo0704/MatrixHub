@@ -11,6 +11,8 @@ import { dailyBriefingAll, checkHotTopics } from './ai-director.js';
 import type { Task, Platform, AIRequest } from '../shared/types.js';
 import log from 'electron-log';
 import { parentPort, workerData } from 'worker_threads';
+import { createFetcher, createAllFetchers } from './data-fetcher/index.js';
+import type { FetchResult, HotTopic } from './data-fetcher/types.js';
 
 // 服务进程配置
 const MAX_CONCURRENT = 3;
@@ -397,15 +399,48 @@ async function executeAutomationTask(task: Task, signal: AbortSignal): Promise<v
 
 // ============ 数据获取辅助函数 ============
 
-async function fetchHotTopics(platform?: Platform): Promise<{ topics: any[]; source: string }> {
-  // 热点数据获取（框架）
-  // 实际实现需要接入第三方API（蝉妈妈、新抖等）
-  log.warn('[Service] 热点数据获取需要配置第三方API');
+async function fetchHotTopics(platform?: Platform): Promise<FetchResult> {
+  if (platform) {
+    // 指定平台
+    log.info(`[Service] 获取 ${platform} 热点话题`);
+    const fetcher = createFetcher(platform);
+    try {
+      const result = await fetcher.fetchHotTopics();
+      return result;
+    } finally {
+      await fetcher.close();
+    }
+  } else {
+    // 所有平台
+    log.info('[Service] 获取全平台热点话题');
+    const fetchers = createAllFetchers();
+    const allTopics: HotTopic[] = [];
+    const errors: string[] = [];
 
-  return {
-    topics: [],
-    source: platform ?? 'all',
-  };
+    for (const fetcher of fetchers) {
+      try {
+        const result = await fetcher.fetchHotTopics();
+        allTopics.push(...result.topics);
+        if (result.error) {
+          errors.push(`${fetcher.platform}: ${result.error}`);
+        }
+      } catch (e) {
+        errors.push(`${fetcher.platform}: ${(e as Error).message}`);
+      } finally {
+        await fetcher.close();
+      }
+    }
+
+    // 按热度排序
+    allTopics.sort((a, b) => b.heat - a.heat);
+
+    return {
+      topics: allTopics,
+      source: 'all',
+      fetchedAt: Date.now(),
+      error: errors.length > 0 ? errors.join('; ') : undefined,
+    };
+  }
 }
 
 async function fetchContentStats(accountId?: string, dateRange?: { start: number; end: number }): Promise<any> {
