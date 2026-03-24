@@ -2,7 +2,7 @@ import { getDb } from './db.js';
 import { aiKeyManager } from './credential-manager.js';
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
-import type { Platform } from '../shared/types.js';
+import type { Platform, AIRequest, AIResponse, AIIterationRequest } from '../shared/types.js';
 
 /**
  * AI Provider 类型
@@ -767,6 +767,36 @@ export class AIGateway {
    */
   getCircuitBreakerStatus(providerType: AIProviderType): { state: CircuitState; failureCount: number } {
     return this.circuitBreakers.get(providerType)?.getState() ?? { state: CircuitState.CLOSED, failureCount: 0 };
+  }
+
+  /**
+   * 构建迭代优化的 prompt
+   */
+  private buildIterationPrompt(request: AIIterationRequest): string {
+    return `【原始请求】
+${request.originalPrompt}
+
+【原始 AI 回复】
+${request.originalResponse}
+
+【用户反馈】
+${request.feedback}
+
+请根据用户反馈，修改/优化原始回复。直接输出修改后的内容，不要解释。`;
+  }
+
+  /**
+   * 根据用户反馈迭代优化内容
+   */
+  async iterate(request: AIIterationRequest): Promise<AIResponse> {
+    const iterationPrompt = this.buildIterationPrompt(request);
+
+    return this.generate({
+      prompt: iterationPrompt,
+      system: '你是专业内容优化助手，根据用户反馈优化内容。直接输出优化后的内容，不要额外解释。',
+      temperature: 0.7,
+      maxTokens: 3000,
+    });
   }
 }
 
