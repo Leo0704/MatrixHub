@@ -27,6 +27,10 @@ const PROMPT_TEMPLATES = [
   { id: '2', name: '种草文案', desc: '生成小红书风格种草推荐文案' },
   { id: '3', name: '产品测评', desc: '生成真实体验感测评文案' },
   { id: '4', name: '话题讨论', desc: '生成能引发讨论的互动话题' },
+  { id: '5', name: '知识教程', desc: '生成教学类、科普类内容' },
+  { id: '6', name: '热点评论', desc: '对热点事件的评论分析' },
+  { id: '7', name: '故事叙事', desc: '个人经历、品牌故事分享' },
+  { id: '8', name: '日常Vlog', desc: '生活方式、Vlog脚本分享' },
 ];
 
 // 平台系统提示词
@@ -182,6 +186,179 @@ const CONTENT_PROMPTS: Record<string, (topic: string, platform: Platform) => str
 ---
 要求：引发共鸣、留有讨论空间、调动评论区活跃度`;
   },
+
+  '5': (topic, _platform) => {
+    // 知识教程
+    return `📚 【知识教程内容生成】
+
+主题：${topic}
+
+请生成让人想学完的教程内容：
+
+【开场钩子】
+用一个痛点问题或惊人事实开头
+"你是不是也遇到过..."
+"99%的人都不知道..."
+"学会这个，每年多赚XX万"
+
+【知识框架】
+把复杂内容拆解成 3-5 个简单步骤
+- 每个步骤清晰好记
+- 用类比帮助理解
+- 加入实际案例
+
+【实操演示】
+给出具体可落地的操作方法
+- 工具/方法名称
+- 操作步骤 1-2-3
+- 常见错误提醒
+
+【记忆口诀/金句】
+总结一个让人记住的核心观点
+
+【互动引导】
+结尾引导关注/收藏
+"还想学习更多...？点关注"
+
+【相关标签】
+生成 5-8 个相关话题标签
+
+---
+要求：信息量大、干货足、让人看完有收获感`;
+  },
+
+  '6': (topic, _platform) => {
+    // 热点评论
+    return `🔥 【热点评论内容生成】
+
+热点话题：${topic}
+
+请生成有深度的热点评论内容：
+
+【热点概述】
+简要说明热点事件的核心
+"最近...刷屏了"
+"XX事件引发热议"
+
+【核心观点】
+给出你的鲜明立场（1-2句话）
+"我认为.../这件事说明..."
+
+【多角度分析】
+从不同角度解读事件：
+- 表面现象
+- 深层原因
+- 可能影响
+
+【个人立场】
+用真实、接地气的语气表达观点
+避免假大空，要有独特视角
+
+【引导讨论】
+结尾抛出问题，引导评论区讨论
+"你们怎么看？"
+"你们遇到过类似的吗？"
+
+【蹭热度技巧】
+如果相关，巧妙关联到你的领域/产品
+
+【相关标签】
+生成 5-8 个热点相关话题标签
+
+---
+要求：反应迅速、观点鲜明、有深度、能引发讨论`;
+  },
+
+  '7': (topic, _platform) => {
+    // 故事叙事
+    return `📖 【故事叙事内容生成】
+
+主题：${topic}
+
+请生成打动人心的故事内容：
+
+【故事开头】
+用悬念或共鸣点开头
+"那是...的一天"
+"我永远记得..."
+"从...到...的故事"
+
+【故事背景】
+交代时间、地点、人物
+让读者快速进入场景
+
+【情节发展】
+按时间线或有逻辑的顺序展开
+- 遇到什么困难/挑战
+- 心理变化过程
+- 关键的转折点
+
+【高潮/冲突】
+制造冲突和悬念
+让人想继续看下去
+
+【结局/感悟】
+故事的核心结论
+"这个故事告诉我..."
+
+【情感共鸣】
+结尾触发情感共鸣
+让读者觉得"我也是"
+
+【行动号召】
+引导关注/互动
+"你们有类似经历吗..."
+
+---
+要求：真实感人、有细节、有温度、让人产生共鸣`;
+  },
+
+  '8': (topic, _platform) => {
+    // 日常Vlog
+    return `🎬 【日常Vlog脚本生成】
+
+主题：${topic}
+
+请生成适合Vlog的内容脚本：
+
+【开场】
+用"今天..."或状态开场
+展示你在做什么
+"今天带大家看看..."
+"日常plog | ..."
+
+【场景展示】
+按顺序展示内容
+- 地点/环境
+- 正在做的事
+- 看到的风景/有趣的事
+
+【生活感细节】
+加入真实的生活细节
+- 早餐吃了什么
+- 路上遇到什么
+- 小确幸/小确丧
+
+【旁白/解说】
+给出简短的内心独白或解说
+"其实今天..."
+"顺便说一下..."
+
+【节奏把控】
+适当留白，不要太满
+停顿/空镜头的处理建议
+
+【结尾】
+用日常的方式收尾
+"好啦，今天就到这里"
+"下期见～"
+
+【BGM建议】
+推荐适合的背景音乐风格
+
+---
+要求：真实自然、有生活气息、让人看了也想拍`;
+  },
 };
 
 export default function AICreation() {
@@ -192,6 +369,9 @@ export default function AICreation() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [iterationHistory, setIterationHistory] = useState<{feedback: string; response: string}[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState('');
 
   const handleCopy = async () => {
     if (!result) return;
@@ -201,6 +381,27 @@ export default function AICreation() {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // 复制失败，忽略
+    }
+  };
+
+  const handleIterate = async (feedback: string) => {
+    if (!result) return;
+    setGenerating(true);
+    try {
+      const response = await window.electronAPI?.iterateAI({
+        originalPrompt: CONTENT_PROMPTS[promptType]?.(topic, platform) || `主题：${topic}`,
+        originalResponse: result,
+        feedback,
+        iterationCount: iterationHistory.length,
+      });
+      if (response?.success && response.content) {
+        const content = response.content;
+        setResult(content);
+        setEditedContent(content);
+        setIterationHistory(prev => [...prev, { feedback, response: content }]);
+      }
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -361,6 +562,16 @@ export default function AICreation() {
                 >
                   {copied ? '✓ 已复制' : '复制'}
                 </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => {
+                    setIsEditing(!isEditing);
+                    setEditedContent(result);
+                  }}
+                >
+                  {isEditing ? '✓ 完成编辑' : '编辑'}
+                </button>
                 <button className="btn btn-ghost" style={{ fontSize: 12 }}>
                   一键发布
                 </button>
@@ -380,6 +591,26 @@ export default function AICreation() {
                 </p>
               )}
             </div>
+          ) : isEditing ? (
+            <textarea
+              value={editedContent}
+              onChange={e => setEditedContent(e.target.value)}
+              onBlur={() => {
+                setResult(editedContent);
+                setIsEditing(false);
+              }}
+              style={{
+                width: '100%',
+                minHeight: 300,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 13,
+                lineHeight: 1.8,
+                padding: 'var(--space-md)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                resize: 'vertical'
+              }}
+            />
           ) : (
             <div style={{
               fontFamily: 'var(--font-mono)',
@@ -389,6 +620,66 @@ export default function AICreation() {
               color: 'var(--text-secondary)'
             }}>
               {result}
+            </div>
+          )}
+
+          {/* 迭代优化按钮 */}
+          {result && !isEditing && (
+            <div style={{ marginTop: 'var(--space-lg)' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-sm)' }}>
+                快速优化：
+              </div>
+              <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => handleIterate('太正式了，改口语化')}
+                  disabled={generating}
+                >
+                  太正式
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => handleIterate('太长了，缩短一半')}
+                  disabled={generating}
+                >
+                  太长了
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => handleIterate('不够吸引人，优化开头')}
+                  disabled={generating}
+                >
+                  开头弱
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => handleIterate('再加一些梗或金句')}
+                  disabled={generating}
+                >
+                  加梗
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 迭代历史 */}
+          {iterationHistory.length > 0 && (
+            <div style={{ marginTop: 'var(--space-lg)', padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius)' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 'var(--space-sm)' }}>
+                迭代历史
+              </div>
+              {iterationHistory.map((item, i) => (
+                <div key={i} style={{ fontSize: 12, marginBottom: 'var(--space-xs)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{i + 1}.</span>{' '}
+                  <span style={{ color: 'var(--text-secondary)' }}>"{item.feedback}"</span>
+                  {' → '}
+                  <span style={{ color: 'var(--success)' }}>已优化</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
