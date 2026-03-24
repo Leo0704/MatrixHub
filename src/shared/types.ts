@@ -45,6 +45,15 @@ export interface TaskFilter {
   offset?: number;
 }
 
+export interface AccountGroup {
+  id: string;
+  name: string;
+  color: string;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Account {
   id: string;
   platform: Platform;
@@ -53,6 +62,8 @@ export interface Account {
   avatar?: string;
   status: 'active' | 'inactive' | 'error';
   lastUsedAt?: number;
+  groupId?: string;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
