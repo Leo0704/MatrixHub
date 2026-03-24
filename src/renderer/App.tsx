@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import type { Account } from '~shared/types';
+import { useEffect } from 'react';
+import { useAppStore, type Page } from './stores/appStore';
 import { ToastProvider } from './components/Toast';
 import Overview from './pages/Overview';
 import ContentManagement from './pages/ContentManagement';
@@ -10,41 +10,36 @@ import AccountManagement from './pages/AccountManagement';
 import SelectorSettings from './pages/SelectorSettings';
 import Settings from './pages/Settings';
 
-type Page = 'overview' | 'content' | 'ai' | 'schedule' | 'insights' | 'accounts' | 'selectors' | 'settings';
-
 function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('overview');
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [version, setVersion] = useState('');
+  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage } = useAppStore();
 
   useEffect(() => {
     window.electronAPI?.getVersion().then(setVersion);
+
+    const loadAccounts = async () => {
+      try {
+        const list = await window.electronAPI?.listAccounts();
+        setAccounts(list || []);
+      } catch (error) {
+        console.error('Failed to load accounts:', error);
+        setAccounts([]);
+      }
+    };
     loadAccounts();
 
-    // 监听账号变化
     window.electronAPI?.onAccountAdded((account) => {
-      setAccounts(prev => [account, ...prev]);
+      addAccount(account);
     });
 
     window.electronAPI?.onAccountRemoved(({ accountId }) => {
-      setAccounts(prev => prev.filter(a => a.id !== accountId));
+      removeAccount(accountId);
     });
 
     return () => {
       window.electronAPI?.removeAllListeners('account:added');
       window.electronAPI?.removeAllListeners('account:removed');
     };
-  }, []);
-
-  const loadAccounts = async () => {
-    try {
-      const list = await window.electronAPI?.listAccounts();
-      setAccounts(list || []);
-    } catch (error) {
-      console.error('Failed to load accounts:', error);
-      setAccounts([]);
-    }
-  };
+  }, [addAccount, removeAccount, setAccounts, setVersion]);
 
   const navItems: { page: Page; icon: string; label: string }[] = [
     { page: 'overview', icon: '📊', label: '概览' },
