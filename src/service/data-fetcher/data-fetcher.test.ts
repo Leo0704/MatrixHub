@@ -1,8 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createFetcher, createAllFetchers } from './factory';
 import type { Platform } from '../../shared/types';
 
 describe('DataFetcher Factory', () => {
+  let fetchers: ReturnType<typeof createFetcher>[] = [];
+
+  afterEach(async () => {
+    for (const fetcher of fetchers) {
+      await fetcher.close();
+    }
+    fetchers = [];
+  });
+
   it('should create DouYin fetcher', () => {
     const fetcher = createFetcher('douyin');
     expect(fetcher).toBeDefined();
@@ -26,8 +35,11 @@ describe('DataFetcher Factory', () => {
   });
 
   it('should create all fetchers', () => {
-    const fetchers = createAllFetchers();
+    fetchers = createAllFetchers();
     expect(fetchers).toHaveLength(3);
+    expect(fetchers[0].platform).toBe('douyin');
+    expect(fetchers[1].platform).toBe('xiaohongshu');
+    expect(fetchers[2].platform).toBe('kuaishou');
   });
 });
 
