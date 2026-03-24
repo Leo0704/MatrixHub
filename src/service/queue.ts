@@ -200,6 +200,15 @@ export class TaskQueue {
 
     if (retryCount >= task.maxRetries) {
       log.warn(`任务 ${taskId} 已达最大重试次数 (${task.maxRetries})`);
+      // 触发 AI 分析（异步，不阻塞返回）
+      // 注意：使用动态 import 避免循环依赖
+      import('./ai-director.js').then(({ analyzeFailure }) => {
+        analyzeFailure(task).catch(err => {
+          log.error('[Queue] AI分析调用失败:', err)
+        })
+      }).catch(err => {
+        log.error('[Queue] 加载ai-director失败:', err)
+      })
       return this.updateStatus(taskId, 'failed', { error: `重试次数耗尽: ${error}` });
     }
 
