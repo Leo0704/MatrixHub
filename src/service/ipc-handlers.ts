@@ -8,7 +8,8 @@ import { selectorManager } from './selector-versioning.js';
 import { monitoringService } from './monitoring.js';
 import { closeAllBrowsers } from './platform-launcher.js';
 import { getDb } from './db.js';
-import type { TaskFilter, Platform, AIRequest } from '../shared/types.js';
+import type { TaskFilter, Platform, AIRequest, AITriggerType } from '../shared/types.js';
+import { dailyBriefing, checkHotTopics, analyzeNow } from './ai-director.js';
 
 /**
  * 注册所有 IPC 处理器
@@ -368,6 +369,35 @@ export function registerIpcHandlers(): void {
     await monitoringService.collectMetrics();
     return { success: true };
   });
+
+  // ============ AI 驱动 ============
+
+  // 注意：这里不用 top-level import analyzeFailure，
+  // 因为 taskQueue 已在文件顶部导入，会造成循环依赖
+  ipcMain.handle('ai:analyze-failure', async (_event, { taskId }: { taskId: string }) => {
+    // 动态 import 避免循环依赖
+    const { taskQueue } = await import('./queue.js')
+    const task = taskQueue.get(taskId)
+    if (!task) return { success: false, error: '任务不存在' }
+    const { analyzeFailure } = await import('./ai-director.js')
+    await analyzeFailure(task)
+    return { success: true }
+  })
+
+  ipcMain.handle('ai:daily-briefing', async (_event, { platform }: { platform: Platform }) => {
+    const result = await dailyBriefing(platform)
+    return { success: true, result }
+  })
+
+  ipcMain.handle('ai:hot-topics', async (_event, { platform }: { platform: Platform }) => {
+    const result = await checkHotTopics(platform)
+    return { success: true, result }
+  })
+
+  ipcMain.handle('ai:analyze-now', async (_event, { type, platform, taskId }: { type: AITriggerType; platform: Platform; taskId?: string }) => {
+    await analyzeNow(type, platform, taskId)
+    return { success: true }
+  })
 
   log.info('IPC 处理器注册完成');
 }
