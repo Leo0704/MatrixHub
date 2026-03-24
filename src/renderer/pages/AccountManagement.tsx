@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
-import type { Account, Platform } from '~shared/types';
+import type { Account, AccountGroup, Platform } from '~shared/types';
 
 export default function AccountManagement() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [groups, setGroups] = useState<AccountGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
 
   useEffect(() => {
     loadAccounts();
+    loadGroups();
 
     window.electronAPI?.onAccountAdded((account) => {
       setAccounts(prev => [account, ...prev]);
@@ -21,12 +24,26 @@ export default function AccountManagement() {
       setAccounts(prev => prev.filter(a => a.id !== accountId));
     });
 
+    window.electronAPI?.onGroupCreated((group) => {
+      setGroups(prev => [...prev, group]);
+    });
+    window.electronAPI?.onGroupUpdated((group) => {
+      setGroups(prev => prev.map(g => g.id === group.id ? group : g));
+    });
+    window.electronAPI?.onGroupDeleted(({ groupId }) => {
+      setGroups(prev => prev.filter(g => g.id !== groupId));
+      if (selectedGroupId === groupId) setSelectedGroupId(null);
+    });
+
     return () => {
       window.electronAPI?.removeAllListeners('account:added');
       window.electronAPI?.removeAllListeners('account:updated');
       window.electronAPI?.removeAllListeners('account:removed');
+      window.electronAPI?.removeAllListeners('group:created');
+      window.electronAPI?.removeAllListeners('group:updated');
+      window.electronAPI?.removeAllListeners('group:deleted');
     };
-  }, []);
+  }, [selectedGroupId]);
 
   const loadAccounts = async () => {
     try {
@@ -38,6 +55,19 @@ export default function AccountManagement() {
       setLoading(false);
     }
   };
+
+  const loadGroups = async () => {
+    try {
+      const groupsResult = await window.electronAPI?.listGroups();
+      setGroups(groupsResult ?? []);
+    } catch (error) {
+      console.error('加载分组失败:', error);
+    }
+  };
+
+  const filteredAccounts = selectedGroupId
+    ? accounts.filter(a => a.groupId === selectedGroupId)
+    : accounts;
 
   const handleRemove = async (id: string) => {
     if (confirm('确定要删除这个账号吗？')) {
@@ -66,11 +96,58 @@ export default function AccountManagement() {
           >
             + 添加账号
           </button>
+          <button
+            className="btn btn-secondary"
+            style={{ fontSize: 13 }}
+            onClick={() => setShowGroupModal(true)}
+          >
+            管理分组
+          </button>
+        </div>
+      </div>
+
+      {/* 分组侧边栏 */}
+      <div style={{
+        display: 'flex',
+        gap: 'var(--space-xl)',
+        marginBottom: 'var(--space-xl)'
+      }}>
+        <div style={{
+          display: 'flex',
+          gap: 'var(--space-sm)',
+          flexWrap: 'wrap',
+          flex: 1
+        }}>
+          <button
+            className={`btn ${selectedGroupId === null ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ fontSize: 13 }}
+            onClick={() => setSelectedGroupId(null)}
+          >
+            全部
+          </button>
+          {groups.map(group => (
+            <button
+              key={group.id}
+              className={`btn ${selectedGroupId === group.id ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: 13 }}
+              onClick={() => setSelectedGroupId(group.id)}
+            >
+              <span style={{
+                display: 'inline-block',
+                width: 8,
+                height: 8,
+                borderRadius: 'var(--radius-full)',
+                background: group.color,
+                marginRight: 6
+              }} />
+              {group.name}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* 账号列表 */}
-      {accounts.length === 0 ? (
+      {filteredAccounts.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🔑</div>
           <h3>暂无账号</h3>
@@ -86,10 +163,11 @@ export default function AccountManagement() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-lg)' }}>
-          {accounts.map(account => (
+          {filteredAccounts.map(account => (
             <AccountCard
               key={account.id}
               account={account}
+              groups={groups}
               onRemove={() => handleRemove(account.id)}
             />
           ))}
@@ -99,11 +177,20 @@ export default function AccountManagement() {
       {/* 添加账号弹窗 */}
       {showAddModal && (
         <AddAccountModal
+          groups={groups}
           onClose={() => setShowAddModal(false)}
           onAdded={(account) => {
             setAccounts([account, ...accounts]);
             setShowAddModal(false);
           }}
+        />
+      )}
+
+      {/* 分组管理弹窗 */}
+      {showGroupModal && (
+        <GroupManagerModal
+          groups={groups}
+          onClose={() => setShowGroupModal(false)}
         />
       )}
     </div>
@@ -112,9 +199,11 @@ export default function AccountManagement() {
 
 function AccountCard({
   account,
+  groups,
   onRemove,
 }: {
   account: Account;
+  groups: AccountGroup[];
   onRemove: () => void;
 }) {
   const platformInfo = {
@@ -190,6 +279,13 @@ function AccountCard({
         </span>
       </div>
 
+      {/* 分组 */}
+      {account.groupId && groups.find(g => g.id === account.groupId) && (
+        <div style={{ fontSize: 12, color: groups.find(g => g.id === account.groupId)?.color }}>
+          {groups.find(g => g.id === account.groupId)?.name}
+        </div>
+      )}
+
       {/* 最后使用 */}
       {account.lastUsedAt && (
         <div style={{
@@ -224,9 +320,11 @@ function AccountCard({
 }
 
 function AddAccountModal({
+  groups,
   onClose,
   onAdded,
 }: {
+  groups: AccountGroup[];
   onClose: () => void;
   onAdded: (account: Account) => void;
 }) {
@@ -234,6 +332,8 @@ function AddAccountModal({
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [groupId, setGroupId] = useState<string | undefined>();
+  const [tagsInput, setTagsInput] = useState('');
   const [adding, setAdding] = useState(false);
 
   const handleAdd = async () => {
@@ -241,14 +341,16 @@ function AddAccountModal({
 
     setAdding(true);
     try {
-      const account = await window.electronAPI?.addAccount({
+      const result = await window.electronAPI?.addAccount({
         platform,
         username: username.trim(),
         displayName: displayName.trim() || username.trim(),
         password: password.trim(),
+        groupId,
+        tags: tagsInput.split(',').map(t => t.trim()).filter(Boolean),
       });
-      if (account) {
-        onAdded(account);
+      if (result && 'id' in result) {
+        onAdded(result);
       }
     } catch (error) {
       console.error('添加账号失败:', error);
@@ -284,6 +386,32 @@ function AddAccountModal({
               </button>
             ))}
           </div>
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>分组</label>
+          <select
+            className="input"
+            style={{ width: '100%' }}
+            value={groupId ?? ''}
+            onChange={e => setGroupId(e.target.value || undefined)}
+          >
+            <option value="">无分组</option>
+            {groups.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <label style={labelStyle}>标签</label>
+          <input
+            className="input"
+            style={{ width: '100%' }}
+            placeholder="逗号分隔，如: 美妆,种草"
+            value={tagsInput}
+            onChange={e => setTagsInput(e.target.value)}
+          />
         </div>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>
@@ -341,6 +469,237 @@ function AddAccountModal({
             disabled={adding || !username.trim() || !password.trim()}
           >
             {adding ? '添加中...' : '添加'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GroupManagerModal({
+  groups,
+  onClose,
+}: {
+  groups: AccountGroup[];
+  onClose: () => void;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState('#6366f1');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editColor, setEditColor] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6'];
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    try {
+      await window.electronAPI?.createGroup(newName.trim(), newColor);
+      setNewName('');
+      setNewColor('#6366f1');
+      setShowCreate(false);
+    } catch (error) {
+      console.error('创建分组失败:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdate = async (id: string) => {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      await window.electronAPI?.updateGroup(id, { name: editName.trim(), color: editColor });
+      setEditingId(null);
+    } catch (error) {
+      console.error('更新分组失败:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定要删除这个分组吗？')) return;
+    try {
+      await window.electronAPI?.deleteGroup(id);
+    } catch (error) {
+      console.error('删除分组失败:', error);
+    }
+  };
+
+  const startEdit = (group: AccountGroup) => {
+    setEditingId(group.id);
+    setEditName(group.name);
+    setEditColor(group.color);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    }}>
+      <div className="card" style={{ width: 480, maxWidth: '90vw' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' }}>
+          <h3>管理分组</h3>
+          <button className="btn btn-ghost" style={{ fontSize: 20 }} onClick={onClose}>×</button>
+        </div>
+
+        {/* 新建分组表单 */}
+        {showCreate ? (
+          <div style={{
+            marginBottom: 'var(--space-lg)',
+            padding: 'var(--space-md)',
+            background: 'var(--bg-elevated)',
+            borderRadius: 'var(--radius-md)'
+          }}>
+            <input
+              className="input"
+              style={{ width: '100%', marginBottom: 'var(--space-sm)' }}
+              placeholder="分组名称"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)', flexWrap: 'wrap' }}>
+              {colors.map(c => (
+                <button
+                  key={c}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 'var(--radius-full)',
+                    background: c,
+                    border: newColor === c ? '2px solid white' : 'none',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setNewColor(c)}
+                />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => setShowCreate(false)}>
+                取消
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 12 }}
+                onClick={handleCreate}
+                disabled={saving || !newName.trim()}
+              >
+                {saving ? '创建中...' : '创建'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="btn btn-secondary"
+            style={{ width: '100%', marginBottom: 'var(--space-lg)', fontSize: 13 }}
+            onClick={() => setShowCreate(true)}
+          >
+            + 新建分组
+          </button>
+        )}
+
+        {/* 分组列表 */}
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          {groups.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-lg)' }}>
+              暂无分组
+            </div>
+          ) : (
+            groups.map(group => (
+              <div
+                key={group.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-md)',
+                  padding: 'var(--space-sm) 0',
+                  borderBottom: '1px solid var(--border-subtle)'
+                }}
+              >
+                {editingId === group.id ? (
+                  <>
+                    <input
+                      className="input"
+                      style={{ flex: 1, fontSize: 13 }}
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      autoFocus
+                    />
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {colors.map(c => (
+                        <button
+                          key={c}
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: 'var(--radius-full)',
+                            background: c,
+                            border: editColor === c ? '2px solid white' : 'none',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setEditColor(c)}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12, padding: '4px 8px' }}
+                      onClick={() => handleUpdate(group.id)}
+                      disabled={saving}
+                    >
+                      保存
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12, padding: '4px 8px' }}
+                      onClick={() => setEditingId(null)}
+                    >
+                      取消
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 'var(--radius-full)',
+                      background: group.color
+                    }} />
+                    <span style={{ flex: 1, fontSize: 13 }}>{group.name}</span>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12, padding: '4px 8px' }}
+                      onClick={() => startEdit(group)}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12, padding: '4px 8px', color: 'var(--error)' }}
+                      onClick={() => handleDelete(group.id)}
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-lg)' }}>
+          <button className="btn btn-secondary" onClick={onClose}>
+            关闭
           </button>
         </div>
       </div>
