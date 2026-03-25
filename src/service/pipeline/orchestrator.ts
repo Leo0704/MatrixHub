@@ -1,10 +1,20 @@
 import type { PipelineTask, PipelineConfig, InputSource, Platform } from '../../shared/types.js';
 import { parseInput } from './input-parser.js';
 import { generateContent } from './content-generator.js';
-import { executePublishTask } from '../handlers/publish-handler.js';
 import { taskQueue } from '../queue.js';
 import { v4 as uuidv4 } from 'uuid';
 import log from 'electron-log';
+import { BrowserWindow } from 'electron';
+
+// Pipeline 任务内存存储（生产环境应使用数据库）
+const pipelineTaskStore = new Map<string, PipelineTask>();
+
+/**
+ * 获取所有 Pipeline 任务
+ */
+export function getAllPipelineTasks(): PipelineTask[] {
+  return Array.from(pipelineTaskStore.values());
+}
 
 /**
  * 创建并启动一个 Pipeline 任务
@@ -34,8 +44,8 @@ export async function createPipelineTask(
     updatedAt: Date.now(),
   };
 
-  // 保存到数据库（通过 taskQueue 的扩展字段或单独存储）
-  // TODO: 实现 pipeline_task 的数据库存储
+  // 存储到内存（生产环境应存储到数据库）
+  pipelineTaskStore.set(id, pipelineTask);
 
   log.info(`[Pipeline] 创建任务: ${id}`);
 
@@ -57,6 +67,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     // 更新状态为 running
     pipelineTask.status = 'running';
     pipelineTask.updatedAt = Date.now();
+    broadcastPipelineUpdate(pipelineTask);
 
     // Step 1: 解析输入
     await executeStep(pipelineTask, 'parse', async () => {
@@ -70,57 +81,48 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     // 获取解析结果
     const parseResult = (pipelineTask.steps.find(s => s.step === 'parse')?.result as any)?.product;
 
-    // Step 2: 生成文案（始终执行）
+    // Step 2 & 3: 一次性生成文案和媒体内容（避免重复调用 API）
     await executeStep(pipelineTask, 'text', async () => {
       const contentResult = await generateContent({
         platform: pipelineTask.platform,
         contentType: pipelineTask.config.contentType,
-        product: parseResult,
-      });
-      return { text: contentResult.text };
-    });
-
-    // 获取文案结果
-    const textResult = pipelineTask.steps.find(s => s.step === 'text')?.result as any;
-
-    // Step 3: 生成内容（图片集 或 视频）
-    await executeStep(pipelineTask, 'media', async () => {
-      const contentResult = await generateContent({
-        platform: pipelineTask.platform,
-        contentType: pipelineTask.config.contentType,
+        imageCount: pipelineTask.config.imageCount,
+        generateVoice: pipelineTask.config.generateVoice,
         product: parseResult,
       });
       return {
-        imageUrls: contentResult.imageUrls,  // 注意：是 imageUrls（复数），不是 imageUrl
+        text: contentResult.text,
+        imageUrls: contentResult.imageUrls,
         videoUrl: contentResult.videoUrl,
+        voiceBase64: contentResult.voiceBase64,
+        localFilePaths: contentResult.localFilePaths,
       };
     });
 
-    // 获取内容结果
-    const mediaResult = pipelineTask.steps.find(s => s.step === 'media')?.result as any;
+    // 获取内容生成结果
+    const contentResult = pipelineTask.steps.find(s => s.step === 'text')?.result as any;
+    const textResult = { text: contentResult?.text };
+    const mediaResult = { imageUrls: contentResult?.imageUrls, videoUrl: contentResult?.videoUrl, localFilePaths: contentResult?.localFilePaths };
+    const voiceResult = { voiceBase64: contentResult?.voiceBase64 };
 
-    // Step 4: 生成配音（仅图片集模式需要，视频模式跳过）
-    if (pipelineTask.config.contentType === 'image') {
+    // Step 4: 生成配音（仅图片集模式且用户选择生成配音）
+    if (pipelineTask.config.contentType === 'image' && pipelineTask.config.generateVoice) {
+      // voice 已在上一步生成，不需要再次调用
       await executeStep(pipelineTask, 'voice', async () => {
-        const contentResult = await generateContent({
-          platform: pipelineTask.platform,
-          contentType: 'image',
-          product: parseResult,
-        });
-        return { voiceBase64: contentResult.voiceBase64 };
+        return { voiceBase64: contentResult?.voiceBase64 };
       });
     } else {
       await skipStep(pipelineTask, 'voice');
     }
-
-    // 获取配音结果
-    const voiceResult = pipelineTask.steps.find(s => s.step === 'voice')?.result as any;
 
     // Step 5: 发布
     if (pipelineTask.config.autoPublish && pipelineTask.config.targetAccounts.length > 0) {
       await executeStep(pipelineTask, 'publish', async () => {
         const publishedTaskIds: string[] = [];
         const isImageMode = pipelineTask.config.contentType === 'image';
+
+        // 使用本地文件路径进行发布（已下载到本地）
+        const localFiles = mediaResult?.localFilePaths || [];
 
         for (const accountId of pipelineTask.config.targetAccounts) {
           // 创建发布任务
@@ -133,9 +135,10 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
               content: textResult?.text || '',
               accountId,
               contentType: isImageMode ? 'image' : 'video',
-              images: isImageMode ? mediaResult?.imageUrls : undefined,
+              // 发布时使用本地文件路径
+              images: isImageMode ? localFiles : undefined,
               voiceBase64: isImageMode ? voiceResult?.voiceBase64 : undefined,
-              video: isImageMode ? undefined : mediaResult?.videoUrl,
+              video: isImageMode ? undefined : (mediaResult?.videoUrl || localFiles[0]),
             },
           });
 
@@ -161,6 +164,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
       publishedTaskIds: (pipelineTask.steps.find(s => s.step === 'publish')?.result as any)?.publishedTaskIds,
     };
 
+    broadcastPipelineUpdate(pipelineTask);
     log.info(`[Pipeline] 执行完成: ${pipelineTask.id}`);
 
   } catch (error) {
@@ -168,6 +172,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     pipelineTask.status = 'failed';
     pipelineTask.error = (error as Error).message;
     pipelineTask.updatedAt = Date.now();
+    broadcastPipelineUpdate(pipelineTask);
   }
 }
 
@@ -212,16 +217,33 @@ async function skipStep(pipelineTask: PipelineTask, stepName: string): Promise<v
 }
 
 /**
+ * 向渲染进程广播 Pipeline 更新
+ */
+function broadcastPipelineUpdate(pipelineTask: PipelineTask): void {
+  try {
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('pipeline:updated', pipelineTask);
+    });
+  } catch (error) {
+    log.warn('[Pipeline] 广播更新失败:', error);
+  }
+}
+
+/**
  * 获取 Pipeline 状态
  */
 export async function getPipelineTask(pipelineId: string): Promise<PipelineTask | null> {
-  // TODO: 从数据库查询
-  return null;
+  return pipelineTaskStore.get(pipelineId) || null;
 }
 
 /**
  * 取消 Pipeline
  */
 export async function cancelPipelineTask(pipelineId: string): Promise<void> {
-  // TODO: 实现取消逻辑
+  const task = pipelineTaskStore.get(pipelineId);
+  if (task && task.status === 'running') {
+    task.status = 'cancelled';
+    task.updatedAt = Date.now();
+    broadcastPipelineUpdate(task);
+  }
 }
