@@ -224,3 +224,51 @@ export interface PageAgentPayload {
   maxSteps?: number;      // 最大步数，默认 20
   taskType?: 'text' | 'image' | 'video' | 'voice';
 }
+
+// ============ Pipeline 类型 ============
+
+export type InputSourceType = 'url' | 'product_detail' | 'hot_topic';
+
+export interface InputSource {
+  type: InputSourceType;
+  url?: string;                    // 当 type === 'url' 时
+  productDetail?: string;         // 当 type === 'product_detail' 时
+  hotTopic?: { keyword: string; platform: Platform }; // 当 type === 'hot_topic' 时
+}
+
+export interface PipelineConfig {
+  contentType: 'image' | 'video';  // 图片集 或 视频（二选一，互斥）
+  imageCount?: 3 | 6 | 9;          // 仅图片集模式使用，默认 9
+  generateVoice?: boolean;          // 仅图片集模式使用，配音作为语音版本附件
+  autoPublish: boolean;
+  targetAccounts: string[];        // 账号 ID 列表
+}
+
+export interface PipelineStep {
+  step: 'parse' | 'text' | 'media' | 'voice' | 'publish';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  result?: Record<string, unknown>;
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+export interface PipelineTask {
+  id: string;
+  input: InputSource;
+  config: PipelineConfig;
+  platform: Platform;
+  steps: PipelineStep[];
+  currentStep: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  result?: {
+    text?: string;
+    imageUrls?: string[];
+    voiceBase64?: string;
+    videoUrl?: string;
+    publishedTaskIds?: string[];
+  };
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+}

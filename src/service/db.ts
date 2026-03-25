@@ -83,6 +83,16 @@ function initializeSchema(db: Database.Database): void {
     db.exec(`ALTER TABLE accounts ADD COLUMN creation_status TEXT DEFAULT 'complete' CHECK(creation_status IN ('pending', 'complete', 'failed'))`);
   }
 
+  // 向后兼容：已存在的数据库添加 pipeline 相关列
+  const hasPipelineId = tableInfo.some((col) => col.name === 'pipeline_id');
+  const hasPipelineStatus = tableInfo.some((col) => col.name === 'pipeline_status');
+  if (!hasPipelineId) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_id TEXT`);
+  }
+  if (!hasPipelineStatus) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_status TEXT CHECK(pipeline_status IN ('pending', 'running', 'completed', 'failed', 'cancelled'))`);
+  }
+
   // 账号分组表
   db.exec(`
     CREATE TABLE IF NOT EXISTS account_groups (
@@ -258,6 +268,24 @@ function initializeSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
+    );
+  `);
+
+  // Pipeline 任务表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pipeline_tasks (
+      id TEXT PRIMARY KEY,
+      input_type TEXT NOT NULL CHECK(input_type IN ('url', 'product_detail', 'hot_topic')),
+      input_data TEXT NOT NULL DEFAULT '{}',
+      platform TEXT NOT NULL CHECK(platform IN ('douyin', 'kuaishou', 'xiaohongshu')),
+      config TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+      steps TEXT NOT NULL DEFAULT '[]',
+      current_step TEXT,
+      result TEXT,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
   `);
 
