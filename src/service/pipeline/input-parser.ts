@@ -87,47 +87,35 @@ export async function parseUrl(url: string): Promise<ParseResult> {
 }
 
 /**
- * Placeholder parser for Taobao/Tmall - TODO: real API integration
+ * Placeholder parser for Taobao/Tmall - not yet implemented
  */
 async function parseTaobaoTmall(url: string): Promise<ParseResult> {
   log.info(`[InputParser] Taobao/Tmall parser called for: ${url}`);
-  // TODO: Implement real API integration
   return {
-    success: true,
-    product: {
-      name: 'Taobao/Tmall Product',
-      description: 'Product parsed from Taobao/Tmall (placeholder)',
-    },
+    success: false,
+    error: 'Taobao/Tmall 商品解析功能待实现，请使用「产品详情」模式手动输入产品信息',
   };
 }
 
 /**
- * Placeholder parser for JD.com - TODO: real API integration
+ * Placeholder parser for JD.com - not yet implemented
  */
 async function parseJD(url: string): Promise<ParseResult> {
   log.info(`[InputParser] JD parser called for: ${url}`);
-  // TODO: Implement real API integration
   return {
-    success: true,
-    product: {
-      name: 'JD Product',
-      description: 'Product parsed from JD.com (placeholder)',
-    },
+    success: false,
+    error: 'JD.com 商品解析功能待实现，请使用「产品详情」模式手动输入产品信息',
   };
 }
 
 /**
- * Placeholder parser for Douyin Shop - TODO: real API integration
+ * Placeholder parser for Douyin Shop - not yet implemented
  */
 async function parseDouyinShop(url: string): Promise<ParseResult> {
   log.info(`[InputParser] Douyin Shop parser called for: ${url}`);
-  // TODO: Implement real API integration
   return {
-    success: true,
-    product: {
-      name: 'Douyin Shop Product',
-      description: 'Product parsed from Douyin Shop (placeholder)',
-    },
+    success: false,
+    error: '抖音小店商品解析功能待实现，请使用「产品详情」模式手动输入产品信息',
   };
 }
 

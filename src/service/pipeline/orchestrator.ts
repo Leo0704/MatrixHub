@@ -123,6 +123,14 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
         // 使用本地文件路径进行发布（已下载到本地）
         const localFiles = mediaResult?.localFilePaths || [];
 
+        // 检查是否有可用的本地文件
+        if (isImageMode && localFiles.length === 0) {
+          throw new Error('图片生成失败或下载失败，没有可用的本地图片文件用于发布');
+        }
+        if (!isImageMode && !mediaResult?.videoUrl && localFiles.length === 0) {
+          throw new Error('视频生成失败或下载失败，没有可用的视频文件用于发布');
+        }
+
         for (const accountId of pipelineTask.config.targetAccounts) {
           // 创建发布任务
           const task = await taskQueue.create({
