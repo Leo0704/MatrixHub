@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore, type Page } from './stores/appStore';
 import { ToastProvider } from './components/Toast';
+import { OnboardingGuide } from './components/OnboardingGuide';
 import Overview from './pages/Overview';
 import ContentManagement from './pages/ContentManagement';
 import AICreation from './pages/AICreation';
@@ -11,10 +12,17 @@ import SelectorSettings from './pages/SelectorSettings';
 import Settings from './pages/Settings';
 
 function App() {
-  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage } = useAppStore();
+  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, hasCompletedOnboarding, setHasCompletedOnboarding } = useAppStore();
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     window.electronAPI?.getVersion().then(setVersion);
+
+    if (!hasCompletedOnboarding) {
+      window.electronAPI?.getConsentRequired().then((needs: boolean) => {
+        if (needs) setShowOnboarding(true);
+      });
+    }
 
     const loadAccounts = async () => {
       try {
@@ -39,7 +47,7 @@ function App() {
       window.electronAPI?.removeAllListeners('account:added');
       window.electronAPI?.removeAllListeners('account:removed');
     };
-  }, [addAccount, removeAccount, setAccounts, setVersion]);
+  }, [addAccount, removeAccount, setAccounts, setVersion, hasCompletedOnboarding]);
 
   const navItems: { page: Page; icon: string; label: string }[] = [
     { page: 'overview', icon: '📊', label: '概览' },
@@ -76,6 +84,13 @@ function App() {
 
   return (
     <ToastProvider>
+    {showOnboarding && (
+      <OnboardingGuide onComplete={() => {
+        window.electronAPI?.grantConsent();
+        setShowOnboarding(false);
+        setHasCompletedOnboarding(true);
+      }} />
+    )}
     <div className="app-layout">
       {/* 侧边栏 */}
       <aside className="sidebar">

@@ -1,0 +1,57 @@
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+}
+
+.onboarding-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.onboarding-progress {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.progress-dot.active {
+  background: var(--color-primary);
+}
+
+.onboarding-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.onboarding-card h2 {
+  margin-bottom: 12px;
+}
+
+.onboarding-card p {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.onboarding-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}

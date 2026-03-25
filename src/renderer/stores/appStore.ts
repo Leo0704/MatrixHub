@@ -19,7 +19,13 @@ interface AppState {
 
   version: string;
   setVersion: (version: string) => void;
+
+  hasCompletedOnboarding: boolean;
+  setHasCompletedOnboarding: (value: boolean) => void;
 }
+
+const savedOnboarding = localStorage.getItem('onboardingCompleted');
+const hasCompletedOnboarding = savedOnboarding === 'true';
 
 export const useAppStore = create<AppState>((set) => ({
   accounts: [],
@@ -41,4 +47,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   version: '',
   setVersion: (version) => set({ version }),
+
+  hasCompletedOnboarding,
+  setHasCompletedOnboarding: (value: boolean) => {
+    set({ hasCompletedOnboarding: value });
+    if (value) localStorage.setItem('onboardingCompleted', 'true');
+  },
 }));
