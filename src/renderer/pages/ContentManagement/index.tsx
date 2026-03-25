@@ -3,6 +3,7 @@ import type { Task, Platform } from '~shared/types';
 import { useToast } from '../../components/Toast';
 import TaskDetailModal from '../../components/TaskDetailModal';
 import { RateLimitStatus } from '../../components/RateLimitStatus';
+import { useAppStore } from '../../stores/appStore';
 
 import { ContentCard } from './components/ContentCard';
 import { CreateTaskModal } from './components/CreateTaskModal';
@@ -19,7 +20,9 @@ export default function ContentManagement() {
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const { showToast } = useToast();
+  const { setTaskDraft } = useAppStore();
 
   useEffect(() => {
     loadTasks(0);
@@ -74,13 +77,29 @@ export default function ContentManagement() {
     await window.electronAPI?.retryTask(taskId);
   };
 
+  const handleDuplicate = (task: Task) => {
+    setTaskDraft({
+      title: task.payload?.title || '',
+      content: task.payload?.content || '',
+      platform: task.platform,
+      accountIds: [],
+    });
+    setShowCreateModal(true);
+  };
+
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       if (filter !== 'all' && task.status !== filter) return false;
       if (selectedPlatform !== 'all' && task.platform !== selectedPlatform) return false;
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const title = task.payload?.title?.toLowerCase() || '';
+        const content = task.payload?.content?.toLowerCase() || '';
+        if (!title.includes(query) && !content.includes(query)) return false;
+      }
       return true;
     });
-  }, [tasks, filter, selectedPlatform]);
+  }, [tasks, filter, selectedPlatform, searchQuery]);
 
   if (loading) {
     return <div className="empty-state"><div className="empty-state-icon">⏳</div><p>加载中...</p></div>;
@@ -99,6 +118,17 @@ export default function ContentManagement() {
         onFilterChange={setFilter}
         onCreateClick={() => setShowCreateModal(true)}
       />
+
+      <div className="content-header">
+        <div className="search-bar">
+          <input
+            type="text"
+            placeholder="🔍 搜索任务..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
 
       {/* 内容列表 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
@@ -125,6 +155,7 @@ export default function ContentManagement() {
               onCancel={() => handleCancel(task.id)}
               onRetry={() => handleRetry(task.id)}
               onViewDetail={() => setViewingTask(task)}
+              onDuplicate={() => handleDuplicate(task)}
             />
           ))
         )}

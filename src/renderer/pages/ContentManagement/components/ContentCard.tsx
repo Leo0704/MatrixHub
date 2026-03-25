@@ -32,9 +32,10 @@ interface ContentCardProps {
   onCancel: () => void;
   onRetry: () => void;
   onViewDetail: () => void;
+  onDuplicate?: () => void;
 }
 
-export function ContentCard({ task, onCancel, onRetry, onViewDetail }: ContentCardProps) {
+export function ContentCard({ task, onCancel, onRetry, onViewDetail, onDuplicate }: ContentCardProps) {
   const result = task.result as { views?: number; likes?: number; comments?: number } | undefined;
   const platformName = task.platform === 'douyin' ? '抖音' :
                       task.platform === 'kuaishou' ? '快手' : '小红书';
@@ -129,6 +130,14 @@ export function ContentCard({ task, onCancel, onRetry, onViewDetail }: ContentCa
 
       {/* 操作 */}
       <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+        <button
+          className="btn btn-icon"
+          title="复制任务"
+          onClick={onDuplicate}
+          style={{ fontSize: 16 }}
+        >
+          📋
+        </button>
         {(task.status === 'pending' || task.status === 'running' || task.status === 'deferred') && (
           <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={onCancel}>
             取消
