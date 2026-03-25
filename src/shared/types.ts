@@ -245,7 +245,7 @@ export interface PipelineConfig {
 }
 
 export interface PipelineStep {
-  step: 'parse' | 'text' | 'media' | 'voice' | 'publish';
+  step: 'parse' | 'text' | 'voice' | 'publish';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   result?: Record<string, unknown>;
   error?: string;
@@ -259,7 +259,7 @@ export interface PipelineTask {
   config: PipelineConfig;
   platform: Platform;
   steps: PipelineStep[];
-  currentStep: 'parse' | 'text' | 'media' | 'voice' | 'publish';
+  currentStep: 'parse' | 'text' | 'voice' | 'publish';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   result?: {
     text?: string;

@@ -13,15 +13,17 @@ interface PipelineProgressProps {
 
 const STEP_NAMES: Record<string, string> = {
   parse: '解析输入',
-  text: '生成文案',
-  media: '生成内容',
+  text: '生成内容',
   voice: '生成配音',
   publish: '发布',
 };
 
 function getStepDisplayName(step: string, contentType?: 'image' | 'video'): string {
-  if (step === 'media') {
-    return contentType === 'video' ? '生成视频' : '生成图片';
+  if (step === 'text') {
+    return '生成内容';  // text step now handles text + media + voice
+  }
+  if (step === 'voice') {
+    return contentType === 'video' ? '跳过' : '生成配音';
   }
   return STEP_NAMES[step] || step;
 }

@@ -34,7 +34,6 @@ export async function createPipelineTask(
     steps: [
       { step: 'parse', status: 'pending' },
       { step: 'text', status: 'pending' },
-      { step: 'media', status: 'pending' },
       { step: 'voice', status: 'pending' },  // 仅图片集模式需要配音，视频模式跳过
       { step: 'publish', status: 'pending' },
     ],
