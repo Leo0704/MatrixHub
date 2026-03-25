@@ -12,7 +12,7 @@ const { mockFs, mockDb } = vi.hoisted(() => {
   };
 
   const mockDb = {
-    prepare: vi.fn(() => ({
+    prepare: vi.fn((_sql: string) => ({
       run: vi.fn(() => ({ changes: 1 })),
       get: vi.fn(() => null),
       all: vi.fn(() => []),
@@ -141,16 +141,16 @@ describe('AccountManager rollback behavior', () => {
     const deleteRun = vi.fn(() => ({ changes: 1 }));
     mockDb.prepare.mockImplementation((sql: string) => {
       if (sql.includes('DELETE FROM accounts')) {
-        return { run: deleteRun };
+        return { run: deleteRun, get: vi.fn(() => null), all: vi.fn(() => []) };
       }
-      return { run: vi.fn(() => ({ changes: 1 })) };
+      return { run: vi.fn(() => ({ changes: 1 })), get: vi.fn(() => null), all: vi.fn(() => []) };
     });
 
     const accountManager = new AccountManager();
 
     await expect(
       accountManager.add({
-        platform: 'twitter',
+        platform: 'douyin',
         username: 'testuser',
         displayName: 'Test User',
         password: 'testpass',
@@ -169,9 +169,9 @@ describe('AccountManager rollback behavior', () => {
     const deleteRun = vi.fn(() => { throw new Error('Database delete failed'); });
     mockDb.prepare.mockImplementation((sql: string) => {
       if (sql.includes('DELETE FROM accounts')) {
-        return { run: deleteRun };
+        return { run: deleteRun, get: vi.fn(() => null), all: vi.fn(() => []) };
       }
-      return { run: vi.fn(() => ({ changes: 1 })) };
+      return { run: vi.fn(() => ({ changes: 1 })), get: vi.fn(() => null), all: vi.fn(() => []) };
     });
 
     const accountManager = new AccountManager();
@@ -179,7 +179,7 @@ describe('AccountManager rollback behavior', () => {
     // Original error should still be thrown even if rollback fails
     await expect(
       accountManager.add({
-        platform: 'twitter',
+        platform: 'douyin',
         username: 'testuser',
         displayName: 'Test User',
         password: 'testpass',

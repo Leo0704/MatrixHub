@@ -67,6 +67,8 @@ describe('AIDirector', () => {
         retryCount: 0,
         maxRetries: 3,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
+        version: 1,
       };
 
       const mockResult: AIFailureResult = {
@@ -103,6 +105,8 @@ describe('AIDirector', () => {
         retryCount: 0,
         maxRetries: 3,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
+        version: 1,
       };
 
       // Mock db to return analysis count at limit
@@ -212,6 +216,8 @@ describe('AIDirector', () => {
         retryCount: 0,
         maxRetries: 3,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
+        version: 1,
       };
 
       const mockResult: AIFailureResult = {
