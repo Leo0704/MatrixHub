@@ -1120,6 +1120,192 @@ ${request.feedback}
       maxTokens: 3000,
     });
   }
+
+  /**
+   * 查询视频生成状态（用于轮询异步视频生成任务）
+   * @param taskId 视频生成任务ID
+   * @param providerType 可选，指定provider类型
+   * @returns 视频URL如果完成，null如果还在处理中
+   */
+  async checkVideoStatus(taskId: string, providerType?: string): Promise<string | null> {
+    // 获取provider
+    let provider: AIProvider | undefined;
+    let actualProviderType: string | undefined;
+
+    if (providerType) {
+      provider = this._providers.get(providerType);
+      actualProviderType = providerType;
+    } else {
+      // 尝试获取视频provider
+      for (const [type, p] of this._providers) {
+        if (type === 'doubao' || type === 'minimax') {
+          provider = p;
+          actualProviderType = type;
+          break;
+        }
+      }
+      // 如果没找到，尝试默认provider
+      if (!provider) {
+        const defaultP = this.getDefaultProvider();
+        if (defaultP) {
+          provider = defaultP;
+          actualProviderType = defaultP.type;
+        }
+      }
+    }
+
+    if (!provider || !actualProviderType) {
+      log.warn('[AIGateway] checkVideoStatus: no video provider found');
+      return null;
+    }
+
+    const apiKey = await this.getProviderAPIKey(provider);
+    if (!apiKey) {
+      log.warn('[AIGateway] checkVideoStatus: no API key for provider:', actualProviderType);
+      return null;
+    }
+
+    try {
+      switch (actualProviderType) {
+        case 'doubao':
+          return await this.checkDoubaoVideoStatus(provider.baseUrl, taskId, apiKey);
+        case 'minimax':
+          return await this.checkMinimaxVideoStatus(provider.baseUrl, taskId, apiKey);
+        default:
+          // 通用检查，尝试常见端点
+          return await this.checkGenericVideoStatus(provider.baseUrl, taskId, apiKey);
+      }
+    } catch (error) {
+      log.warn('[AIGateway] checkVideoStatus error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 查询豆包视频生成状态
+   */
+  private async checkDoubaoVideoStatus(baseUrl: string, taskId: string, apiKey: string): Promise<string | null> {
+    // 豆包视频状态查询端点
+    const endpoints = [
+      `/v1/video/generate/${taskId}`,
+      `/v1/video/task/${taskId}`,
+      `/api/video/status/${taskId}`,
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${baseUrl}${endpoint}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          // 检查视频是否完成
+          const videoUrl = data.video_url || data.url || data.output || data.data?.video_url;
+          if (videoUrl) {
+            return videoUrl;
+          }
+          // 检查状态
+          if (data.status === 'completed' || data.status === 'success' || data.status === 'done') {
+            return videoUrl || null;
+          }
+        }
+      } catch {
+        // 继续尝试下一个端点
+      }
+    }
+
+    return null; // 还在处理中或查询失败
+  }
+
+  /**
+   * 查询MiniMax视频生成状态
+   */
+  private async checkMinimaxVideoStatus(baseUrl: string, taskId: string, apiKey: string): Promise<string | null> {
+    // MiniMax 视频状态查询端点
+    const endpoints = [
+      `/v1/video/generate/${taskId}`,
+      `/v1/video/task/${taskId}`,
+      `/api/video/status/${taskId}`,
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${baseUrl}${endpoint}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          // MiniMax 返回格式
+          const videoUrl = data.video_url || data.url || data.output || data.data?.video_url;
+          if (videoUrl) {
+            return videoUrl;
+          }
+          if (data.status === 'completed' || data.status === 'success' || data.status === 'done') {
+            return videoUrl || null;
+          }
+        }
+      } catch {
+        // 继续尝试下一个端点
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 通用视频状态查询（用于未知provider）
+   */
+  private async checkGenericVideoStatus(baseUrl: string, taskId: string, apiKey: string): Promise<string | null> {
+    const endpoints = [
+      `/v1/video/generate/${taskId}`,
+      `/v1/video/task/${taskId}`,
+      `/v1/video/status/${taskId}`,
+      `/api/video/status/${taskId}`,
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${baseUrl}${endpoint}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          // 尝试多种可能的返回格式
+          const videoUrl = data.video_url || data.url || data.output ||
+                          data.data?.video_url || data.result?.video_url ||
+                          data.task?.video_url;
+          if (videoUrl) {
+            return videoUrl;
+          }
+          // 检查各种可能的状态字段
+          const status = data.status || data.state || data.progress;
+          if (status === 'completed' || status === 'success' || status === 'done' ||
+              status === 'succeeded' || status === 100) {
+            return videoUrl || null;
+          }
+        }
+      } catch {
+        // 继续尝试
+      }
+    }
+
+    return null;
+  }
 }
 
 export const aiGateway = new AIGateway();

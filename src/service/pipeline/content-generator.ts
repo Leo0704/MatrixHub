@@ -151,11 +151,12 @@ async function generateVideoWithWait(platform: Platform, product: ParsedProduct,
  * 检查视频生成状态
  */
 async function checkVideoStatus(taskId: string): Promise<string | null> {
-  // TODO: 根据不同视频 provider 实现状态查询
-  // Doubao: GET /v1/video/generate/{task_id}
-  // MiniMax: GET /v1/video/generate/{task_id}
-  // 返回 video_url 表示完成，否则返回 null 表示还在处理中
-  return null;
+  try {
+    return await aiGateway.checkVideoStatus(taskId);
+  } catch (error) {
+    log.warn('[ContentGenerator] checkVideoStatus error:', error);
+    return null;
+  }
 }
 
 /**
