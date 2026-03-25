@@ -54,6 +54,16 @@ export async function executeAIGenerateTask(
     throw new Error(response.error ?? 'AI 生成失败');
   }
 
+  // Moderate AI-generated content before returning
+  const outputModeration = moderateContent(response.content ?? '');
+  if (!outputModeration.passed) {
+    log.warn('AI content failed moderation', { reasons: outputModeration.reasons });
+    taskQueue.updateStatus(task.id, 'failed', {
+      error: `AI生成内容审核未通过: ${outputModeration.reasons.join(', ')}`,
+    });
+    return;
+  }
+
   taskQueue.updateStatus(task.id, 'running', {
     result: { content: response.content },
     progress: 100,
