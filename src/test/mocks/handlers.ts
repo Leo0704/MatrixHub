@@ -6,15 +6,15 @@ import { vi } from 'vitest';
  */
 
 // Platform Launcher mocks
-export const createPlatformLauncherMock = () => ({
+export const createMockPlatformLauncher = () => ({
   acquirePage: vi.fn().mockResolvedValue({}),
   releasePage: vi.fn().mockResolvedValue(undefined),
   markPageLoggedIn: vi.fn().mockResolvedValue(undefined),
-  getPoolStatus: vi.fn().mockResolvedValue({ available: 5, total: 10 }),
+  getPoolStatus: vi.fn().mockReturnValue({ total: 5, available: 3, inUse: 2 }),
 });
 
 // AI Gateway mocks
-export const createAIGatewayMock = () => ({
+export const createMockAiGateway = () => ({
   generate: vi.fn().mockResolvedValue({ content: 'Generated content' }),
   generateStream: vi.fn().mockResolvedValue({
     content: 'Streamed content',
@@ -22,11 +22,11 @@ export const createAIGatewayMock = () => ({
       next: vi.fn().mockResolvedValue({ done: true, value: 'Streamed content' }),
     }),
   }),
-  getDefaultProvider: vi.fn().mockReturnValue('openai'),
+  getDefaultProvider: vi.fn().mockReturnValue({ type: 'openai', models: ['gpt-4'] }),
 });
 
 // Task Queue mocks
-export const createTaskQueueMock = () => ({
+export const createMockTaskQueue = () => ({
   updateStatus: vi.fn().mockResolvedValue(undefined),
   getCheckpoint: vi.fn().mockResolvedValue(null),
   saveCheckpoint: vi.fn().mockResolvedValue(undefined),
@@ -35,23 +35,19 @@ export const createTaskQueueMock = () => ({
 });
 
 // Rate Limiter mocks
-export const createRateLimiterMock = () => ({
+export const createMockRateLimiter = () => ({
   check: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
   acquire: vi.fn().mockResolvedValue({ allowed: true }),
   release: vi.fn().mockResolvedValue(undefined),
 });
 
 // Content Moderator mocks
-export const createContentModeratorMock = () => ({
-  moderateContent: vi.fn().mockResolvedValue({
-    isApproved: true,
-    flags: [],
-    score: 1.0,
-  }),
+export const createMockContentModerator = () => ({
+  moderateContent: vi.fn().mockReturnValue({ passed: true, reasons: [] }),
 });
 
 // Page mocks
-export const createPageMock = () => ({
+export const createMockPage = () => ({
   goto: vi.fn().mockResolvedValue({}),
   fill: vi.fn().mockResolvedValue(undefined),
   click: vi.fn().mockResolvedValue(undefined),
@@ -66,10 +62,10 @@ export const createPageMock = () => ({
 
 // Convenience function to create all mocks at once
 export const createAllMocks = () => ({
-  platformLauncher: createPlatformLauncherMock(),
-  aiGateway: createAIGatewayMock(),
-  taskQueue: createTaskQueueMock(),
-  rateLimiter: createRateLimiterMock(),
-  contentModerator: createContentModeratorMock(),
-  page: createPageMock(),
+  platformLauncher: createMockPlatformLauncher(),
+  aiGateway: createMockAiGateway(),
+  taskQueue: createMockTaskQueue(),
+  rateLimiter: createMockRateLimiter(),
+  contentModerator: createMockContentModerator(),
+  page: createMockPage(),
 });
