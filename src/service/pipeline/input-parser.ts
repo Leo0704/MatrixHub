@@ -3,6 +3,17 @@ import type { ParseResult, ParsedProduct } from './types.js';
 import log from 'electron-log';
 
 /**
+ * URL patterns for detecting product platform from URL
+ */
+export const PRODUCT_URL_PATTERNS = {
+  taobao: /taobao\.com/i,
+  tmall: /tmall\.com/i,
+  jd: /jd\.com/i,
+  pdd: /pinduoduo\.com|pdd/i,
+  douyin: /douyin\.com|bytedance\.com/i,
+};
+
+/**
  * Detect platform from URL hostname
  */
 function detectPlatform(url: string): string {
