@@ -240,6 +240,15 @@ export function registerIpcHandlers(): void {
     return rateLimiter.check(platform);
   });
 
+  ipcMain.handle('rate:status-all', async () => {
+    const platforms: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
+    const result: Record<string, ReturnType<typeof rateLimiter.getStatus>> = {};
+    for (const platform of platforms) {
+      result[platform] = rateLimiter.getStatus(platform);
+    }
+    return result;
+  });
+
   // ============ 自动化确认 ============
 
   ipcMain.handle('automation:confirm', async (_event, params: {

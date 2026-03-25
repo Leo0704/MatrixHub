@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import type { Task, Platform } from '~shared/types';
 import { useToast } from '../../components/Toast';
 import TaskDetailModal from '../../components/TaskDetailModal';
+import { RateLimitStatus } from '../../components/RateLimitStatus';
 
 import { ContentCard } from './components/ContentCard';
 import { CreateTaskModal } from './components/CreateTaskModal';
@@ -87,6 +88,10 @@ export default function ContentManagement() {
 
   return (
     <div>
+      <div className="page-header">
+        <h1>内容管理</h1>
+        <RateLimitStatus />
+      </div>
       <TaskFilters
         selectedPlatform={selectedPlatform}
         filter={filter}

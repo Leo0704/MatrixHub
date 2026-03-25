@@ -58,6 +58,11 @@ export interface ElectronAPI {
     day: { count: number; limit: number; resetAt: number };
   }>;
   checkRate: (platform: Platform) => Promise<boolean>;
+  getRateLimitStatusAll: () => Promise<Record<string, {
+    minute: { remaining: number; resetAt: number };
+    hour: { remaining: number; resetAt: number };
+    day: { remaining: number; resetAt: number };
+  }>>;
 
   // 自动化确认
   requestAutomationConfirm: (params: {
@@ -229,6 +234,7 @@ const api: ElectronAPI = {
   // ============ 限流 ============
   getRateStatus: (platform) => ipcRenderer.invoke('rate:status', { platform }),
   checkRate: (platform) => ipcRenderer.invoke('rate:check', { platform }),
+  getRateLimitStatusAll: () => ipcRenderer.invoke('rate:status-all'),
 
   // ============ 自动化确认 ============
   requestAutomationConfirm: (params) => ipcRenderer.invoke('automation:confirm', params),

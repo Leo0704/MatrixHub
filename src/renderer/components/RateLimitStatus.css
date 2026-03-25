@@ -1,0 +1,38 @@
+.rate-limit-status {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.rate-platform {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.platform-name {
+  font-weight: 500;
+}
+
+.rate-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rate-bar {
+  width: 60px;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.rate-fill {
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.rate-text {
+  color: var(--text-secondary);
+}
