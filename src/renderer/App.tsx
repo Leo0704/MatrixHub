@@ -11,6 +11,7 @@ import DataInsights from './pages/DataInsights';
 import AccountManagement from './pages/AccountManagement';
 import SelectorSettings from './pages/SelectorSettings';
 import Settings from './pages/Settings';
+import AutoCreation from './pages/AutoCreation';
 
 function App() {
   const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, setHasCompletedOnboarding } = useAppStore();
@@ -99,6 +100,7 @@ function App() {
     { page: 'insights', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>, label: '数据洞察' },
     { page: 'accounts', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>, label: '账号管理' },
     { page: 'selectors', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>, label: '选择器设置' },
+    { page: 'auto-creation', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, label: '全自动创作' },
   ];
 
   const renderPage = () => {
@@ -117,6 +119,8 @@ function App() {
         return <AccountManagement />;
       case 'selectors':
         return <SelectorSettings />;
+      case 'auto-creation':
+        return <AutoCreation />;
       case 'settings':
         return <Settings />;
       default:
