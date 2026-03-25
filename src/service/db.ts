@@ -253,6 +253,14 @@ function initializeSchema(db: Database.Database): void {
     );
   `);
 
+  // 设置表（主题等配置）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+
   log.info('数据库 Schema 初始化完成');
 }
 

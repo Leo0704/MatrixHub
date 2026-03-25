@@ -648,6 +648,28 @@ export function registerIpcHandlers(): void {
   // ============ 分组相关 ============
   registerGroupHandlers(ipcMain);
 
+  // ============ 设置相关 ============
+
+  ipcMain.handle('get-settings', async () => {
+    const db = getDb();
+    const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+    return rows.reduce((acc, row) => {
+      acc[row.key] = JSON.parse(row.value);
+      return acc;
+    }, {} as Record<string, unknown>);
+  });
+
+  ipcMain.handle('save-settings', async (_, settings: Record<string, unknown>) => {
+    const db = getDb();
+    const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+    const tx = db.transaction(() => {
+      for (const [key, value] of Object.entries(settings)) {
+        stmt.run(key, JSON.stringify(value));
+      }
+    });
+    tx();
+  });
+
   log.info('IPC 处理器注册完成');
 }
 

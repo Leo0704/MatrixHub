@@ -173,6 +173,10 @@ export interface ElectronAPI {
     timestamp: number;
   }>>;
 
+  // 设置
+  getSettings: () => Promise<Record<string, unknown>>;
+  saveSettings: (settings: Record<string, unknown>) => Promise<void>;
+
   // 事件监听
   onMenuAction: (channel: string, callback: () => void) => void;
   onTaskCreated: (callback: (task: Task) => void) => void;
@@ -261,6 +265,10 @@ const api: ElectronAPI = {
   // ============ 用户同意 ============
   getConsentRequired: () => ipcRenderer.invoke('get-consent-required'),
   grantConsent: () => ipcRenderer.invoke('grant-consent'),
+
+  // ============ 设置 ============
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
 
   // ============ 事件监听 ============
   onMenuAction: (channel, callback) => {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export default function Settings() {
   const [version, setVersion] = useState('v0.1.0');
@@ -129,16 +130,7 @@ export default function Settings() {
               选择应用的外观模式
             </div>
           </div>
-          <select
-            className="input"
-            style={{ width: 120 }}
-            value={settings.theme}
-            onChange={e => setSettings({ ...settings, theme: e.target.value })}
-          >
-            <option value="dark">深色</option>
-            <option value="light">浅色</option>
-            <option value="system">跟随系统</option>
-          </select>
+          <ThemeToggle />
         </div>
       </div>
 
