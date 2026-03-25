@@ -1,0 +1,47 @@
+.consent-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.consent-modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.consent-content section {
+  margin-bottom: 20px;
+}
+
+.consent-content h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.consent-content .warning {
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.consent-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  margin: 16px 0;
+}
+
+.consent-checkbox input {
+  margin-top: 3px;
+}
