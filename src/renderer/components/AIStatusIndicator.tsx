@@ -12,8 +12,8 @@ export function AIStatusIndicator() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    window.electronAPI.testAIConnection()
-      .then(result => setStatus(result))
+    window.electronAPI?.testAIConnection({} as { baseUrl: string; apiKey: string; model: string })
+      .then(result => setStatus({ connected: result?.success ?? false, error: result?.error }))
       .catch(err => setStatus({ connected: false, error: err.message }))
       .finally(() => setLoading(false));
   }, []);

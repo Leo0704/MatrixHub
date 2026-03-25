@@ -12,8 +12,8 @@ export function RateLimitStatus() {
   useEffect(() => {
     const loadStatus = async () => {
       try {
-        const result = await window.electronAPI.getRateLimitStatusAll();
-        setStatus(result);
+        const result = await window.electronAPI?.getRateLimitStatusAll();
+        setStatus(result ?? {});
       } catch {
         // Silently fail - rate limit status is non-critical
       }

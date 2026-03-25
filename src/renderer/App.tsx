@@ -12,7 +12,7 @@ import SelectorSettings from './pages/SelectorSettings';
 import Settings from './pages/Settings';
 
 function App() {
-  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, hasCompletedOnboarding, setHasCompletedOnboarding } = useAppStore();
+  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, setHasCompletedOnboarding } = useAppStore();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const initializedRef = useRef(false);
 

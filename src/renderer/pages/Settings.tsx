@@ -445,7 +445,7 @@ export default function Settings() {
           message="此操作不可恢复。所有账号、任务和设置都将被永久删除。"
           confirmLabel="确认清除"
           onConfirm={async () => {
-            await window.electronAPI.clearAllData();
+            await window.electronAPI?.clearAllData();
             setShowClearConfirm(false);
             setExportStatus('数据已清除！请刷新页面。');
           }}

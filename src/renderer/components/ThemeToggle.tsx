@@ -4,7 +4,7 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   useEffect(() => {
-    window.electronAPI.getSettings().then(settings => {
+    window.electronAPI?.getSettings().then(settings => {
       if (settings.theme) {
         setTheme(settings.theme as 'dark' | 'light');
         document.documentElement.dataset.theme = settings.theme as string;
@@ -16,7 +16,7 @@ export function ThemeToggle() {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
     document.documentElement.dataset.theme = newTheme;
-    await window.electronAPI.saveSettings({ theme: newTheme });
+    await window.electronAPI?.saveSettings({ theme: newTheme });
   };
 
   return (

@@ -79,8 +79,8 @@ export default function ContentManagement() {
 
   const handleDuplicate = (task: Task) => {
     setTaskDraft({
-      title: task.payload?.title || '',
-      content: task.payload?.content || '',
+      title: (task.payload?.title as string) || '',
+      content: (task.payload?.content as string) || '',
       platform: task.platform,
       accountIds: [],
     });
@@ -93,8 +93,8 @@ export default function ContentManagement() {
       if (selectedPlatform !== 'all' && task.platform !== selectedPlatform) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        const title = task.payload?.title?.toLowerCase() || '';
-        const content = task.payload?.content?.toLowerCase() || '';
+        const title = (task.payload?.title as string)?.toLowerCase() || '';
+        const content = (task.payload?.content as string)?.toLowerCase() || '';
         if (!title.includes(query) && !content.includes(query)) return false;
       }
       return true;
