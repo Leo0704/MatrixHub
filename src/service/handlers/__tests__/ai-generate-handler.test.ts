@@ -45,9 +45,17 @@ describe('AI Generate Handler', () => {
   });
 
   it('should generate content successfully', async () => {
+    const { taskQueue } = await import('../../queue.js');
+
     await executeAIGenerateTask(mockTask, mockSignal);
 
     expect(mockSignal.throwIfAborted).toHaveBeenCalled();
+    // updateProgress is not called in success path - only updateStatus marks completion
+    expect(taskQueue.updateProgress).not.toHaveBeenCalled();
+    expect(taskQueue.updateStatus).toHaveBeenCalledWith('task-1', 'running', {
+      result: { content: 'Generated content' },
+      progress: 100,
+    });
   });
 
   it('should fail content moderation and update task status', async () => {
