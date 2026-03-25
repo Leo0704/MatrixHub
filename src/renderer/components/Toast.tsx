@@ -1,13 +1,16 @@
-import { useState, createContext, useContext, useCallback } from 'react';
+import { useEffect, useState, createContext, useContext, useCallback, ReactNode } from 'react';
+import './Toast.css';
 
-interface Toast {
+export interface ToastMessage {
   id: string;
-  message: string;
   type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message?: string;
+  duration?: number;
 }
 
 interface ToastContextType {
-  showToast: (message: string, type?: Toast['type']) => void;
+  showToast: (title: string, message?: string, type?: ToastMessage['type']) => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -15,23 +18,17 @@ const ToastContext = createContext<ToastContextType | null>(null);
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    // Return a no-op if not in provider
     return { showToast: () => {} };
   }
   return context;
 }
 
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
+  const showToast = useCallback((title: string, message?: string, type: ToastMessage['type'] = 'info') => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setToasts(prev => [...prev, { id, message, type }]);
-
-    // Auto-dismiss after 5 seconds
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
+    setToasts(prev => [...prev, { id, type, title, message }]);
   }, []);
 
   const dismissToast = useCallback((id: string) => {
@@ -41,45 +38,52 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div style={{
-        position: 'fixed',
-        bottom: 20,
-        right: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-sm)',
-        zIndex: 9999,
-      }}>
-        {toasts.map(toast => (
-          <div
-            key={toast.id}
-            style={{
-              padding: 'var(--space-md) var(--space-lg)',
-              borderRadius: 'var(--radius-md)',
-              background: toast.type === 'error' ? 'var(--error)' :
-                         toast.type === 'success' ? 'var(--success)' :
-                         toast.type === 'warning' ? 'var(--warning)' :
-                         'var(--bg-overlay)',
-              color: 'white',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-              animation: 'slideIn 0.2s ease-out',
-              cursor: 'pointer',
-              maxWidth: 400,
-            }}
-            onClick={() => dismissToast(toast.id)}
-            role="alert"
-            aria-live="polite"
-          >
-            {toast.message}
-          </div>
-        ))}
-      </div>
-      <style>{`
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      `}</style>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </ToastContext.Provider>
+  );
+}
+
+interface ToastProps {
+  toasts: ToastMessage[];
+  onDismiss: (id: string) => void;
+}
+
+const ICONS = {
+  success: '✅',
+  error: '❌',
+  warning: '⚠️',
+  info: 'ℹ️',
+};
+
+export function Toast({ toasts, onDismiss }: ToastProps) {
+  return (
+    <div className="toast-container">
+      {toasts.map(toast => (
+        <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
+      ))}
+    </div>
+  );
+}
+
+function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: string) => void }) {
+  const [exiting, setExiting] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setExiting(true);
+      setTimeout(() => onDismiss(toast.id), 200);
+    }, toast.duration || 4000);
+    return () => clearTimeout(timer);
+  }, [toast.id, toast.duration, onDismiss]);
+
+  return (
+    <div className={`toast toast-${toast.type} ${exiting ? 'exiting' : ''}`}>
+      <span className="toast-icon">{ICONS[toast.type]}</span>
+      <div className="toast-content">
+        <strong className="toast-title">{toast.title}</strong>
+        {toast.message && <p className="toast-message">{toast.message}</p>}
+      </div>
+      <button className="toast-close" onClick={() => onDismiss(toast.id)}>×</button>
+    </div>
   );
 }
