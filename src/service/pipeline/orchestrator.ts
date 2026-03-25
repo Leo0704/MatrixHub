@@ -3,7 +3,6 @@ import { parseInput } from './input-parser.js';
 import { generateContent } from './content-generator.js';
 import { executePublishTask } from '../handlers/publish-handler.js';
 import { taskQueue } from '../queue.js';
-import { accountManager } from '../credential-manager.js';
 import { v4 as uuidv4 } from 'uuid';
 import log from 'electron-log';
 
@@ -134,9 +133,9 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
               content: textResult?.text || '',
               accountId,
               contentType: isImageMode ? 'image' : 'video',
-              imageUrls: isImageMode ? mediaResult?.imageUrls : undefined,
+              images: isImageMode ? mediaResult?.imageUrls : undefined,
               voiceBase64: isImageMode ? voiceResult?.voiceBase64 : undefined,
-              videoUrl: isImageMode ? undefined : mediaResult?.videoUrl,
+              video: isImageMode ? undefined : mediaResult?.videoUrl,
             },
           });
 
