@@ -57,7 +57,7 @@ const ICONS = {
 
 export function Toast({ toasts, onDismiss }: ToastProps) {
   return (
-    <div className="toast-container">
+    <div className="toast-container" role="alert" aria-live="polite">
       {toasts.map(toast => (
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
@@ -78,12 +78,12 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
 
   return (
     <div className={`toast toast-${toast.type} ${exiting ? 'exiting' : ''}`}>
-      <span className="toast-icon">{ICONS[toast.type]}</span>
+      <span className="toast-icon" aria-hidden="true">{ICONS[toast.type]}</span>
       <div className="toast-content">
         <strong className="toast-title">{toast.title}</strong>
         {toast.message && <p className="toast-message">{toast.message}</p>}
       </div>
-      <button className="toast-close" onClick={() => onDismiss(toast.id)}>×</button>
+      <button className="toast-close" aria-label="关闭通知" onClick={() => onDismiss(toast.id)}>×</button>
     </div>
   );
 }
