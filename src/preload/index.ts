@@ -177,6 +177,16 @@ export interface ElectronAPI {
   getSettings: () => Promise<Record<string, unknown>>;
   saveSettings: (settings: Record<string, unknown>) => Promise<void>;
 
+  // 数据导出/导入
+  exportData: () => Promise<{
+    accounts: any[];
+    tasks: any[];
+    groups: any[];
+    selectors: any[];
+  }>;
+  importData: (data: { accounts: any[]; tasks: any[]; groups: any[]; selectors: any[] }) => Promise<void>;
+  clearAllData: () => Promise<void>;
+
   // 事件监听
   onMenuAction: (channel: string, callback: () => void) => void;
   onTaskCreated: (callback: (task: Task) => void) => void;
@@ -269,6 +279,11 @@ const api: ElectronAPI = {
   // ============ 设置 ============
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+
+  // ============ 数据导出/导入 ============
+  exportData: () => ipcRenderer.invoke('export-data'),
+  importData: (data) => ipcRenderer.invoke('import-data', data),
+  clearAllData: () => ipcRenderer.invoke('clear-all-data'),
 
   // ============ 事件监听 ============
   onMenuAction: (channel, callback) => {

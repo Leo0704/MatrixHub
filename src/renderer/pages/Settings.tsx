@@ -3,10 +3,64 @@ import { ThemeToggle } from '../components/ThemeToggle';
 
 export default function Settings() {
   const [version, setVersion] = useState('v0.1.0');
+  const [exportStatus, setExportStatus] = useState('');
 
   useEffect(() => {
     window.electronAPI?.getVersion().then(setVersion).catch((err) => console.error('Failed to load version:', err));
   }, []);
+
+  const handleExport = async () => {
+    try {
+      const data = await window.electronAPI?.exportData();
+      if (!data) {
+        setExportStatus('导出失败：无法获取数据');
+        return;
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `matrixhub-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportStatus('导出成功！');
+    } catch (err) {
+      console.error('Export failed:', err);
+      setExportStatus('导出失败');
+    }
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        await window.electronAPI?.importData(data);
+        setExportStatus('导入成功！请刷新页面。');
+      } catch (err) {
+        console.error('Import failed:', err);
+        setExportStatus('导入失败');
+      }
+    };
+    input.click();
+  };
+
+  const handleClearAllData = async () => {
+    const confirmed = window.confirm('确定要清除所有数据吗？此操作不可恢复。\n\n将清除：账号、任务、分组和选择器。\n\n凭证（密码）不会被清除。');
+    if (!confirmed) return;
+    try {
+      await window.electronAPI?.clearAllData();
+      setExportStatus('数据已清除！请刷新页面。');
+    } catch (err) {
+      console.error('Clear failed:', err);
+      setExportStatus('清除失败');
+    }
+  };
 
   const [settings, setSettings] = useState({
     theme: 'dark',
@@ -343,19 +397,33 @@ export default function Settings() {
         <h3 style={{ marginBottom: 'var(--space-lg)' }}>数据管理</h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          <button className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
+          <button className="btn btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={handleExport}>
             📥 导出数据
           </button>
-          <button className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
+          <button className="btn btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={handleImport}>
             📤 导入数据
           </button>
           <button
             className="btn btn-secondary"
             style={{ justifyContent: 'flex-start', color: 'var(--error)' }}
+            onClick={handleClearAllData}
           >
             🗑️ 清除所有数据
           </button>
         </div>
+
+        {exportStatus && (
+          <div style={{
+            marginTop: 'var(--space-md)',
+            padding: 'var(--space-sm) var(--space-md)',
+            borderRadius: 'var(--radius-md)',
+            background: exportStatus.includes('失败') || exportStatus.includes('错误') ? 'var(--error-muted)' : 'var(--success-muted)',
+            color: exportStatus.includes('失败') || exportStatus.includes('错误') ? 'var(--error)' : 'var(--success)',
+            fontSize: 13,
+          }}>
+            {exportStatus}
+          </div>
+        )}
       </div>
 
       {/* 关于 */}

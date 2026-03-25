@@ -670,6 +670,23 @@ export function registerIpcHandlers(): void {
     tx();
   });
 
+  // ============ 数据导出/导入 ============
+
+  ipcMain.handle('export-data', async () => {
+    const { exportData } = await import('./db.js');
+    return exportData();
+  });
+
+  ipcMain.handle('import-data', async (_, data) => {
+    const { importData } = await import('./db.js');
+    importData(data);
+  });
+
+  ipcMain.handle('clear-all-data', async () => {
+    const db = getDb();
+    db.exec('DELETE FROM accounts; DELETE FROM tasks; DELETE FROM account_groups; DELETE FROM selector_versions;');
+  });
+
   log.info('IPC 处理器注册完成');
 }
 
