@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function Settings() {
   const [version, setVersion] = useState('v0.1.0');
   const [exportStatus, setExportStatus] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     window.electronAPI?.getVersion().then(setVersion).catch((err) => console.error('Failed to load version:', err));
@@ -408,9 +410,8 @@ export default function Settings() {
             📤 导入数据
           </button>
           <button
-            className="btn btn-secondary"
-            style={{ justifyContent: 'flex-start', color: 'var(--error)' }}
-            onClick={handleClearAllData}
+            className="btn btn-danger"
+            onClick={() => setShowClearConfirm(true)}
           >
             🗑️ 清除所有数据
           </button>
@@ -440,6 +441,28 @@ export default function Settings() {
           </p>
         </div>
       </div>
+      {/* 关于 */}
+      <div className="card">
+        <h3 style={{ marginBottom: 'var(--space-lg)' }}>关于</h3>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+          <p>MatrixHub {version}</p>
+          <p style={{ marginTop: 'var(--space-xs)' }}>
+            多平台内容创作与发布管理工具
+          </p>
+        </div>
+      </div>
+      {showClearConfirm && (
+        <ConfirmModal
+          title="确认清除所有数据？"
+          message="此操作不可恢复。所有账号、任务和设置都将被永久删除。"
+          confirmLabel="确认清除"
+          onConfirm={async () => {
+            await window.electronAPI.clearAllData();
+            setShowClearConfirm(false);
+          }}
+          onCancel={() => setShowClearConfirm(false)}
+        />
+      )}
     </div>
   );
 }
