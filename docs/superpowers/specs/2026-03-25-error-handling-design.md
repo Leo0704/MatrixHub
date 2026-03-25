@@ -66,9 +66,14 @@ export enum ErrorCode {
   RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded',
   CONTENT_MODERATION_FAILED = 'content_moderation_failed',
 
+  // Automation
+  SELECTOR_ERROR = 'selector_error',
+  AUTOMATION_ERROR = 'automation_error',
+  ELEMENT_NOT_FOUND = 'element_not_found',
+  PAGE_ACTION_FAILED = 'page_action_failed',
+
   // System
   UNKNOWN_ERROR = 'unknown_error',
-  ELEMENT_NOT_FOUND = 'element_not_found',
 }
 
 export class AppError extends Error {
@@ -100,14 +105,57 @@ export class AppError extends Error {
 
 ### 4. Error Display (`src/renderer/components/ErrorBar.tsx`)
 
-- Toast-style error notifications
-- Auto-dismiss after 5 seconds
-- Manual dismiss button
-- "Copy error details" for support
+```typescript
+export interface ErrorBarProps {
+  error: AppError;
+  onDismiss: () => void;
+}
+
+export function ErrorBar({ error, onDismiss }: ErrorBarProps) {
+  // Toast-style error notification
+  // Auto-dismiss after 5 seconds
+  // Manual dismiss button
+  // "Copy error details" for support
+}
+```
 
 ### 5. Unified Error Handler (`src/service/unified-error-handler.ts`)
 
 ```typescript
+import log from 'electron-log';
+import { AppError, ErrorCode } from '../../shared/errors.js';
+import { errorReporter } from './error-reporter.js';
+
+interface CategorizedError {
+  message: string;
+  code: ErrorCode;
+}
+
+export function categorizeError(error: Error | unknown): CategorizedError {
+  if (error instanceof AppError) {
+    return { message: error.message, code: error.code };
+  }
+
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+
+    if (msg.includes('timeout') || msg.includes('fetch')) {
+      return { message: error.message, code: ErrorCode.TIMEOUT };
+    }
+    if (msg.includes('login') || msg.includes('session')) {
+      return { message: error.message, code: ErrorCode.SESSION_EXPIRED };
+    }
+    if (msg.includes('rate limit')) {
+      return { message: error.message, code: ErrorCode.RATE_LIMIT_EXCEEDED };
+    }
+    if (msg.includes('selector') || msg.includes('element')) {
+      return { message: error.message, code: ErrorCode.SELECTOR_ERROR };
+    }
+  }
+
+  return { message: 'Unknown error', code: ErrorCode.UNKNOWN_ERROR };
+}
+
 export function handleError(error: Error | unknown, context: string): AppError {
   const categorized = categorizeError(error);
   const appError = new AppError(
@@ -129,10 +177,28 @@ export function handleError(error: Error | unknown, context: string): AppError {
 ### 6. Error Reporter Interface (`src/service/error-reporter.ts`)
 
 ```typescript
+import { AppError, ErrorCode } from '../../shared/errors.js';
+
 export interface ErrorReporter {
   capture(error: AppError, context?: Record<string, unknown>): void;
   captureMessage(message: string, level: 'info' | 'warn' | 'error'): void;
 }
+
+// Global error reporter instance
+let _reporter: ErrorReporter = new ConsoleReporter();
+
+export function setErrorReporter(reporter: ErrorReporter): void {
+  _reporter = reporter;
+}
+
+export const errorReporter: ErrorReporter = {
+  capture(error: AppError, context?: Record<string, unknown>) {
+    _reporter.capture(error, context);
+  },
+  captureMessage(message: string, level: 'info' | 'warn' | 'error') {
+    _reporter.captureMessage(message, level);
+  },
+};
 
 export class ConsoleReporter implements ErrorReporter {
   capture(error: AppError, context?: Record<string, unknown>) {
