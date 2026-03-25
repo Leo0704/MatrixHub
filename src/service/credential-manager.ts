@@ -20,16 +20,30 @@ import {
 export class CredentialManager {
   private serviceName = 'com.aimatrix.ops';
   private keychainBackend: KeychainBackend | null = null;
+  private initialized = false;
 
   /**
    * 初始化 Keychain 后端（应用启动时调用）
    */
   async initialize(): Promise<void> {
+    if (this.initialized) return;
+
     this.keychainBackend = await selectKeychainBackend();
+    this.initialized = true;
+
     if (this.keychainBackend) {
       log.info(`[CredentialManager] 已选择 Keychain 后端: ${this.keychainBackend.name}`);
     } else {
       log.warn('[CredentialManager] 未找到可用的 Keychain 后端，仅使用 safeStorage');
+    }
+  }
+
+  /**
+   * 确保已初始化（自动初始化）
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
     }
   }
 
@@ -142,6 +156,7 @@ export class CredentialManager {
   // ============ 跨平台 Keychain 后端 ============
 
   private async storeKeychain(key: string, value: string): Promise<void> {
+    await this.ensureInitialized();
     const backend = this.keychainBackend || getKeychainBackend();
     if (!backend) {
       log.debug('[CredentialManager] Keychain 后端不可用，跳过存储');
@@ -157,6 +172,7 @@ export class CredentialManager {
   }
 
   private async getKeychain(key: string): Promise<string | null> {
+    await this.ensureInitialized();
     const backend = this.keychainBackend || getKeychainBackend();
     if (!backend) {
       return null;
@@ -170,6 +186,7 @@ export class CredentialManager {
   }
 
   private async deleteKeychain(key: string): Promise<void> {
+    await this.ensureInitialized();
     const backend = this.keychainBackend || getKeychainBackend();
     if (!backend) {
       return;

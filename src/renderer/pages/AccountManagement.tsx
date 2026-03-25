@@ -414,6 +414,17 @@ function AddAccountModal({
   const [groupId, setGroupId] = useState<string | undefined>();
   const [tagsInput, setTagsInput] = useState('');
   const [adding, setAdding] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState<'weak' | 'medium' | 'strong' | null>(null);
+
+  const checkPasswordStrength = (pwd: string) => {
+    if (!pwd) { setPasswordStrength(null); return; }
+    if (pwd.length < 6) { setPasswordStrength('weak'); return; }
+    if (pwd.length >= 12 && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd)) {
+      setPasswordStrength('strong');
+    } else {
+      setPasswordStrength('medium');
+    }
+  };
 
   const handleAdd = async () => {
     if (!username.trim() || !password.trim()) return;
@@ -502,6 +513,9 @@ function AddAccountModal({
             value={username}
             onChange={e => setUsername(e.target.value)}
           />
+          <div className="field-help">
+            💡 支持平台账号密码或Cookie（格式：key=value; key=value）
+          </div>
         </div>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>
@@ -523,8 +537,21 @@ function AddAccountModal({
             style={{ width: '100%' }}
             placeholder="输入密码"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={e => {
+              setPassword(e.target.value);
+              checkPasswordStrength(e.target.value);
+            }}
           />
+          {passwordStrength && (
+            <div className="password-strength">
+              <div className={`strength-bar ${passwordStrength}`} />
+              <span className="strength-label">
+                {passwordStrength === 'weak' && '弱 (建议至少6位)'}
+                {passwordStrength === 'medium' && '中等'}
+                {passwordStrength === 'strong' && '强'}
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{

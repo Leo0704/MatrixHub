@@ -99,7 +99,7 @@ export class FieldEncryptor {
       const derivedKey = crypto.pbkdf2Sync(
         this.encryptionKey,
         salt,
-        1000,
+        10000,  // 安全的迭代次数
         32,
         'sha256'
       );
@@ -165,7 +165,7 @@ export class FieldEncryptor {
       const derivedKey = crypto.pbkdf2Sync(
         this.encryptionKey,
         salt,
-        1000,
+        10000,  // 必须与加密时相同
         32,
         'sha256'
       );

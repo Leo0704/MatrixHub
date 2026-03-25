@@ -4,7 +4,7 @@ import log from 'electron-log';
 import { getDb, closeDb } from '../service/db.js';
 import { registerIpcHandlers } from '../service/ipc-handlers.js';
 import { ServiceManager } from './service-manager.js';
-import { closeAllBrowsers } from '../service/platform-launcher.js';
+import { closeAllBrowsers, startPoolCleanup, stopPoolCleanup } from '../service/platform-launcher.js';
 import { monitoringService } from '../service/monitoring.js';
 import { credentialManager } from '../service/credential-manager.js';
 import { initializeFieldEncryptor } from '../service/crypto-utils.js';
@@ -242,7 +242,11 @@ async function initializeServices(): Promise<void> {
   log.info('注册 IPC 处理器...');
   registerIpcHandlers();
 
-  // 5. 启动任务服务循环（在后台运行，不阻塞窗口创建）
+  // 5. 启动页面池清理定时器
+  log.info('启动页面池清理...');
+  startPoolCleanup();
+
+  // 6. 启动任务服务循环（在后台运行，不阻塞窗口创建）
   log.info('启动任务服务循环...');
   serviceManager = new ServiceManager();
   const started = serviceManager.start();
@@ -255,6 +259,9 @@ async function initializeServices(): Promise<void> {
 
 async function shutdownServices(): Promise<void> {
   log.info('关闭服务...');
+
+  // 停止页面池清理定时器
+  stopPoolCleanup();
 
   // 停止服务循环
   if (serviceManager) {

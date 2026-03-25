@@ -335,3 +335,33 @@ h3 {
   align-items: center;
   gap: 8px;
 }
+
+.password-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.strength-bar {
+  height: 4px;
+  flex: 1;
+  max-width: 120px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.strength-bar.weak { background: #ef4444; width: 33%; }
+.strength-bar.medium { background: #f59e0b; width: 66%; }
+.strength-bar.strong { background: #22c55e; width: 100%; }
+
+.strength-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.field-help {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
