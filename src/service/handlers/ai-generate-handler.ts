@@ -4,7 +4,7 @@
 import type { Platform, Task, AIRequest } from '../../shared/types.js';
 import { aiGateway, AIProviderType } from '../ai-gateway.js';
 import { taskQueue } from '../queue.js';
-import { buildCreativePrompt, getEnhancedSystemPrompt } from '../prompt-builder.js';
+import { buildCreativePrompt, getEnhancedSystemPrompt, type PromptType } from '../prompt-builder.js';
 import { moderateContent } from '../content-moderator.js';
 import log from 'electron-log';
 
@@ -43,7 +43,7 @@ export async function executeAIGenerateTask(
     providerType: providerType as AIProviderType,
     model: payload.model ?? defaultProvider?.models[0],
     prompt: buildCreativePrompt(
-      (payload.promptType ?? 'default') as any,
+      (payload.promptType ?? 'default') as PromptType,
       payload.topic ?? '',
       payload.platform ?? 'douyin'
     ),
