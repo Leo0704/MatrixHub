@@ -3,7 +3,7 @@ import * as path from 'path';
 import log from 'electron-log';
 import { getDb, closeDb } from '../service/db.js';
 import { registerIpcHandlers } from '../service/ipc-handlers.js';
-import { createServiceRunner } from '../service/service-process.js';
+import { ServiceManager } from './service-manager.js';
 import { closeAllBrowsers } from '../service/platform-launcher.js';
 import { monitoringService } from '../service/monitoring.js';
 
@@ -29,7 +29,7 @@ log.info(`平台: ${process.platform}`);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let serviceRunner: ReturnType<typeof createServiceRunner> | null = null;
+let serviceManager: ServiceManager | null = null;
 
 function createWindow(): void {
   log.info('创建主窗口...');
@@ -234,11 +234,11 @@ async function initializeServices(): Promise<void> {
 
   // 3. 启动任务服务循环（在后台运行，不阻塞窗口创建）
   log.info('启动任务服务循环...');
-  serviceRunner = createServiceRunner();
-  // 注意：不使用 await，让服务在后台无限循环运行
-  serviceRunner.start().catch((error) => {
-    log.error('服务循环异常退出:', error);
-  });
+  serviceManager = new ServiceManager();
+  const started = serviceManager.start();
+  if (!started) {
+    log.warn('[Main] 服务启动返回 false，可能已在运行');
+  }
 
   log.info('服务初始化完成');
 }
@@ -247,8 +247,9 @@ async function shutdownServices(): Promise<void> {
   log.info('关闭服务...');
 
   // 停止服务循环
-  if (serviceRunner) {
-    serviceRunner.stop();
+  if (serviceManager) {
+    serviceManager.stop();
+    serviceManager = null;
   }
 
   // 停止监控定时器
@@ -303,6 +304,14 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+});
+
+// 在 before-quit 时确保服务停止
+app.on('before-quit', () => {
+  log.info('[Main] 应用准备退出，停止服务...');
+  if (serviceManager) {
+    serviceManager.stop();
+  }
 });
 
 app.on('window-all-closed', () => {
