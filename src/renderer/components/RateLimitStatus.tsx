@@ -3,8 +3,7 @@ import './RateLimitStatus.css';
 
 interface RateLimitData {
   minute: { remaining: number };
-  hour: { remaining: number };
-  day: { remaining: number };
+  // hour/day reserved for future use
 }
 
 export function RateLimitStatus() {
@@ -28,20 +27,22 @@ export function RateLimitStatus() {
   const platforms = Object.keys(status);
   if (platforms.length === 0) return null;
 
+  const MINUTE_LIMIT = 10;
+
   return (
     <div className="rate-limit-status">
       {platforms.map(platform => {
         const data = status[platform];
-        const minutePercent = (data.minute.remaining / 10) * 100;
+        const minutePercent = (data.minute.remaining / MINUTE_LIMIT) * 100;
 
         return (
           <div key={platform} className="rate-platform">
             <span className="platform-name">{platform}</span>
             <div className="rate-bar-container">
               <div className="rate-bar">
-                <div className="rate-fill minute" style={{ width: `${minutePercent}%` }} />
+                <div className="rate-fill" style={{ width: `${minutePercent}%` }} />
               </div>
-              <span className="rate-text">{data.minute.remaining}/10</span>
+              <span className="rate-text">{data.minute.remaining}/{MINUTE_LIMIT}</span>
             </div>
           </div>
         );
