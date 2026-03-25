@@ -3,6 +3,42 @@ import type { ParseResult, ParsedProduct } from './types.js';
 import log from 'electron-log';
 
 /**
+ * SSRF protection: check if URL points to internal network
+ */
+function isUrlSafe(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    const hostname = url.hostname.toLowerCase();
+
+    // Block loopback addresses
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return false;
+    }
+
+    // Block private IP addresses
+    const privateIpPatterns = [
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[01])\./,
+      /^192\.168\./,
+      /^169\.254\./,
+      /^0\./,
+    ];
+    if (privateIpPatterns.some(pattern => pattern.test(hostname))) {
+      return false;
+    }
+
+    // Block IPv6 link-local addresses
+    if (hostname.startsWith('fe80:') || hostname.startsWith('fc') || hostname.startsWith('fd')) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * URL patterns for detecting product platform from URL
  */
 export const PRODUCT_URL_PATTERNS = {
@@ -100,6 +136,14 @@ async function parseDouyinShop(url: string): Promise<ParseResult> {
  */
 async function parseGenericUrl(url: string): Promise<ParseResult> {
   log.info(`[InputParser] Generic URL parser called for: ${url}`);
+
+  // SSRF protection
+  if (!isUrlSafe(url)) {
+    return {
+      success: false,
+      error: 'URL points to internal network, not allowed to parse',
+    };
+  }
 
   try {
     const response = await fetch(url, {
