@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 
 export default function Settings() {
+  const [version, setVersion] = useState('v0.1.0');
+
+  useEffect(() => {
+    window.electronAPI?.getVersion().then(setVersion).catch((err) => console.error('Failed to load version:', err));
+  }, []);
+
   const [settings, setSettings] = useState({
     theme: 'dark',
     autoStart: true,
@@ -60,11 +66,11 @@ export default function Settings() {
     const config = taskAIConfigs[taskType];
     // 需要用户输入新的 API Key 才能测试（安全设计：不回传已存储的 key）
     if (!config.baseUrl || !config.apiKey || !config.model) {
-      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '请填写完整信息（包括 API Key）' } });
+      setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'error', text: '请填写完整信息（包括 API Key）' } }));
       return;
     }
     setTestingTask(taskType);
-    setTaskMsg({ ...taskMsg, [taskType]: null });
+    setTaskMsg(prev => ({ ...prev, [taskType]: null }));
     try {
       const result = await window.electronAPI?.testAIConnection({
         baseUrl: config.baseUrl.trim().replace(/\/$/, ''),
@@ -72,12 +78,12 @@ export default function Settings() {
         model: config.model.trim(),
       });
       if (result?.success) {
-        setTaskMsg({ ...taskMsg, [taskType]: { type: 'success', text: '连接成功！' } });
+        setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'success', text: '连接成功！' } }));
       } else {
-        setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: result?.error || '连接失败' } });
+        setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'error', text: result?.error || '连接失败' } }));
       }
     } catch (error) {
-      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '连接失败' } });
+      setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'error', text: '连接失败' } }));
     } finally {
       setTestingTask(null);
     }
@@ -87,11 +93,11 @@ export default function Settings() {
     const config = taskAIConfigs[taskType];
     // 允许保存：baseUrl + model 必须填写，且必须有 API Key（已有或新输入）
     if (!config.baseUrl || !config.model || (!config.apiKey && !config.hasApiKey)) {
-      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '请填写完整信息' } });
+      setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'error', text: '请填写完整信息' } }));
       return;
     }
     setSavingTask(taskType);
-    setTaskMsg({ ...taskMsg, [taskType]: null });
+    setTaskMsg(prev => ({ ...prev, [taskType]: null }));
     try {
       const result = await window.electronAPI?.saveTaskAIConfig(taskType, {
         baseUrl: config.baseUrl.trim().replace(/\/$/, ''),
@@ -99,12 +105,12 @@ export default function Settings() {
         model: config.model.trim(),
       });
       if (result?.success) {
-        setTaskMsg({ ...taskMsg, [taskType]: { type: 'success', text: '保存成功！' } });
+        setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'success', text: '保存成功！' } }));
       } else {
-        setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: result?.error || '保存失败' } });
+        setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'error', text: result?.error || '保存失败' } }));
       }
     } catch (error) {
-      setTaskMsg({ ...taskMsg, [taskType]: { type: 'error', text: '保存失败' } });
+      setTaskMsg(prev => ({ ...prev, [taskType]: { type: 'error', text: '保存失败' } }));
     } finally {
       setSavingTask(null);
     }
@@ -364,7 +370,7 @@ export default function Settings() {
       <div className="card">
         <h3 style={{ marginBottom: 'var(--space-lg)' }}>关于</h3>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          <p>MatrixHub v0.1.0</p>
+          <p>MatrixHub {version}</p>
           <p style={{ marginTop: 'var(--space-xs)' }}>
             多平台内容创作与发布管理工具
           </p>

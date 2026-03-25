@@ -4,10 +4,12 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30000,
   retries: process.env.CI ? 2 : 0,
-  reporter: 'list',
+  reporter: process.env.CI ? 'github' : 'list',
   use: {
     headless: true,
     viewport: { width: 1280, height: 720 },
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
   webServer: {
     command: 'cd dist/renderer && python3 -m http.server 3000',
@@ -15,4 +17,10 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },
+  projects: [
+    {
+      name: 'chromium',
+      use: { browserName: 'chromium' },
+    },
+  ],
 });

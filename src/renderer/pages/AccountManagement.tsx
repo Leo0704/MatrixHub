@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Account, AccountGroup, Platform } from '~shared/types';
 import { useToast } from '../components/Toast';
+import EditAccountModal from '../components/EditAccountModal';
 
 export default function AccountManagement() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -10,6 +11,7 @@ export default function AccountManagement() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function AccountManagement() {
       window.electronAPI?.removeAllListeners('group:updated');
       window.electronAPI?.removeAllListeners('group:deleted');
     };
-  }, [selectedGroupId]);
+  }, []);
 
   const loadAccounts = async () => {
     try {
@@ -183,6 +185,7 @@ export default function AccountManagement() {
               account={account}
               groups={groups}
               onRemove={() => handleRemove(account.id)}
+              onEdit={() => setEditingAccount(account)}
             />
           ))}
         </div>
@@ -205,6 +208,19 @@ export default function AccountManagement() {
         <GroupManagerModal
           groups={groups}
           onClose={() => setShowGroupModal(false)}
+        />
+      )}
+
+      {/* 编辑账号弹窗 */}
+      {editingAccount && (
+        <EditAccountModal
+          account={editingAccount}
+          groups={groups}
+          onClose={() => setEditingAccount(null)}
+          onSave={(updatedAccount) => {
+            setAccounts(prev => prev.map(a => a.id === updatedAccount.id ? updatedAccount : a));
+            setEditingAccount(null);
+          }}
         />
       )}
 
@@ -262,10 +278,12 @@ function AccountCard({
   account,
   groups,
   onRemove,
+  onEdit,
 }: {
   account: Account;
   groups: AccountGroup[];
   onRemove: () => void;
+  onEdit: () => void;
 }) {
   const platformInfo = {
     douyin: { name: '抖音', icon: '🎵', color: 'var(--platform-douyin)' },
@@ -365,7 +383,7 @@ function AccountCard({
         paddingTop: 'var(--space-md)',
         borderTop: '1px solid var(--border-subtle)'
       }}>
-        <button className="btn btn-secondary" style={{ flex: 1, fontSize: 12 }}>
+        <button className="btn btn-secondary" style={{ flex: 1, fontSize: 12 }} onClick={onEdit}>
           编辑
         </button>
         <button

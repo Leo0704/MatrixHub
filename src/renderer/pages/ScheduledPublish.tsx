@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Task, Platform, Account } from '~shared/types';
+import type { Task, Platform, Account, TaskStatus } from '~shared/types';
+import { useToast } from '../components/Toast';
+import { StatusBadge } from '../components/StatusBadge';
 
 interface ScheduledTask {
   id: string;
@@ -11,26 +13,6 @@ interface ScheduledTask {
   retryCount: number;
   maxRetries: number;
   error?: string;
-}
-
-type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'deferred';
-
-function mapTaskStatus(status: TaskStatus): { label: string; color: string; bg: string } {
-  switch (status) {
-    case 'deferred':
-    case 'pending':
-      return { label: '等待发布', color: 'var(--primary)', bg: 'rgba(59,130,246,0.1)' };
-    case 'running':
-      return { label: '发布中', color: 'var(--accent-orange)', bg: 'rgba(249,115,22,0.1)' };
-    case 'completed':
-      return { label: '已发布', color: 'var(--success)', bg: 'rgba(34,197,94,0.1)' };
-    case 'failed':
-      return { label: '失败', color: 'var(--error)', bg: 'rgba(239,68,68,0.1)' };
-    case 'cancelled':
-      return { label: '已取消', color: 'var(--text-muted)', bg: 'rgba(156,163,175,0.1)' };
-    default:
-      return { label: status, color: 'var(--text-muted)', bg: 'rgba(156,163,175,0.1)' };
-  }
 }
 
 // 定时任务创建弹窗
@@ -52,6 +34,7 @@ function CreateScheduledTaskModal({
   const [selectedMinute, setSelectedMinute] = useState(0);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadAccounts();
@@ -80,11 +63,11 @@ function CreateScheduledTaskModal({
 
   const handleCreate = async () => {
     if (!title.trim()) {
-      alert('请输入标题');
+      showToast('请输入标题', 'error');
       return;
     }
     if (!selectedAccountId) {
-      alert('请选择账号');
+      showToast('请选择账号', 'error');
       return;
     }
 
@@ -93,7 +76,7 @@ function CreateScheduledTaskModal({
     scheduledAt.setHours(selectedHour, selectedMinute, 0, 0);
 
     if (scheduledAt.getTime() <= Date.now()) {
-      alert('定时发布时间必须晚于当前时间');
+      showToast('定时发布时间必须晚于当前时间', 'error');
       return;
     }
 
@@ -117,7 +100,7 @@ function CreateScheduledTaskModal({
       }
     } catch (error) {
       console.error('创建定时任务失败:', error);
-      alert('创建定时任务失败');
+      showToast('创建定时任务失败', 'error');
     } finally {
       setCreating(false);
     }
@@ -661,8 +644,6 @@ function ScheduledTaskRow({
     xiaohongshu: { name: '小红书', icon: '📕' },
   };
 
-  const statusInfo = mapTaskStatus(task.status);
-
   return (
     <div style={{
       display: 'flex',
@@ -710,16 +691,7 @@ function ScheduledTaskRow({
       </div>
 
       {/* 状态 */}
-      <span style={{
-        fontSize: 12,
-        padding: '4px 10px',
-        borderRadius: 'var(--radius-full)',
-        background: statusInfo.bg,
-        color: statusInfo.color,
-        fontWeight: 500,
-      }}>
-        {statusInfo.label}
-      </span>
+      <StatusBadge status={task.status} />
 
       {/* 操作 */}
       <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>

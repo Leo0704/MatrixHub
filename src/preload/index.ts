@@ -39,7 +39,7 @@ export interface ElectronAPI {
     groupId?: string;
     tags?: string[];
   }) => Promise<Account | { success: false; error: string }>;
-  updateAccount: (accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status' | 'groupId' | 'tags'>>) => Promise<Account | null>;
+  updateAccount: (accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status' | 'groupId' | 'tags'> & { username?: string; password?: string }>) => Promise<Account | null>;
   removeAccount: (accountId: string) => Promise<{ success: boolean }>;
   validateAccount: (accountId: string) => Promise<boolean>;
 
