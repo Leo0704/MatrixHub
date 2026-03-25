@@ -54,43 +54,53 @@ export async function executePublishTask(
 
   try {
     // 导航
-    await navigateToPublish(page, platform);
-    taskQueue.saveCheckpoint({
-      taskId: task.id,
-      step: 'login_check',
-      payload: { ...payload },
-      createdAt: Date.now(),
-    });
+    if (startStep === 'navigate') {
+      await navigateToPublish(page, platform);
+      taskQueue.saveCheckpoint({
+        taskId: task.id,
+        step: 'login_check',
+        payload: { ...payload },
+        createdAt: Date.now(),
+      });
+    }
 
     signal.throwIfAborted();
 
     // 检查登录
-    const isLoggedIn = await checkLoginState(page, platform);
-    if (!isLoggedIn) {
-      throw new Error('账号未登录');
+    if (startStep === 'navigate' || startStep === 'login_check') {
+      const isLoggedIn = await checkLoginState(page, platform);
+      if (!isLoggedIn) {
+        throw new Error('账号未登录');
+      }
+
+      // 标记页面为已登录状态（这样会被保留在池中）
+      markPageLoggedIn(page, payload.accountId);
     }
 
-    // 标记页面为已登录状态（这样会被保留在池中）
-    markPageLoggedIn(page, payload.accountId);
-
-    taskQueue.saveCheckpoint({
-      taskId: task.id,
-      step: 'fill_form',
-      payload: { ...payload },
-      createdAt: Date.now(),
-    });
+    if (startStep === 'navigate' || startStep === 'login_check' || startStep === 'fill_form') {
+      taskQueue.saveCheckpoint({
+        taskId: task.id,
+        step: 'fill_form',
+        payload: { ...payload },
+        createdAt: Date.now(),
+      });
+    }
 
     signal.throwIfAborted();
 
     // 填写表单
-    await fillPublishForm(page, platform, payload);
+    if (startStep === 'navigate' || startStep === 'login_check' || startStep === 'fill_form') {
+      await fillPublishForm(page, platform, payload);
+    }
 
-    taskQueue.saveCheckpoint({
-      taskId: task.id,
-      step: 'confirm_publish',
-      payload: { ...payload },
-      createdAt: Date.now(),
-    });
+    if (startStep === 'navigate' || startStep === 'login_check' || startStep === 'fill_form' || startStep === 'confirm_publish') {
+      taskQueue.saveCheckpoint({
+        taskId: task.id,
+        step: 'confirm_publish',
+        payload: { ...payload },
+        createdAt: Date.now(),
+      });
+    }
 
     signal.throwIfAborted();
 
