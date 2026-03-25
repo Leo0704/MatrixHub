@@ -170,13 +170,42 @@ export default function AICreation() {
     // 保存当前内容到撤销栈
     pushToUndoStack(result);
     setGenerating(true);
+
     try {
+      // 构建包含完整迭代历史的 prompt
+      const iterationHistoryText = iterationHistory.length > 0
+        ? `\n\n=== 迭代历史（${iterationHistory.length}次）===\n${
+          iterationHistory.map((h, i) =>
+            `第${i + 1}次反馈：${h.feedback}\n第${i + 1}次改进：${h.response.slice(0, 200)}...`
+          ).join('\n\n')
+        }`
+        : '';
+
+      const enhancedIterationPrompt = `【原始请求】
+主题：${topic}
+平台：${platform}
+类型：${promptType}
+
+【用户反馈】
+${feedback}
+
+${iterationHistoryText}
+
+【当前内容】
+${result}
+
+请根据用户反馈，改进当前内容。注意：
+1. 不要重复之前的改进
+2. 保持平台风格一致
+3. 直接输出改进后的内容，不要解释`;
+
       const response = await window.electronAPI?.iterateAI({
         originalPrompt: CONTENT_PROMPTS[promptType]?.(topic, platform) || `主题：${topic}`,
         originalResponse: result,
-        feedback,
+        feedback: enhancedIterationPrompt,
         iterationCount: iterationHistory.length,
       });
+
       if (response?.success && response.content) {
         const content = response.content;
         setResult(content);
