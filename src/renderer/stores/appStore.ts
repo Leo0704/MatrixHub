@@ -38,8 +38,13 @@ interface AppState {
 const savedOnboarding = localStorage.getItem('onboardingCompleted');
 const hasCompletedOnboarding = savedOnboarding === 'true';
 
-const savedDraft = localStorage.getItem('taskDraft');
-const taskDraft = savedDraft ? JSON.parse(savedDraft) : null;
+let taskDraft = null;
+try {
+  const savedDraft = localStorage.getItem('taskDraft');
+  taskDraft = savedDraft ? JSON.parse(savedDraft) : null;
+} catch {
+  taskDraft = null;
+}
 
 export const useAppStore = create<AppState>((set) => ({
   accounts: [],

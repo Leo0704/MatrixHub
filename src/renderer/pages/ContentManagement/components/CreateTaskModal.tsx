@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Platform, Task, AccountGroup, Account } from '~shared/types';
 import { useAppStore } from '../../../stores/appStore';
 import { useToast } from '../../../components/Toast';
@@ -30,22 +30,22 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
   const [intervalMinutes, setIntervalMinutes] = useState(5);
 
   const { taskDraft, setTaskDraft, clearTaskDraft } = useAppStore();
-  const [initializedFromDraft, setInitializedFromDraft] = useState(false);
+  const draftInitializedRef = useRef(false);
 
   // Pre-fill from draft when modal opens
   useEffect(() => {
-    if (taskDraft && !initializedFromDraft && !title && !content) {
+    if (taskDraft && !draftInitializedRef.current && !title && !content) {
       setTitle(taskDraft.title);
       setContent(taskDraft.content);
       if (taskDraft.platform) setPlatform(taskDraft.platform as Platform);
       if (taskDraft.accountIds.length) setSelectedAccountIds(taskDraft.accountIds);
-      setInitializedFromDraft(true);
+      draftInitializedRef.current = true;
     }
-  }, [taskDraft, initializedFromDraft]);
+  }, [taskDraft]);
 
-  // Auto-save on changes
+  // Auto-save on changes (only after draft was initialized)
   useEffect(() => {
-    if (title || content) {
+    if (draftInitializedRef.current && (title || content)) {
       setTaskDraft({ title, content, platform, accountIds: selectedAccountIds });
     }
   }, [title, content, platform, selectedAccountIds]);
