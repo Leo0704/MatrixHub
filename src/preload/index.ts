@@ -146,6 +146,10 @@ export interface ElectronAPI {
     services: Record<string, boolean>;
     timestamp: number;
   }>;
+
+  // 用户同意
+  getConsentRequired: () => Promise<boolean>;
+  grantConsent: () => Promise<void>;
   getAlerts: (options?: { limit?: number; unacknowledgedOnly?: boolean }) => Promise<Array<{
     id: string;
     type: string;
@@ -253,6 +257,10 @@ const api: ElectronAPI = {
   getDashboardData: () => ipcRenderer.invoke('monitoring:dashboard'),
   getMetrics: (name, from, to, limit) =>
     ipcRenderer.invoke('monitoring:metrics', { name, from, to, limit }),
+
+  // ============ 用户同意 ============
+  getConsentRequired: () => ipcRenderer.invoke('get-consent-required'),
+  grantConsent: () => ipcRenderer.invoke('grant-consent'),
 
   // ============ 事件监听 ============
   onMenuAction: (channel, callback) => {

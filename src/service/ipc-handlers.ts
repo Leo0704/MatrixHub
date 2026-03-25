@@ -8,6 +8,7 @@ import { selectorManager } from './selector-versioning.js';
 import { monitoringService } from './monitoring.js';
 import { closeAllBrowsers } from './platform-launcher.js';
 import { getDb } from './db.js';
+import { runtimeConfig } from './config/runtime-config.js';
 import type { Task, TaskFilter, Platform, AIRequest, AIIterationRequest, AITriggerType } from '../shared/types.js';
 import type { AIProviderType } from './ai-gateway.js';
 import { dailyBriefing, checkHotTopics, analyzeNow } from './ai-director.js';
@@ -516,6 +517,20 @@ export function registerIpcHandlers(): void {
     return { success: true };
   });
 
+  // ============ 用户同意相关 ============
+
+  ipcMain.handle('get-consent-required', async () => {
+    const { ConsentManager } = await import('./consent-manager.js');
+    const manager = new ConsentManager();
+    return manager.isConsentRequired();
+  });
+
+  ipcMain.handle('grant-consent', async () => {
+    const { ConsentManager } = await import('./consent-manager.js');
+    const manager = new ConsentManager();
+    await manager.grantConsent();
+  });
+
   // ============ 系统相关 ============
 
   ipcMain.handle('system:stats', async () => {
@@ -590,6 +605,45 @@ export function registerIpcHandlers(): void {
     await analyzeNow(type, platform, taskId)
     return { success: true }
   })
+
+  // ============ 配置相关 ============
+
+  // 获取运行时配置
+  ipcMain.handle('config:get', async () => {
+    return runtimeConfig.get();
+  });
+
+  // 更新配置项
+  ipcMain.handle('config:update', async (_event, { key, value }: { key: string; value: unknown }) => {
+    try {
+      runtimeConfig.update(key as any, value);
+      return { success: true };
+    } catch (error) {
+      log.error('Failed to update config:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // 重置配置为默认值
+  ipcMain.handle('config:reset', async () => {
+    try {
+      runtimeConfig.resetToDefaults();
+      return { success: true };
+    } catch (error) {
+      log.error('Failed to reset config:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // 重新加载配置（从数据库）
+  ipcMain.handle('config:reload', async () => {
+    try {
+      return runtimeConfig.reload();
+    } catch (error) {
+      log.error('Failed to reload config:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
 
   // ============ 分组相关 ============
   registerGroupHandlers(ipcMain);

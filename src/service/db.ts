@@ -68,11 +68,17 @@ function initializeSchema(db: Database.Database): void {
   const accountTableInfo = db.pragma('table_info(accounts)') as { name: string }[];
   const hasGroupId = accountTableInfo.some((col) => col.name === 'group_id');
   const hasTags = accountTableInfo.some((col) => col.name === 'tags');
+  const hasCreationStatus = accountTableInfo.some((col) => col.name === 'creation_status');
   if (!hasGroupId) {
     db.exec(`ALTER TABLE accounts ADD COLUMN group_id TEXT`);
   }
   if (!hasTags) {
     db.exec(`ALTER TABLE accounts ADD COLUMN tags TEXT DEFAULT '[]'`);
+  }
+  if (!hasCreationStatus) {
+    // 账号创建状态：pending（创建中）、complete（完成）、failed（失败）
+    // 默认 'complete' 以兼容已有账号
+    db.exec(`ALTER TABLE accounts ADD COLUMN creation_status TEXT DEFAULT 'complete' CHECK(creation_status IN ('pending', 'complete', 'failed'))`);
   }
 
   // 账号分组表
@@ -225,6 +231,24 @@ function initializeSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_metrics_name_time ON metrics(metric_name, timestamp DESC);
+  `);
+
+  // 运行时配置表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS runtime_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // 用户同意表（TOS 警告确认）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS consent (
+      version TEXT PRIMARY KEY,
+      granted INTEGER NOT NULL DEFAULT 0,
+      grantedAt TEXT
+    );
   `);
 
   log.info('数据库 Schema 初始化完成');
