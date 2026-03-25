@@ -5,6 +5,7 @@ import type { Platform, Task, AIRequest } from '../../shared/types.js';
 import { aiGateway, AIProviderType } from '../ai-gateway.js';
 import { taskQueue } from '../queue.js';
 import { buildPrompt, getSystemPrompt } from '../config/prompts.js';
+import { moderateContent } from '../content-moderator.js';
 import log from 'electron-log';
 
 interface AIGeneratePayload {
@@ -23,6 +24,16 @@ export async function executeAIGenerateTask(
   const payload = task.payload as AIGeneratePayload;
 
   signal.throwIfAborted();
+
+  // 内容审核
+  const topicContent = payload.topic || '';
+  const moderation = moderateContent(topicContent);
+  if (!moderation.passed) {
+    taskQueue.updateStatus(task.id, 'failed', {
+      error: `内容审核未通过: ${moderation.reasons.join(', ')}`,
+    });
+    return;
+  }
 
   // 获取配置的 provider，优先使用任务指定的，否则使用默认 provider
   const defaultProvider = aiGateway.getDefaultProvider();
