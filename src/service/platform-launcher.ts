@@ -20,10 +20,22 @@ interface PooledPage {
   lastUsed: number;
   useCount: number;
   isLoggedIn: boolean;
+  createdAt: number;         // 页面创建时间
   closeHandler?: () => void;  // 保存关闭事件处理器引用，用于清理
 }
 const pagePool: PooledPage[] = [];
-const MAX_POOL_SIZE_PER_PLATFORM = 5;
+
+// 页面池配置
+const POOL_CONFIG = {
+  maxPoolSizePerPlatform: 5,
+  idleTimeoutMs: 30 * 60 * 1000,     // 30分钟空闲超时
+  cleanupIntervalMs: 5 * 60 * 1000,  // 5分钟检查一次
+  maxPageAgeMs: 4 * 60 * 60 * 1000,  // 4小时最大存活
+  preserveLoggedInPages: true,       // 保留已登录页面
+};
+
+// 清理定时器
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 // 重要：页面池按账号隔离，不复用跨账号页面
 // 登录状态必须保持，不能超时关闭
@@ -167,15 +179,22 @@ export async function createPage(platform: Platform, accountId?: string): Promis
     return genericPooled.page;
   }
 
-  // 池已满，关闭一个空闲的同平台页面
+  // 池已满，使用增强的 LRU 驱逐策略
   const poolCount = pagePool.filter(p => p.platform === platform).length;
-  if (poolCount >= MAX_POOL_SIZE_PER_PLATFORM) {
-    const oldest = pagePool
-      .filter(p => p.platform === platform && !p.inUse && p.useCount > 1)
-      .sort((a, b) => a.lastUsed - b.lastUsed)[0];
-    if (oldest) {
-      log.debug(`[PagePool] 关闭多余页面: ${oldest.platform}/${oldest.accountId || '通用'}`);
-      removeFromPool(oldest);
+  if (poolCount >= POOL_CONFIG.maxPoolSizePerPlatform) {
+    const candidates = pagePool
+      .filter(p => p.platform === platform && !p.inUse)
+      .map(p => ({
+        pooled: p,
+        // LRU 评分：使用频率 + 最近使用时间 + 登录状态
+        score: calculateLRUScore(p),
+      }))
+      .sort((a, b) => a.score - b.score);
+
+    if (candidates.length > 0) {
+      const toEvict = candidates[0].pooled;
+      log.debug(`[PagePool] LRU 驱逐页面: ${toEvict.platform}/${toEvict.accountId || '通用'} (评分: ${candidates[0].score.toFixed(2)})`);
+      removeFromPool(toEvict);
     }
   }
 
@@ -205,6 +224,7 @@ export async function createPage(platform: Platform, accountId?: string): Promis
     lastUsed: Date.now(),
     useCount: 1,
     isLoggedIn: false,
+    createdAt: Date.now(),
   };
 
   // 监听页面关闭事件
@@ -265,6 +285,95 @@ function removeFromPool(pooled: PooledPage): void {
     pooled.page.close();
   } catch (err) {
     log.warn(`[PagePool] 关闭页面失败:`, err);
+  }
+}
+
+/**
+ * 计算 LRU 评分（越低越应该被驱逐）
+ */
+function calculateLRUScore(pooled: PooledPage): number {
+  const now = Date.now();
+  const ageMs = now - pooled.createdAt;
+  const idleMs = now - pooled.lastUsed;
+
+  // 评分组成：
+  // - 使用频率权重 (0-1): 使用次数越多，分数越高
+  const useScore = Math.min(pooled.useCount / 10, 1) * 0.3;
+  // - 最近使用权重 (0-1): 最近使用过的，分数越高
+  const recencyScore = Math.max(0, 1 - idleMs / POOL_CONFIG.idleTimeoutMs) * 0.3;
+  // - 登录状态权重 (0-1): 已登录的页面，分数越高
+  const loginScore = pooled.isLoggedIn ? 0.4 : 0;
+
+  return useScore + recencyScore + loginScore;
+}
+
+/**
+ * 启动页面池清理定时器
+ */
+export function startPoolCleanup(): void {
+  if (cleanupInterval) {
+    log.warn('[PagePool] 清理定时器已在运行');
+    return;
+  }
+
+  cleanupInterval = setInterval(() => {
+    cleanupIdlePages();
+  }, POOL_CONFIG.cleanupIntervalMs);
+
+  log.info(`[PagePool] 清理定时器已启动 (间隔: ${POOL_CONFIG.cleanupIntervalMs / 60000}分钟)`);
+}
+
+/**
+ * 清理空闲超时的页面
+ */
+function cleanupIdlePages(): void {
+  const now = Date.now();
+  const toRemove: PooledPage[] = [];
+
+  for (const pooled of pagePool) {
+    // 跳过使用中的页面
+    if (pooled.inUse) continue;
+
+    const idleMs = now - pooled.lastUsed;
+    const ageMs = now - pooled.createdAt;
+
+    // 保留已登录页面（除非超过最大存活时间）
+    if (POOL_CONFIG.preserveLoggedInPages && pooled.isLoggedIn) {
+      if (ageMs < POOL_CONFIG.maxPageAgeMs) continue;
+      log.debug(`[PagePool] 已登录页面超龄: ${pooled.platform}/${pooled.accountId} (存活: ${Math.round(ageMs / 60000)}分钟)`);
+    }
+
+    // 空闲超时
+    if (idleMs > POOL_CONFIG.idleTimeoutMs) {
+      log.debug(`[PagePool] 页面空闲超时: ${pooled.platform}/${pooled.accountId || '通用'} (空闲: ${Math.round(idleMs / 60000)}分钟)`);
+      toRemove.push(pooled);
+    }
+    // 最大存活时间
+    else if (ageMs > POOL_CONFIG.maxPageAgeMs) {
+      log.debug(`[PagePool] 页面超龄: ${pooled.platform}/${pooled.accountId || '通用'} (存活: ${Math.round(ageMs / 60000)}分钟)`);
+      toRemove.push(pooled);
+    }
+  }
+
+  // 执行清理
+  for (const pooled of toRemove) {
+    log.info(`[PagePool] 清理页面: ${pooled.platform}/${pooled.accountId || '通用'}`);
+    removeFromPool(pooled);
+  }
+
+  if (toRemove.length > 0) {
+    log.info(`[PagePool] 清理完成，关闭 ${toRemove.length} 个页面，当前池大小: ${pagePool.length}`);
+  }
+}
+
+/**
+ * 停止页面池清理定时器
+ */
+export function stopPoolCleanup(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+    log.info('[PagePool] 清理定时器已停止');
   }
 }
 

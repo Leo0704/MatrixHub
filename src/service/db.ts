@@ -3,6 +3,7 @@ import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import log from 'electron-log';
+import { getFieldEncryptor, isFieldEncrypted } from './crypto-utils.js';
 
 let db: Database.Database | null = null;
 
@@ -22,6 +23,7 @@ export function getDb(): Database.Database {
   db.pragma('foreign_keys = ON');
 
   initializeSchema(db);
+  migrateSensitiveFields(db);
 
   return db;
 }
@@ -254,10 +256,92 @@ function initializeSchema(db: Database.Database): void {
   log.info('数据库 Schema 初始化完成');
 }
 
+/**
+ * 迁移敏感字段到加密存储
+ * 自动加密数据库中尚未加密的敏感数据
+ */
+function migrateSensitiveFields(db: Database.Database): void {
+  const encryptor = getFieldEncryptor();
+  if (!encryptor || !encryptor.isAvailable()) {
+    log.info('[DB] 字段加密器不可用，跳过敏感字段迁移');
+    return;
+  }
+
+  log.info('[DB] 检查敏感字段加密状态...');
+
+  // 1. 加密 credentials.keychain_key（如果尚未加密）
+  try {
+    const credentials = db.prepare('SELECT account_id, keychain_key FROM credentials').all() as { account_id: string; keychain_key: string }[];
+    let encryptedCount = 0;
+
+    for (const cred of credentials) {
+      if (cred.keychain_key && !isFieldEncrypted(cred.keychain_key)) {
+        const encrypted = encryptor.encrypt(cred.keychain_key);
+        db.prepare('UPDATE credentials SET keychain_key = ? WHERE account_id = ?').run(encrypted, cred.account_id);
+        encryptedCount++;
+      }
+    }
+
+    if (encryptedCount > 0) {
+      log.info(`[DB] 已加密 ${encryptedCount} 个 credentials.keychain_key 字段`);
+    }
+  } catch (error) {
+    log.error('[DB] 加密 credentials.keychain_key 失败:', error);
+  }
+
+  // 2. 加密 ai_providers.api_key_keychain_key（如果尚未加密）
+  try {
+    const providers = db.prepare('SELECT id, api_key_keychain_key FROM ai_providers').all() as { id: string; api_key_keychain_key: string }[];
+    let encryptedCount = 0;
+
+    for (const provider of providers) {
+      if (provider.api_key_keychain_key && !isFieldEncrypted(provider.api_key_keychain_key)) {
+        const encrypted = encryptor.encrypt(provider.api_key_keychain_key);
+        db.prepare('UPDATE ai_providers SET api_key_keychain_key = ? WHERE id = ?').run(encrypted, provider.id);
+        encryptedCount++;
+      }
+    }
+
+    if (encryptedCount > 0) {
+      log.info(`[DB] 已加密 ${encryptedCount} 个 ai_providers.api_key_keychain_key 字段`);
+    }
+  } catch (error) {
+    log.error('[DB] 加密 ai_providers.api_key_keychain_key 失败:', error);
+  }
+
+  log.info('[DB] 敏感字段加密迁移完成');
+}
+
 export function closeDb(): void {
   if (db) {
     db.close();
     db = null;
     log.info('数据库连接已关闭');
   }
+}
+
+/**
+ * 解密数据库字段（便捷方法）
+ */
+export function decryptDbField(value: string | null): string | null {
+  if (!value) return null;
+
+  const encryptor = getFieldEncryptor();
+  if (!encryptor || !isFieldEncrypted(value)) {
+    return value;
+  }
+
+  return encryptor.tryDecrypt(value);
+}
+
+/**
+ * 加密数据库字段（便捷方法）
+ */
+export function encryptDbField(value: string | null): string | null {
+  if (!value) return null;
+
+  const encryptor = getFieldEncryptor();
+  if (!encryptor) return value;
+
+  return encryptor.encrypt(value);
 }

@@ -1,36 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from './db.js';
+import { getMaintenanceWindows, getErrorWeights, getTaskStaleTimeout } from './config/runtime-config.js';
 import type { Task, TaskFilter, TaskStatus, TaskCheckpoint, Platform } from '../shared/types.js';
 import log from 'electron-log';
-
-// 平台维护窗口（北京时间）- 这些时段容易失败
-const PLATFORM_MAINTENANCE_WINDOWS: Record<Platform, { start: number; end: number; reason?: string }[]> = {
-  douyin: [
-    { start: 3, end: 5, reason: '抖音日常维护' },
-    { start: 23, end: 24, reason: '日结时段' },
-  ],
-  kuaishou: [
-    { start: 2, end: 4, reason: '快手日常维护' },
-    { start: 23, end: 24, reason: '日结时段' },
-  ],
-  xiaohongshu: [
-    { start: 2, end: 6, reason: '小红书日常维护' },
-    { start: 22, end: 24, reason: '晚高峰限流' },
-  ],
-};
-
-// 错误类型对应的权重
-const ERROR_WEIGHTS: Record<string, { weight: number; waitMultiplier: number }> = {
-  'selector': { weight: 0.3, waitMultiplier: 1.0 },      // 选择器问题，快速重试
-  'rate_limit': { weight: 0.8, waitMultiplier: 3.0 },   // 限流，增加等待
-  'network': { weight: 0.5, waitMultiplier: 1.5 },     // 网络问题
-  'login': { weight: 0.9, waitMultiplier: 5.0 },       // 登录问题，大幅等待
-  'timeout': { weight: 0.4, waitMultiplier: 1.2 },     // 超时问题
-  'unknown': { weight: 0.5, waitMultiplier: 1.0 },      // 未知问题
-};
-
-// 任务超时时间：运行超过1小时认为是卡住了
-const TASK_STALE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export class TaskQueue {
   /**
@@ -169,12 +141,12 @@ export class TaskQueue {
 
   /**
    * 清理卡住的任务
-   * 将运行超时（超过 TASK_STALE_TIMEOUT_MS）的任务标记为失败
+   * 将运行超时的任务标记为失败
    */
   cleanupStaleTasks(): void {
     const db = getDb();
     const now = Date.now();
-    const staleThreshold = now - TASK_STALE_TIMEOUT_MS;
+    const staleThreshold = now - getTaskStaleTimeout();
 
     // 查找运行超时且未更新的任务
     const staleTasks = db.prepare(`
@@ -283,7 +255,8 @@ export class TaskQueue {
 
     // 分析错误类型
     const errorType = this.classifyError(error);
-    const errorInfo = ERROR_WEIGHTS[errorType] || ERROR_WEIGHTS.unknown;
+    const errorWeights = getErrorWeights();
+    const errorInfo = errorWeights[errorType] || errorWeights.unknown;
 
     // 检查是否在维护窗口
     const maintenanceDelay = this.getMaintenanceDelay(task.platform);
@@ -350,7 +323,8 @@ export class TaskQueue {
    * 获取平台维护窗口延迟（返回需要等待的毫秒数，0 表示不在维护窗口）
    */
   private getMaintenanceDelay(platform: Platform): number {
-    const windows = PLATFORM_MAINTENANCE_WINDOWS[platform];
+    const maintenanceWindows = getMaintenanceWindows();
+    const windows = maintenanceWindows[platform];
     if (!windows) return 0;
 
     // 转换为北京时间

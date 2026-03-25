@@ -11,8 +11,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "declaration": false,
-    "sourceMap": true
+    "sourceMap": true,
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["src/main/**/*", "src/service/**/*", "src/shared/**/*"],
+  "include": ["src/main/**/*", "src/service/**/*", "src/shared/**/*", "src/types/**/*"],
   "exclude": ["src/renderer/**/*", "src/preload/**/*"]
 }

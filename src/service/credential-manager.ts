@@ -1,5 +1,4 @@
 import { getDb } from './db.js';
-import { execSync, exec } from 'child_process';
 import { safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,14 +6,32 @@ import { app } from 'electron';
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
 import type { Platform, Account } from '../shared/types.js';
+import {
+  selectKeychainBackend,
+  getKeychainBackend,
+  type KeychainBackend
+} from './keychain/index.js';
 
 /**
  * 凭证管理器
  * - 使用 Electron safeStorage 加密敏感数据
- * - macOS Keychain / Windows Credential Manager 存储加密密钥
+ * - 跨平台 Keychain 后端：macOS Keychain / Windows Credential Manager / Linux Secret Service
  */
 export class CredentialManager {
   private serviceName = 'com.aimatrix.ops';
+  private keychainBackend: KeychainBackend | null = null;
+
+  /**
+   * 初始化 Keychain 后端（应用启动时调用）
+   */
+  async initialize(): Promise<void> {
+    this.keychainBackend = await selectKeychainBackend();
+    if (this.keychainBackend) {
+      log.info(`[CredentialManager] 已选择 Keychain 后端: ${this.keychainBackend.name}`);
+    } else {
+      log.warn('[CredentialManager] 未找到可用的 Keychain 后端，仅使用 safeStorage');
+    }
+  }
 
   /**
    * 存储凭证到 Keychain
@@ -77,8 +94,8 @@ export class CredentialManager {
       }
     }
 
-    // 回退: 从 Keychain CLI 获取
-    const data = this.getKeychain(keychainKey);
+    // 回退: 从 Keychain 获取
+    const data = await this.getKeychain(keychainKey);
     if (data) {
       return JSON.parse(data);
     }
@@ -99,7 +116,7 @@ export class CredentialManager {
     }
 
     // 删除 Keychain 条目
-    this.deleteKeychain(keychainKey);
+    await this.deleteKeychain(keychainKey);
 
     // 删除数据库引用
     const db = getDb();
@@ -122,58 +139,45 @@ export class CredentialManager {
     return path.join(dir, `${accountId}.enc`);
   }
 
-  // ============ macOS Keychain CLI ============
+  // ============ 跨平台 Keychain 后端 ============
 
-  private storeKeychain(key: string, value: string): void {
-    if (process.platform !== 'darwin') {
-      log.warn('Keychain CLI only supported on macOS');
+  private async storeKeychain(key: string, value: string): Promise<void> {
+    const backend = this.keychainBackend || getKeychainBackend();
+    if (!backend) {
+      log.debug('[CredentialManager] Keychain 后端不可用，跳过存储');
       return;
     }
 
-    const encoded = Buffer.from(value).toString('base64');
-
     try {
-      execSync(
-        `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "MatrixHub"`,
-        { encoding: 'utf8' }
-      );
+      await backend.store(this.serviceName, key, value);
+      log.debug(`[CredentialManager] Keychain 存储成功: ${key}`);
     } catch (error) {
-      // 可能已存在，尝试更新
-      try {
-        execSync(
-          `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "MatrixHub" -U`,
-          { encoding: 'utf8' }
-        );
-      } catch (updateError) {
-        log.error('Keychain store failed:', updateError);
-      }
+      log.error('[CredentialManager] Keychain 存储失败:', error);
     }
   }
 
-  private getKeychain(key: string): string | null {
-    if (process.platform !== 'darwin') {
+  private async getKeychain(key: string): Promise<string | null> {
+    const backend = this.keychainBackend || getKeychainBackend();
+    if (!backend) {
       return null;
     }
 
     try {
-      const result = execSync(
-        `security find-generic-password -s "${this.serviceName}" -a "${key}" -w`,
-        { encoding: 'utf8' }
-      );
-      const encoded = result.trim();
-      return Buffer.from(encoded, 'base64').toString('utf8');
+      return await backend.retrieve(this.serviceName, key);
     } catch {
       return null;
     }
   }
 
-  private deleteKeychain(key: string): void {
-    if (process.platform !== 'darwin') {
+  private async deleteKeychain(key: string): Promise<void> {
+    const backend = this.keychainBackend || getKeychainBackend();
+    if (!backend) {
       return;
     }
 
     try {
-      execSync(`security delete-generic-password -s "${this.serviceName}" -a "${key}"`);
+      await backend.delete(this.serviceName, key);
+      log.debug(`[CredentialManager] Keychain 删除成功: ${key}`);
     } catch {
       // 忽略删除失败
     }
@@ -191,8 +195,6 @@ export class AIKeyManager {
    * 存储 AI API Key
    */
   async storeAPIKey(providerType: string, apiKey: string): Promise<void> {
-    const key = `ai:${providerType}`;
-
     // 使用 safeStorage 加密存储
     if (safeStorage.isEncryptionAvailable()) {
       const encrypted = safeStorage.encryptString(apiKey);
@@ -226,7 +228,7 @@ export class AIKeyManager {
       }
     }
 
-    // 回退: 从 Keychain CLI 获取
+    // 回退: 从 Keychain 获取
     return this.getKeychain(key);
   }
 
@@ -241,7 +243,7 @@ export class AIKeyManager {
       fs.unlinkSync(storePath);
     }
 
-    this.deleteKeychain(key);
+    await this.deleteKeychain(key);
     log.info(`AI API Key 已删除: ${providerType}`);
   }
 
@@ -259,54 +261,45 @@ export class AIKeyManager {
     return path.join(dir, `ai_${providerType}.enc`);
   }
 
-  private storeKeychain(key: string, value: string): void {
-    if (process.platform !== 'darwin') {
-      log.warn('Keychain CLI only supported on macOS');
+  // ============ 跨平台 Keychain 后端 ============
+
+  private async storeKeychain(key: string, value: string): Promise<void> {
+    const backend = getKeychainBackend();
+    if (!backend) {
+      log.debug('[AIKeyManager] Keychain 后端不可用，跳过存储');
       return;
     }
 
-    const encoded = Buffer.from(value).toString('base64');
-
     try {
-      execSync(
-        `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI API Key"`,
-        { encoding: 'utf8' }
-      );
-    } catch {
-      try {
-        execSync(
-          `security add-generic-password -s "${this.serviceName}" -a "${key}" -w "${encoded}" -D "AI API Key" -U`,
-          { encoding: 'utf8' }
-        );
-      } catch (updateError) {
-        log.error('Keychain store failed:', updateError);
-      }
+      await backend.store(this.serviceName, key, value);
+      log.debug(`[AIKeyManager] Keychain 存储成功: ${key}`);
+    } catch (error) {
+      log.error('[AIKeyManager] Keychain 存储失败:', error);
     }
   }
 
-  private getKeychain(key: string): string | null {
-    if (process.platform !== 'darwin') {
+  private async getKeychain(key: string): Promise<string | null> {
+    const backend = getKeychainBackend();
+    if (!backend) {
       return null;
     }
 
     try {
-      const result = execSync(
-        `security find-generic-password -s "${this.serviceName}" -a "${key}" -w`,
-        { encoding: 'utf8' }
-      );
-      return result.trim();
+      return await backend.retrieve(this.serviceName, key);
     } catch {
       return null;
     }
   }
 
-  private deleteKeychain(key: string): void {
-    if (process.platform !== 'darwin') {
+  private async deleteKeychain(key: string): Promise<void> {
+    const backend = getKeychainBackend();
+    if (!backend) {
       return;
     }
 
     try {
-      execSync(`security delete-generic-password -s "${this.serviceName}" -a "${key}"`);
+      await backend.delete(this.serviceName, key);
+      log.debug(`[AIKeyManager] Keychain 删除成功: ${key}`);
     } catch {
       // 忽略删除失败
     }
@@ -319,7 +312,12 @@ export const aiKeyManager = new AIKeyManager();
 
 export class AccountManager {
   /**
-   * 添加账号（事务保证：account 和 credential 同时创建或都不创建）
+   * 添加账号（Pending State 模式确保原子性）
+   * 流程：
+   * 1. 创建账号，状态为 pending
+   * 2. 存储凭证（失败则标记为 failed）
+   * 3. 更新账号状态为 complete
+   * 4. list()/get() 默认过滤非 complete 账号
    */
   async add(params: {
     platform: Platform;
@@ -349,29 +347,24 @@ export class AccountManager {
       updatedAt: now,
     };
 
-    // 使用事务包装，确保 account 创建和 credential 存储的原子性
-    const transaction = db.transaction(() => {
-      db.prepare(`
-        INSERT INTO accounts (id, platform, username, display_name, avatar, status, group_id, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        account.id,
-        account.platform,
-        account.username,
-        account.displayName,
-        account.avatar ?? null,
-        account.status,
-        account.groupId ?? null,
-        JSON.stringify(account.tags),
-        account.createdAt,
-        account.updatedAt
-      );
-    });
+    // Step 1: 创建账号，状态为 pending
+    db.prepare(`
+      INSERT INTO accounts (id, platform, username, display_name, avatar, status, group_id, tags, creation_status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(
+      account.id,
+      account.platform,
+      account.username,
+      account.displayName,
+      account.avatar ?? null,
+      account.status,
+      account.groupId ?? null,
+      JSON.stringify(account.tags),
+      account.createdAt,
+      account.updatedAt
+    );
 
-    // 执行 account 插入
-    transaction();
-
-    // 存储凭证（如果失败，事务不会回滚，需要手动清理）
+    // Step 2: 存储凭证
     try {
       await credentialManager.storeCredential(account.id, {
         username: params.username,
@@ -380,37 +373,45 @@ export class AccountManager {
         tokens: params.tokens,
       });
     } catch (err) {
-      // 凭证存储失败，回滚 account
-      try {
-        db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
-      } catch (rollbackError) {
-        log.error(`[CredentialManager] 回滚账号失败: ${accountId}`, rollbackError);
-        // 回滚失败也需要抛出原始错误，以便上层知晓操作未完成
-      }
-      log.error(`账号添加失败（凭证存储错误）: ${accountId}`, err);
+      // 凭证存储失败，标记账号为 failed
+      log.error(`[AccountManager] 凭证存储失败: ${accountId}`, err);
+      db.prepare(`UPDATE accounts SET creation_status = 'failed', updated_at = ? WHERE id = ?`).run(now, accountId);
       throw err;
     }
 
-    log.info(`账号添加: ${account.id} [${account.platform}] ${account.username}`);
+    // Step 3: 更新账号状态为 complete
+    db.prepare(`UPDATE accounts SET creation_status = 'complete', updated_at = ? WHERE id = ?`).run(now, accountId);
+
+    log.info(`账号添加完成: ${account.id} [${account.platform}] ${account.username}`);
     return account;
   }
 
   /**
-   * 获取账号
+   * 获取账号（默认只返回 creation_status = 'complete' 的账号）
    */
-  get(accountId: string): Account | null {
+  get(accountId: string, includePending = false): Account | null {
     const db = getDb();
-    const row = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId) as any;
+    const query = includePending
+      ? 'SELECT * FROM accounts WHERE id = ?'
+      : "SELECT * FROM accounts WHERE id = ? AND (creation_status = 'complete' OR creation_status IS NULL)";
+    const row = db.prepare(query).get(accountId) as any;
     return row ? this.rowToAccount(row) : null;
   }
 
   /**
-   * 列出账号
+   * 列出账号（默认只返回 creation_status = 'complete' 的账号）
    */
-  list(options?: { platform?: Platform; groupId?: string }): Account[] {
+  list(options?: { platform?: Platform; groupId?: string; includePending?: boolean }): Account[] {
     const db = getDb();
-    let query = 'SELECT * FROM accounts WHERE 1=1';
+    const includePending = options?.includePending ?? false;
+
+    let query = "SELECT * FROM accounts WHERE (creation_status = 'complete' OR creation_status IS NULL)";
     const params: any[] = [];
+
+    if (!includePending) {
+      // 已过滤非 complete 账号
+    }
+
     if (options?.platform) {
       query += ' AND platform = ?';
       params.push(options.platform);
@@ -422,6 +423,25 @@ export class AccountManager {
     query += ' ORDER BY created_at DESC';
     const rows = db.prepare(query).all(...params);
     return (rows as any[]).map(r => this.rowToAccount(r));
+  }
+
+  /**
+   * 获取失败的账号（用于清理或重试）
+   */
+  listFailed(): Account[] {
+    const db = getDb();
+    const rows = db.prepare("SELECT * FROM accounts WHERE creation_status = 'failed'").all() as any[];
+    return rows.map(r => this.rowToAccount(r));
+  }
+
+  /**
+   * 清理失败的账号
+   */
+  cleanupFailed(): number {
+    const db = getDb();
+    const result = db.prepare("DELETE FROM accounts WHERE creation_status = 'failed'").run();
+    log.info(`[AccountManager] 清理了 ${result.changes} 个失败的账号`);
+    return result.changes;
   }
 
   /**

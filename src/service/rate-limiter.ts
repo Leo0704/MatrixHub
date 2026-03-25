@@ -1,29 +1,8 @@
 import { getDb } from './db.js';
+import { getRateLimits } from './config/runtime-config.js';
 import type { Platform, RateLimitConfig } from '../shared/types.js';
 import log from 'electron-log';
 import { sleep } from './utils/sleep.js';
-
-// 各平台限流配置（requests per minute / hour / day）
-const DEFAULT_RATE_LIMITS: Record<Platform, RateLimitConfig> = {
-  douyin: {
-    platform: 'douyin',
-    requestsPerMinute: 10,
-    requestsPerHour: 200,
-    requestsPerDay: 1000,
-  },
-  kuaishou: {
-    platform: 'kuaishou',
-    requestsPerMinute: 15,
-    requestsPerHour: 300,
-    requestsPerDay: 2000,
-  },
-  xiaohongshu: {
-    platform: 'xiaohongshu',
-    requestsPerMinute: 5,
-    requestsPerHour: 100,
-    requestsPerDay: 500,
-  },
-};
 
 interface LimitBucket {
   count: number;
@@ -46,10 +25,11 @@ export class RateLimiter {
   } | null> = new Map();
 
   constructor(config?: Partial<Record<Platform, RateLimitConfig>>) {
-    // 合并配置
-    this.config = { ...DEFAULT_RATE_LIMITS };
+    // 从配置管理器加载限流配置
+    const defaultLimits = getRateLimits();
+    this.config = { ...defaultLimits };
     for (const platform of Object.keys(config ?? {}) as Platform[]) {
-      this.config[platform] = { ...DEFAULT_RATE_LIMITS[platform], ...config![platform] };
+      this.config[platform] = { ...defaultLimits[platform], ...config![platform] };
     }
   }
 

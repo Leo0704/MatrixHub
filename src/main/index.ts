@@ -6,6 +6,8 @@ import { registerIpcHandlers } from '../service/ipc-handlers.js';
 import { ServiceManager } from './service-manager.js';
 import { closeAllBrowsers } from '../service/platform-launcher.js';
 import { monitoringService } from '../service/monitoring.js';
+import { credentialManager } from '../service/credential-manager.js';
+import { initializeFieldEncryptor } from '../service/crypto-utils.js';
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -224,15 +226,23 @@ function createMenu(): void {
 async function initializeServices(): Promise<void> {
   log.info('初始化服务...');
 
-  // 1. 初始化数据库
+  // 1. 初始化字段加密器（必须在数据库初始化之前）
+  log.info('初始化字段加密器...');
+  initializeFieldEncryptor();
+
+  // 2. 初始化数据库
   log.info('初始化数据库...');
   getDb();
 
-  // 2. 注册 IPC 处理器
+  // 3. 初始化 Keychain 后端（跨平台凭证管理）
+  log.info('初始化 Keychain 后端...');
+  await credentialManager.initialize();
+
+  // 4. 注册 IPC 处理器
   log.info('注册 IPC 处理器...');
   registerIpcHandlers();
 
-  // 3. 启动任务服务循环（在后台运行，不阻塞窗口创建）
+  // 5. 启动任务服务循环（在后台运行，不阻塞窗口创建）
   log.info('启动任务服务循环...');
   serviceManager = new ServiceManager();
   const started = serviceManager.start();
