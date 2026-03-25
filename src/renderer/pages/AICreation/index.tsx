@@ -100,12 +100,15 @@ export default function AICreation() {
   useEffect(() => {
     // 只在 hotTopicDraft 从 null 变为有值时处理
     if (hotTopicDraft && !prevHotTopicDraftRef.current) {
-      setTopic(hotTopicDraft.title);
-      setPlatform(hotTopicDraft.platform as Platform);
-      showToast(`已加载话题: ${hotTopicDraft.title}`, 'info');
+      const draftTitle = hotTopicDraft.title;
+      const draftPlatform = hotTopicDraft.platform as Platform;
+      setTopic(draftTitle);
+      setPlatform(draftPlatform);
+      showToast(`已加载话题: ${draftTitle}`, 'info');
       clearHotTopicDraft();
     }
     prevHotTopicDraftRef.current = hotTopicDraft;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hotTopicDraft]);
 
   // 撤销栈
@@ -204,9 +207,13 @@ export default function AICreation() {
       });
 
       if (response?.success && response.content) {
-        const data = JSON.parse(response.content);
-        setImageResult(data);
-        setImagePrompt(topic);
+        try {
+          const data = JSON.parse(response.content);
+          setImageResult(data);
+          setImagePrompt(topic);
+        } catch {
+          setResult(`生成失败：JSON解析错误`);
+        }
       } else {
         setResult(`生成失败：${response?.error || '未知错误'}`);
       }
@@ -262,8 +269,12 @@ export default function AICreation() {
       });
 
       if (response?.success && response.content) {
-        const data = JSON.parse(response.content);
-        setVideoResult(data.url || data.videoUrl || response.content);
+        try {
+          const data = JSON.parse(response.content);
+          setVideoResult(data.url || data.videoUrl || response.content);
+        } catch {
+          setResult(`生成失败：JSON解析错误`);
+        }
       } else {
         setResult(`生成失败：${response?.error || '未知错误'}`);
       }
