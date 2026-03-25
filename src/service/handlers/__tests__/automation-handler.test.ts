@@ -69,6 +69,18 @@ describe('Automation Handler', () => {
 
     await expect(executeAutomationTask(mockPage, mockTask, mockSignal))
       .rejects.toThrow('账号未登录或 Session 已过期');
+    expect(checkLoginState).toHaveBeenCalled();
+  });
+
+  it('should throw if aborted before starting', async () => {
+    const { ipcRenderer } = await import('electron');
+    ipcRenderer.invoke.mockResolvedValueOnce(true); // User confirmed
+    mockSignal.throwIfAborted.mockImplementationOnce(() => {
+      throw new Error('AbortError');
+    });
+
+    await expect(executeAutomationTask(mockPage, mockTask, mockSignal))
+      .rejects.toThrow('AbortError');
   });
 
   it('should throw on unknown action type', async () => {
@@ -93,6 +105,7 @@ describe('Automation Handler', () => {
 
   it('should execute auto_reply action successfully', async () => {
     const { ipcRenderer } = await import('electron');
+    const { navigateTo } = await import('../../utils/page-helpers.js');
     ipcRenderer.invoke.mockResolvedValueOnce(true); // User confirmed
 
     const result = await executeAutomationTask(mockPage, mockTask, mockSignal);
@@ -100,6 +113,7 @@ describe('Automation Handler', () => {
     expect(result).toHaveProperty('processed');
     expect(result).toHaveProperty('replied');
     expect(result.platform).toBe('douyin');
+    expect(navigateTo).toHaveBeenCalled();
   });
 
   it('should execute auto_like action successfully', async () => {
@@ -114,6 +128,20 @@ describe('Automation Handler', () => {
 
     expect(result).toHaveProperty('processed');
     expect(result).toHaveProperty('liked');
+  });
+
+  it('should execute auto_follow action successfully', async () => {
+    const followTask = {
+      ...mockTask,
+      payload: { action: 'auto_follow', platform: 'douyin', accountId: 'acc-1' },
+    } as any;
+    const { ipcRenderer } = await import('electron');
+    ipcRenderer.invoke.mockResolvedValueOnce(true);
+
+    const result = await executeAutomationTask(mockPage, followTask, mockSignal);
+
+    expect(result).toHaveProperty('processed');
+    expect(result).toHaveProperty('followed');
   });
 
   it('should execute comment_management action successfully', async () => {
