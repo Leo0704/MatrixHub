@@ -129,8 +129,9 @@ describe('Publish Handler', () => {
     await executePublishTask(mockPage, mockTask, mockSignal);
 
     // Should skip navigate and login check, go directly to fill_form
-    const { checkLoginState } = await import('../../utils/page-helpers.js');
+    const { checkLoginState, fillPublishForm } = await import('../../utils/page-helpers.js');
     expect(checkLoginState).not.toHaveBeenCalled();
+    expect(fillPublishForm).toHaveBeenCalled();
   });
 
   it('should wait when rate limited', async () => {
