@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAppStore, type Page } from './stores/appStore';
 import { ToastProvider } from './components/Toast';
 import { OnboardingGuide } from './components/OnboardingGuide';
@@ -14,17 +14,17 @@ import Settings from './pages/Settings';
 function App() {
   const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, hasCompletedOnboarding, setHasCompletedOnboarding } = useAppStore();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    window.electronAPI?.getVersion().then(setVersion);
+    if (initializedRef.current) return;
+    initializedRef.current = true;
 
-    if (!hasCompletedOnboarding) {
-      window.electronAPI?.getConsentRequired().then((needs: boolean) => {
-        if (needs) setShowOnboarding(true);
-      });
-    }
+    const init = async () => {
+      // Load version
+      window.electronAPI?.getVersion().then(setVersion);
 
-    const loadAccounts = async () => {
+      // Load accounts first
       try {
         const list = await window.electronAPI?.listAccounts();
         setAccounts(list || []);
@@ -32,8 +32,18 @@ function App() {
         console.error('Failed to load accounts:', error);
         setAccounts([]);
       }
+
+      // Then check if onboarding is needed
+      const completed = localStorage.getItem('onboardingCompleted') === 'true';
+      if (!completed) {
+        const needsConsent = await window.electronAPI?.getConsentRequired();
+        if (needsConsent) {
+          setShowOnboarding(true);
+        }
+      }
     };
-    loadAccounts();
+
+    init();
 
     window.electronAPI?.onAccountAdded((account) => {
       addAccount(account);
@@ -47,7 +57,7 @@ function App() {
       window.electronAPI?.removeAllListeners('account:added');
       window.electronAPI?.removeAllListeners('account:removed');
     };
-  }, [addAccount, removeAccount, setAccounts, setVersion, hasCompletedOnboarding]);
+  }, [addAccount, removeAccount, setAccounts, setVersion]);
 
   const navItems: { page: Page; icon: string; label: string }[] = [
     { page: 'overview', icon: '📊', label: '概览' },
