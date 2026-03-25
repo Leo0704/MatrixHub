@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Platform } from '~shared/types';
+import { AIStatusIndicator } from '../../components/AIStatusIndicator';
 import PublishModal from '../../components/PublishModal';
 import { useToast } from '../../components/Toast';
 
@@ -182,7 +183,12 @@ export default function AICreation() {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)' }}>
+    <div>
+      <header>
+        <h1>AI 创作</h1>
+        <AIStatusIndicator />
+      </header>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)' }}>
       {/* 左侧：配置 */}
       <div>
         <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
@@ -255,6 +261,7 @@ export default function AICreation() {
           onPublished={handlePublishSuccess}
         />
       )}
+      </div>
     </div>
   );
 }
