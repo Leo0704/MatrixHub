@@ -1,4 +1,4 @@
-import type { Platform, PipelineConfig } from '../../shared/types.js';
+import type { Platform } from '../../shared/types.js';
 import type { ParsedProduct } from './types.js';
 import { aiGateway } from '../ai-gateway.js';
 import log from 'electron-log';
