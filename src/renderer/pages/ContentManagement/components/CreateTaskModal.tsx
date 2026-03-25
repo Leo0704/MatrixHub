@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Platform, Task, AccountGroup, Account } from '~shared/types';
+import { useAppStore } from '../../../stores/appStore';
 import { useToast } from '../../../components/Toast';
 
 const labelStyle: React.CSSProperties = {
@@ -27,6 +28,27 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [enableInterval, setEnableInterval] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState(5);
+
+  const { taskDraft, setTaskDraft, clearTaskDraft } = useAppStore();
+  const [initializedFromDraft, setInitializedFromDraft] = useState(false);
+
+  // Pre-fill from draft when modal opens
+  useEffect(() => {
+    if (taskDraft && !initializedFromDraft && !title && !content) {
+      setTitle(taskDraft.title);
+      setContent(taskDraft.content);
+      if (taskDraft.platform) setPlatform(taskDraft.platform as Platform);
+      if (taskDraft.accountIds.length) setSelectedAccountIds(taskDraft.accountIds);
+      setInitializedFromDraft(true);
+    }
+  }, [taskDraft, initializedFromDraft]);
+
+  // Auto-save on changes
+  useEffect(() => {
+    if (title || content) {
+      setTaskDraft({ title, content, platform, accountIds: selectedAccountIds });
+    }
+  }, [title, content, platform, selectedAccountIds]);
 
   useEffect(() => {
     loadGroups();
@@ -123,6 +145,7 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
         }
       }
       showToast('任务创建成功', 'success');
+      clearTaskDraft();
     } catch (error) {
       console.error('创建任务失败:', error);
     } finally {

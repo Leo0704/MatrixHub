@@ -3,6 +3,13 @@ import type { Account, Task } from '~shared/types';
 
 export type Page = 'overview' | 'content' | 'ai' | 'schedule' | 'insights' | 'accounts' | 'selectors' | 'settings';
 
+interface TaskDraft {
+  title: string;
+  content: string;
+  platform: string;
+  accountIds: string[];
+}
+
 interface AppState {
   accounts: Account[];
   setAccounts: (accounts: Account[]) => void;
@@ -22,10 +29,17 @@ interface AppState {
 
   hasCompletedOnboarding: boolean;
   setHasCompletedOnboarding: (value: boolean) => void;
+
+  taskDraft: TaskDraft | null;
+  setTaskDraft: (draft: TaskDraft | null) => void;
+  clearTaskDraft: () => void;
 }
 
 const savedOnboarding = localStorage.getItem('onboardingCompleted');
 const hasCompletedOnboarding = savedOnboarding === 'true';
+
+const savedDraft = localStorage.getItem('taskDraft');
+const taskDraft = savedDraft ? JSON.parse(savedDraft) : null;
 
 export const useAppStore = create<AppState>((set) => ({
   accounts: [],
@@ -52,5 +66,20 @@ export const useAppStore = create<AppState>((set) => ({
   setHasCompletedOnboarding: (value: boolean) => {
     set({ hasCompletedOnboarding: value });
     if (value) localStorage.setItem('onboardingCompleted', 'true');
+  },
+
+  taskDraft,
+  setTaskDraft: (draft) => {
+    set({ taskDraft: draft });
+    if (draft) {
+      localStorage.setItem('taskDraft', JSON.stringify(draft));
+    } else {
+      localStorage.removeItem('taskDraft');
+    }
+  },
+
+  clearTaskDraft: () => {
+    set({ taskDraft: null });
+    localStorage.removeItem('taskDraft');
   },
 }));
