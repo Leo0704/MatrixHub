@@ -8,3 +8,7 @@ Thumbs.db
 .env
 .env.*
 .gstack/
+
+# Test coverage
+coverage/
+.worktrees/
