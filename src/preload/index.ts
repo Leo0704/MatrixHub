@@ -184,7 +184,7 @@ export interface ElectronAPI {
     groups: any[];
     selectors: any[];
   }>;
-  importData: (data: { accounts: any[]; tasks: any[]; groups: any[]; selectors: any[] }) => Promise<void>;
+  importData: (data: { accounts: any[]; tasks: any[]; groups: any[]; selectors: any[] }) => Promise<{ success: boolean; error?: string }>;
   clearAllData: () => Promise<void>;
 
   // 事件监听

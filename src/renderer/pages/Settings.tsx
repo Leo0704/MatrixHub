@@ -40,8 +40,12 @@ export default function Settings() {
       try {
         const text = await file.text();
         const data = JSON.parse(text);
-        await window.electronAPI?.importData(data);
-        setExportStatus('导入成功！请刷新页面。');
+        const result = await window.electronAPI?.importData(data);
+        if (result?.success) {
+          setExportStatus('导入成功！请刷新页面。');
+        } else {
+          setExportStatus('导入失败: ' + (result?.error || '未知错误'));
+        }
       } catch (err) {
         console.error('Import failed:', err);
         setExportStatus('导入失败');

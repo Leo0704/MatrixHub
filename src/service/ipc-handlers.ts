@@ -678,8 +678,22 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('import-data', async (_, data) => {
-    const { importData } = await import('./db.js');
-    importData(data);
+    try {
+      // Basic validation
+      if (!data || typeof data !== 'object') {
+        return { success: false, error: 'Invalid data format' };
+      }
+      if (!Array.isArray(data.accounts) || !Array.isArray(data.tasks)) {
+        return { success: false, error: 'Missing required data arrays' };
+      }
+
+      const { importData } = await import('./db.js');
+      importData(data);
+      return { success: true };
+    } catch (error) {
+      log.error('Import failed:', error);
+      return { success: false, error: (error as Error).message };
+    }
   });
 
   ipcMain.handle('clear-all-data', async () => {
