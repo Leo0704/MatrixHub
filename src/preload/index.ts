@@ -166,6 +166,23 @@ export interface ElectronAPI {
   reportSelectorSuccess: (platform: Platform, selectorKey: string) => Promise<{ success: boolean }>;
   reportSelectorFailure: (platform: Platform, selectorKey: string) => Promise<{ success: boolean }>;
 
+  // Pipeline
+  createPipeline: (params: {
+    input: { type: 'url' | 'product_detail' | 'hot_topic'; url?: string; productDetail?: string; hotTopic?: { keyword: string; platform: Platform } };
+    config: {
+      contentType: 'image' | 'video';
+      imageCount?: 3 | 6 | 9;
+      generateVoice?: boolean;
+      autoPublish: boolean;
+      targetAccounts: string[];
+    };
+    platform: Platform;
+  }) => Promise<{ success: boolean; task?: unknown; error?: string }>;
+  getPipeline: (pipelineId: string) => Promise<unknown>;
+  cancelPipeline: (pipelineId: string) => Promise<{ success: boolean; error?: string }>;
+  onPipelineCreated: (callback: (task: unknown) => void) => void;
+  onPipelineUpdated: (callback: (task: unknown) => void) => void;
+
   // 系统
   getSystemStats: () => Promise<{
     tasks: { total: number; pending: number; running: number; completed: number; failed: number };
@@ -330,6 +347,17 @@ const api: ElectronAPI = {
     ipcRenderer.invoke('selector:report-success', { platform, selectorKey }),
   reportSelectorFailure: (platform, selectorKey) =>
     ipcRenderer.invoke('selector:report-failure', { platform, selectorKey }),
+
+  // ============ Pipeline ============
+  createPipeline: (params) => ipcRenderer.invoke('pipeline:create', params),
+  getPipeline: (pipelineId) => ipcRenderer.invoke('pipeline:get', { pipelineId }),
+  cancelPipeline: (pipelineId) => ipcRenderer.invoke('pipeline:cancel', { pipelineId }),
+  onPipelineCreated: (callback) => {
+    ipcRenderer.on('pipeline:created', (_, task) => callback(task));
+  },
+  onPipelineUpdated: (callback) => {
+    ipcRenderer.on('pipeline:updated', (_, task) => callback(task));
+  },
 
   // ============ 系统 ============
   getSystemStats: () => ipcRenderer.invoke('system:stats'),

@@ -771,6 +771,39 @@ export function registerIpcHandlers(): void {
     }
   });
 
+  // ============ Pipeline 相关 ============
+  // 动态 import 避免循环依赖
+  ipcMain.handle('pipeline:create', async (_event, params: {
+    input: { type: 'url' | 'product_detail' | 'hot_topic'; url?: string; productDetail?: string; hotTopic?: { keyword: string; platform: Platform } };
+    config: { contentType: 'image' | 'video'; imageCount?: 3 | 6 | 9; generateVoice?: boolean; autoPublish: boolean; targetAccounts: string[] };
+    platform: Platform;
+  }) => {
+    try {
+      const { createPipelineTask } = await import('./pipeline/orchestrator.js');
+      const task = await createPipelineTask(params.input, params.config, params.platform);
+      broadcastToRenderers('pipeline:created', task);
+      return { success: true, task };
+    } catch (error) {
+      log.error('Failed to create pipeline task:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('pipeline:get', async (_event, { pipelineId }: { pipelineId: string }) => {
+    const { getPipelineTask } = await import('./pipeline/orchestrator.js');
+    return await getPipelineTask(pipelineId);
+  });
+
+  ipcMain.handle('pipeline:cancel', async (_event, { pipelineId }: { pipelineId: string }) => {
+    try {
+      const { cancelPipelineTask } = await import('./pipeline/orchestrator.js');
+      await cancelPipelineTask(pipelineId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
   log.info('IPC 处理器注册完成');
 }
 
