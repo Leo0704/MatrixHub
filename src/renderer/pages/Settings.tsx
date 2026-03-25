@@ -56,18 +56,6 @@ export default function Settings() {
     input.click();
   };
 
-  const handleClearAllData = async () => {
-    const confirmed = window.confirm('确定要清除所有数据吗？此操作不可恢复。\n\n将清除：账号、任务、分组和选择器。\n\n凭证（密码）不会被清除。');
-    if (!confirmed) return;
-    try {
-      await window.electronAPI?.clearAllData();
-      setExportStatus('数据已清除！请刷新页面。');
-    } catch (err) {
-      console.error('Clear failed:', err);
-      setExportStatus('清除失败');
-    }
-  };
-
   const [settings, setSettings] = useState({
     theme: 'dark',
     autoStart: true,
@@ -459,6 +447,7 @@ export default function Settings() {
           onConfirm={async () => {
             await window.electronAPI.clearAllData();
             setShowClearConfirm(false);
+            setExportStatus('数据已清除！请刷新页面。');
           }}
           onCancel={() => setShowClearConfirm(false)}
         />

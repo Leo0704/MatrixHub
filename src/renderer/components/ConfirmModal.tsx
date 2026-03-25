@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import './ConfirmModal.css';
 
 interface ConfirmModalProps {
@@ -19,10 +20,31 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    modalRef.current?.focus();
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
   return (
     <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-modal" onClick={e => e.stopPropagation()}>
-        <h3>{title}</h3>
+      <div
+        ref={modalRef}
+        className="confirm-modal"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        tabIndex={-1}
+      >
+        <h3 id="confirm-title">{title}</h3>
         <p>{message}</p>
         <div className="confirm-actions">
           <button className="btn btn-secondary" onClick={onCancel}>
