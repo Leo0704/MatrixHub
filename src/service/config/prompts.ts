@@ -1,7 +1,9 @@
 /**
- * Prompt 模板配置
+ * @deprecated 此文件仅用于向后兼容
+ * 新代码请使用 src/service/prompt-builder.ts
  */
 import type { Platform } from '../../shared/types.js';
+import { buildCreativePrompt, getEnhancedSystemPrompt } from '../prompt-builder.js';
 
 /**
  * AI 生成 Prompt 模板
@@ -68,19 +70,15 @@ export const SYSTEM_PROMPTS: Record<string, string> = {
   xiaohongshu: '你是一个专业的小红书博主，熟悉种草文风和审美标准。生成的内容要有调性、有质感。',
 };
 
-/**
- * 构建 Prompt
- */
+// 保留原始导出名（用于向后兼容）
 export function buildPrompt(type: string, topic: string): string {
-  const template = PROMPT_TEMPLATES[type] ?? PROMPT_TEMPLATES.default;
-  return template.replace('{topic}', topic);
+  console.warn('[deprecated] config/prompts.ts buildPrompt is deprecated, use prompt-builder.js');
+  return buildCreativePrompt(type as any, topic, 'douyin');
 }
 
-/**
- * 获取系统 Prompt
- */
 export function getSystemPrompt(platform?: Platform): string {
-  return SYSTEM_PROMPTS[platform ?? 'douyin'];
+  console.warn('[deprecated] config/prompts.ts getSystemPrompt is deprecated, use prompt-builder.js');
+  return getEnhancedSystemPrompt(platform ?? 'douyin');
 }
 
 /**

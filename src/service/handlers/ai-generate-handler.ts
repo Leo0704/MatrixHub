@@ -4,7 +4,7 @@
 import type { Platform, Task, AIRequest } from '../../shared/types.js';
 import { aiGateway, AIProviderType } from '../ai-gateway.js';
 import { taskQueue } from '../queue.js';
-import { buildPrompt, getSystemPrompt } from '../config/prompts.js';
+import { buildCreativePrompt, getEnhancedSystemPrompt } from '../prompt-builder.js';
 import { moderateContent } from '../content-moderator.js';
 import log from 'electron-log';
 
@@ -42,10 +42,14 @@ export async function executeAIGenerateTask(
   const request: AIRequest = {
     providerType: providerType as AIProviderType,
     model: payload.model ?? defaultProvider?.models[0],
-    prompt: buildPrompt(payload.promptType ?? 'default', payload.topic ?? ''),
-    system: getSystemPrompt(payload.platform),
+    prompt: buildCreativePrompt(
+      (payload.promptType ?? 'default') as any,
+      payload.topic ?? '',
+      payload.platform ?? 'douyin'
+    ),
+    system: getEnhancedSystemPrompt(payload.platform ?? 'douyin'),
     temperature: payload.temperature ?? 0.7,
-    maxTokens: 2000,
+    maxTokens: 6000,
   };
 
   const response = await aiGateway.generate(request);

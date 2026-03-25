@@ -20,9 +20,9 @@ vi.mock('../../content-moderator.js', () => ({
   moderateContent: vi.fn().mockReturnValue({ passed: true, reasons: [] }),
 }));
 
-vi.mock('../../config/prompts.js', () => ({
-  buildPrompt: vi.fn().mockReturnValue('built prompt'),
-  getSystemPrompt: vi.fn().mockReturnValue('system prompt'),
+vi.mock('../../prompt-builder.js', () => ({
+  buildCreativePrompt: vi.fn().mockReturnValue('built prompt'),
+  getEnhancedSystemPrompt: vi.fn().mockReturnValue('system prompt'),
 }));
 
 describe('AI Generate Handler', () => {
