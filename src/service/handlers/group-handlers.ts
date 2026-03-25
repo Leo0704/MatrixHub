@@ -1,4 +1,4 @@
-import { createGroup, updateGroup, deleteGroup, listGroups, getGroup, reorderGroups } from '../account-group.js';
+import { createGroup, updateGroup, deleteGroup, listGroups, getGroup, reorderGroups, getGroupAccountCount } from '../account-group.js';
 
 export function registerGroupHandlers(ipcMain: Electron.IpcMain): void {
   ipcMain.handle('group:create', async (_, { name, color }) => {
@@ -24,5 +24,9 @@ export function registerGroupHandlers(ipcMain: Electron.IpcMain): void {
   ipcMain.handle('group:reorder', async (_, { groups }) => {
     reorderGroups(groups);
     return true;
+  });
+
+  ipcMain.handle('group:get-account-count', async (_, { groupId }) => {
+    return getGroupAccountCount(groupId);
   });
 }

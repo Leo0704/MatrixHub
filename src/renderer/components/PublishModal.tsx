@@ -97,23 +97,40 @@ export default function PublishModal({
     if (selectedAccountIds.length === 0) return;
     setPublishing(true);
     const taskIds: string[] = [];
-    const failedCount = { value: 0 };
+    const successAccounts: string[] = [];
+    const failedAccounts: { id: string; name: string; error: string }[] = [];
+
     try {
       for (const accountId of selectedAccountIds) {
-        const task = await window.electronAPI?.createTask({
-          type: 'publish',
-          platform,
-          title,
-          payload: { title, content, accountId },
-        });
-        if (task?.id) {
-          taskIds.push(task.id);
-        } else {
-          failedCount.value++;
+        const account = accounts.find(a => a.id === accountId);
+        const accountName = account?.displayName || account?.username || accountId;
+        try {
+          const task = await window.electronAPI?.createTask({
+            type: 'publish',
+            platform,
+            title,
+            payload: { title, content, accountId },
+          });
+          if (task?.id) {
+            taskIds.push(task.id);
+            successAccounts.push(accountName);
+          } else {
+            failedAccounts.push({ id: accountId, name: accountName, error: '创建任务失败' });
+          }
+        } catch (err) {
+          failedAccounts.push({ id: accountId, name: accountName, error: '发布异常' });
         }
       }
-      if (failedCount.value > 0) {
-        showToast(`部分账号发布失败: ${failedCount.value}个`, 'error');
+
+      // 显示详细反馈
+      if (failedAccounts.length === 0) {
+        showToast(`已成功发布到 ${successAccounts.length} 个账号`, 'success');
+      } else if (successAccounts.length === 0) {
+        showToast(`发布失败: ${failedAccounts.map(f => f.name).join(', ')}`, 'error');
+      } else {
+        const successList = successAccounts.slice(0, 3).join(', ');
+        const moreCount = successAccounts.length > 3 ? `等${successAccounts.length}个` : '';
+        showToast(`成功: ${successList}${moreCount}；失败: ${failedAccounts.map(f => f.name).join(', ')}`, 'warning');
       }
       onPublished(taskIds);
     } finally {

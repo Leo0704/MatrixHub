@@ -105,14 +105,15 @@ describe('CredentialManager', () => {
       mockFs.readFileSync.mockReturnValue(encryptedBuffer);
 
       const result = await credentialManager.validateCredential('account-1');
-      expect(result).toBe(true);
+      expect(result.valid).toBe(true);
     });
 
     it('should return false for non-existent credential', async () => {
       mockFs.existsSync.mockReturnValue(false);
 
       const result = await credentialManager.validateCredential('non-existent');
-      expect(result).toBe(false);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('凭证不存在');
     });
 
     it('should return false for credential without password', async () => {
@@ -123,7 +124,8 @@ describe('CredentialManager', () => {
       mockFs.readFileSync.mockReturnValue(encryptedBuffer);
 
       const result = await credentialManager.validateCredential('account-1');
-      expect(result).toBe(false);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('账号无有效凭证');
     });
   });
 });
@@ -137,11 +139,11 @@ describe('AccountManager rollback behavior', () => {
     const { safeStorage } = await import('electron');
     (safeStorage.isEncryptionAvailable as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
 
-    // Mock db.prepare for the rollback DELETE
-    const deleteRun = vi.fn(() => ({ changes: 1 }));
+    // Mock db.prepare for the rollback UPDATE
+    const updateRun = vi.fn(() => ({ changes: 1 }));
     mockDb.prepare.mockImplementation((sql: string) => {
-      if (sql.includes('DELETE FROM accounts')) {
-        return { run: deleteRun, get: vi.fn(() => null), all: vi.fn(() => []) };
+      if (sql.includes('UPDATE accounts SET creation_status')) {
+        return { run: updateRun, get: vi.fn(() => null), all: vi.fn(() => []) };
       }
       return { run: vi.fn(() => ({ changes: 1 })), get: vi.fn(() => null), all: vi.fn(() => []) };
     });
@@ -157,19 +159,19 @@ describe('AccountManager rollback behavior', () => {
       })
     ).rejects.toThrow();
 
-    // Verify rollback was attempted (delete from accounts)
-    expect(deleteRun).toHaveBeenCalled();
+    // Verify rollback was attempted (update status to failed)
+    expect(updateRun).toHaveBeenCalled();
   });
 
   it('should handle rollback failure gracefully', async () => {
     const { safeStorage } = await import('electron');
     (safeStorage.isEncryptionAvailable as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
 
-    // Make the rollback DELETE also fail
-    const deleteRun = vi.fn(() => { throw new Error('Database delete failed'); });
+    // Make the rollback UPDATE also fail
+    const updateRun = vi.fn(() => { throw new Error('Database update failed'); });
     mockDb.prepare.mockImplementation((sql: string) => {
-      if (sql.includes('DELETE FROM accounts')) {
-        return { run: deleteRun, get: vi.fn(() => null), all: vi.fn(() => []) };
+      if (sql.includes('UPDATE accounts SET creation_status')) {
+        return { run: updateRun, get: vi.fn(() => null), all: vi.fn(() => []) };
       }
       return { run: vi.fn(() => ({ changes: 1 })), get: vi.fn(() => null), all: vi.fn(() => []) };
     });
@@ -187,6 +189,6 @@ describe('AccountManager rollback behavior', () => {
     ).rejects.toThrow();
 
     // Verify rollback was attempted
-    expect(deleteRun).toHaveBeenCalled();
+    expect(updateRun).toHaveBeenCalled();
   });
 });

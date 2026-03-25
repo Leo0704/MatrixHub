@@ -13,6 +13,7 @@ import type { Task, TaskFilter, Platform, AIRequest, AIIterationRequest, AITrigg
 import type { AIProviderType } from './ai-gateway.js';
 import { dailyBriefing, checkHotTopics, analyzeNow } from './ai-director.js';
 import { registerGroupHandlers } from './handlers/group-handlers.js';
+import { createFetcher, createAllFetchers } from './data-fetcher/index.js';
 import { z } from 'zod';
 
 // 数据库行类型定义
@@ -257,13 +258,13 @@ export function registerIpcHandlers(): void {
     accountId?: string;
     config?: Record<string, unknown>;
   }) => {
-    const { action, platform, accountId, config } = params;
+    const { action, platform, accountId } = params;
 
     // 获取主窗口
     const win = BrowserWindow.getAllWindows()[0];
     if (!win) {
       log.warn('[IPC] automation:confirm - 没有主窗口');
-      return false;
+      return { confirmed: false, dontAskAgain: false };
     }
 
     // 操作描述映射
@@ -282,16 +283,31 @@ export function registerIpcHandlers(): void {
     };
     const platformLabel = platformLabels[platform] || platform;
 
-    // 显示确认对话框
-    const result = await win.webContents.executeJavaScript(`
-      new Promise((resolve) => {
-        const confirmed = confirm('确认执行 ${actionLabel}？\\n\\n平台: ${platformLabel}${accountId ? '\\n账号: ' + accountId : ''}\\n\\n注意：自动化操作可能被平台检测到，存在账号封禁风险。');
-        resolve(confirmed);
-      })
-    `);
+    // 向渲染进程发送确认请求，渲染进程会显示自定义对话框
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        log.warn('[IPC] automation:confirm - 超时');
+        resolve({ confirmed: false, dontAskAgain: false });
+      }, 60000);
 
-    log.info(`[IPC] automation:confirm - ${action} on ${platform}, result: ${result}`);
-    return result;
+      // 监听渲染进程的响应 (使用 ipcMain.once 在主进程中监听)
+      ipcMain.once('automation:confirm-response', (_e, result: { confirmed: boolean; dontAskAgain: boolean }) => {
+        clearTimeout(timeout);
+        resolve(result);
+      });
+
+      // 发送确认请求到渲染进程
+      win.webContents.send('automation:confirm-request', {
+        action,
+        actionLabel,
+        platform,
+        platformLabel,
+        accountId,
+        riskMessage: `自动化操作可能被平台检测到，存在账号封禁风险。`,
+      });
+
+      log.info(`[IPC] automation:confirm - 等待用户确认: ${action} on ${platform}`);
+    });
   });
 
   // ============ AI 相关 ============
@@ -708,6 +724,51 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('clear-all-data', async () => {
     const db = getDb();
     db.exec('DELETE FROM accounts; DELETE FROM tasks; DELETE FROM account_groups; DELETE FROM selector_versions;');
+  });
+
+  // ============ 热点话题 ============
+  ipcMain.handle('fetch:hot-topics', async (_event, { platform }: { platform?: Platform }) => {
+    try {
+      if (platform) {
+        const fetcher = createFetcher(platform);
+        try {
+          const result = await fetcher.fetchHotTopics({ limit: 10 });
+          return result;
+        } finally {
+          await fetcher.close();
+        }
+      } else {
+        const fetchers = createAllFetchers();
+        const allTopics = [];
+        const errors = [];
+
+        for (const fetcher of fetchers) {
+          try {
+            const result = await fetcher.fetchHotTopics({ limit: 10 });
+            allTopics.push(...result.topics);
+            if (result.error) {
+              errors.push(`${(fetcher as any).platform}: ${result.error}`);
+            }
+          } catch (e) {
+            errors.push(`${(fetcher as any).platform}: ${(e as Error).message}`);
+          } finally {
+            await fetcher.close();
+          }
+        }
+
+        allTopics.sort((a, b) => b.heat - a.heat);
+
+        return {
+          topics: allTopics,
+          source: 'all',
+          fetchedAt: Date.now(),
+          error: errors.length > 0 ? errors.join('; ') : undefined,
+        };
+      }
+    } catch (error) {
+      log.error('[IPC] fetch:hot-topics failed:', error);
+      return { topics: [], source: platform ?? 'all', fetchedAt: Date.now(), error: (error as Error).message };
+    }
   });
 
   log.info('IPC 处理器注册完成');

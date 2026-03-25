@@ -61,8 +61,9 @@ export interface Account {
   username: string;
   displayName: string;
   avatar?: string;
-  status: 'active' | 'inactive' | 'error';
+  status: 'active' | 'inactive' | 'error' | 'pending_validation';
   lastUsedAt?: number;
+  lastValidatedAt?: number;
   groupId?: string;
   tags: string[];
   createdAt: number;

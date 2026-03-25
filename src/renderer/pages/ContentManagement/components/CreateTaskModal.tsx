@@ -28,9 +28,75 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [enableInterval, setEnableInterval] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState(5);
+  const [contentMode, setContentMode] = useState<'text' | 'image' | 'voice'>('text');
+
+  // Validation errors
+  const [titleError, setTitleError] = useState('');
+  const [accountError, setAccountError] = useState('');
+
+  // Real-time validation
+  const validateTitle = (value: string) => {
+    if (!value.trim()) {
+      setTitleError('请输入标题');
+    } else if (value.trim().length < 5) {
+      setTitleError('标题至少需要5个字符');
+    } else {
+      setTitleError('');
+    }
+  };
+
+  // Validate accounts when selection changes
+  useEffect(() => {
+    if (selectedAccountIds.length === 0) {
+      setAccountError('请选择至少一个账号');
+    } else {
+      setAccountError('');
+    }
+  }, [selectedAccountIds]);
 
   const { taskDraft, setTaskDraft, clearTaskDraft } = useAppStore();
   const draftInitializedRef = useRef(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  // Focus trap and keyboard handling
+  useEffect(() => {
+    previousActiveElement.current = document.activeElement as HTMLElement;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    const firstFocusable = modalRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    firstFocusable?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previousActiveElement.current?.focus();
+    };
+  }, [onClose]);
 
   // Pre-fill from draft when modal opens
   useEffect(() => {
@@ -39,6 +105,7 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
       setContent(taskDraft.content);
       if (taskDraft.platform) setPlatform(taskDraft.platform as Platform);
       if (taskDraft.accountIds.length) setSelectedAccountIds(taskDraft.accountIds);
+      if (taskDraft.contentMode) setContentMode(taskDraft.contentMode);
       draftInitializedRef.current = true;
     }
   }, [taskDraft]);
@@ -46,9 +113,9 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
   // Auto-save on changes (only after draft was initialized)
   useEffect(() => {
     if (draftInitializedRef.current && (title || content)) {
-      setTaskDraft({ title, content, platform, accountIds: selectedAccountIds });
+      setTaskDraft({ title, content, platform, accountIds: selectedAccountIds, contentMode });
     }
-  }, [title, content, platform, selectedAccountIds]);
+  }, [title, content, platform, selectedAccountIds, contentMode]);
 
   useEffect(() => {
     loadGroups();
@@ -110,13 +177,28 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
   };
 
   const handleCreate = async () => {
-    if (!title.trim()) return;
+    // Validate title
+    if (!title.trim()) {
+      setTitleError('请输入标题');
+      return;
+    }
+    if (title.trim().length < 5) {
+      setTitleError('标题至少需要5个字符');
+      return;
+    }
+
+    // Validate accounts
     if (selectedAccountIds.length === 0) {
+      setAccountError('请选择至少一个账号');
       showToast('请选择至少一个账号', 'error');
       return;
     }
 
     setCreating(true);
+    let successCount = 0;
+    let failCount = 0;
+    const failReasons: string[] = [];
+
     try {
       // Create one task per selected account
       // If interval is enabled, each task is scheduled at different times
@@ -129,22 +211,40 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
           ? baseTime + (i * intervalMinutes * 60 * 1000)
           : undefined;
 
-        const task = await window.electronAPI?.createTask({
-          type: 'publish',
-          platform,
-          title: title.trim(),
-          payload: {
+        try {
+          const task = await window.electronAPI?.createTask({
+            type: 'publish',
+            platform,
             title: title.trim(),
-            content: content.trim(),
-            accountId,
-          },
-          scheduledAt,
-        });
-        if (task) {
-          onCreated(task);
+            payload: {
+              title: title.trim(),
+              content: content.trim(),
+              accountId,
+            },
+            scheduledAt,
+          });
+          if (task) {
+            onCreated(task);
+            successCount++;
+          } else {
+            failCount++;
+            failReasons.push(`账号 ${accountId.slice(0, 8)}... 创建失败`);
+          }
+        } catch (err) {
+          failCount++;
+          failReasons.push(`账号 ${accountId.slice(0, 8)}... 异常`);
         }
       }
-      showToast('任务创建成功', 'success');
+
+      // 显示详细反馈
+      if (failCount === 0) {
+        showToast(`成功创建 ${successCount} 个任务`, 'success');
+      } else if (successCount === 0) {
+        showToast(`创建失败: ${failReasons[0]}`, 'error');
+      } else {
+        showToast(`成功 ${successCount} 个，失败 ${failCount} 个`, 'warning');
+      }
+
       clearTaskDraft();
     } catch (error) {
       console.error('创建任务失败:', error);
@@ -169,27 +269,43 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.7)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-    }}>
-      <div className="card" style={{ width: 500, maxWidth: '90vw' }}>
-        <h3 style={{ marginBottom: 'var(--space-lg)' }}>新建内容</h3>
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        ref={modalRef}
+        className="card"
+        style={{ width: 500, maxWidth: '90vw' }}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-task-title"
+        tabIndex={-1}
+      >
+        <h3 id="create-task-title" style={{ marginBottom: 'var(--space-lg)' }}>新建内容</h3>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>
-          <label style={labelStyle}>平台</label>
-          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+          <label style={labelStyle} id="platform-label">平台</label>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)' }} role="radiogroup" aria-labelledby="platform-label">
             {(['douyin', 'kuaishou', 'xiaohongshu'] as Platform[]).map(p => (
               <button
                 key={p}
                 className={`btn ${platform === p ? 'btn-primary' : 'btn-secondary'}`}
                 style={{ flex: 1, fontSize: 13 }}
                 onClick={() => setPlatform(p)}
+                role="radio"
+                aria-checked={platform === p}
+                aria-label={p === 'douyin' ? '抖音' : p === 'kuaishou' ? '快手' : '小红书'}
               >
                 {p === 'douyin' ? '🎵 抖音' : p === 'kuaishou' ? '📱 快手' : '📕 小红书'}
               </button>
@@ -198,7 +314,12 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
         </div>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>
-          <label style={labelStyle}>选择账号 {selectedAccountIds.length > 0 && `(${selectedAccountIds.length}已选)`}</label>
+          <label style={labelStyle} id="account-selection-label">选择账号 {selectedAccountIds.length > 0 && `(${selectedAccountIds.length}已选)`}</label>
+          {accountError && (
+            <div style={{ fontSize: 12, color: 'var(--error)', marginBottom: 4 }} role="alert">
+              {accountError}
+            </div>
+          )}
           {/* Group chips */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
             {groups.map(group => {
@@ -313,14 +434,25 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
         </div>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>
-          <label style={labelStyle}>标题</label>
+          <label style={labelStyle} htmlFor="task-title">标题</label>
           <input
-            className="input"
+            id="task-title"
+            className={`input ${titleError ? 'input-error' : ''}`}
             style={{ width: '100%' }}
             placeholder="输入内容标题"
             value={title}
-            onChange={e => setTitle(e.target.value)}
+            onChange={e => {
+              setTitle(e.target.value);
+              validateTitle(e.target.value);
+            }}
+            aria-describedby={titleError ? 'title-error' : undefined}
+            aria-invalid={!!titleError}
           />
+          {titleError && (
+            <div id="title-error" style={{ fontSize: 12, color: 'var(--error)', marginTop: 4 }}>
+              {titleError}
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 'var(--space-lg)' }}>

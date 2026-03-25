@@ -166,7 +166,7 @@ describe('AIDirector', () => {
   });
 
   describe('checkHotTopics', () => {
-    it('should analyze hot topic and create task when confidence is high', async () => {
+    it('should analyze hot topic and send recommendation when confidence is high', async () => {
       const mockHotTopics = [
         { topic: '春季穿搭',热度: 9500 },
       ];
@@ -181,17 +181,30 @@ describe('AIDirector', () => {
 
       mockGetHotTopics.mockResolvedValue(mockHotTopics);
       mockCallAI.mockResolvedValue(mockDecision);
-      mockTaskQueueCreate.mockResolvedValue(undefined);
 
       const result = await checkHotTopics('xiaohongshu');
 
       expect(result).toEqual(mockDecision);
-      expect(mockTaskQueueCreate).toHaveBeenCalledWith({
-        type: 'ai_generate',
-        platform: 'xiaohongshu',
-        title: '蹭热点-春季穿搭',
-        payload: { promptType: 'default', topic: '通勤穿搭' },
-      });
+      // 高置信度时发送热点追踪结果和推荐事件给用户确认
+      expect(mockBroadcast).toHaveBeenCalledWith(
+        'ai:hot-topic',
+        expect.objectContaining({ platform: 'xiaohongshu' })
+      );
+      // 检查推荐事件包含正确的任务信息
+      expect(mockBroadcast).toHaveBeenLastCalledWith(
+        'ai:recommendation',
+        expect.objectContaining({
+          action: 'hot_topic',
+          confidence: 0.85,
+          params: expect.objectContaining({
+            platform: 'xiaohongshu',
+            task: expect.objectContaining({
+              type: 'ai_generate',
+              title: '蹭热点-春季穿搭',
+            }),
+          }),
+        })
+      );
     });
 
     it('should return null when no hot topics available', async () => {

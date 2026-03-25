@@ -1,6 +1,8 @@
 # gstack 技能完整指南
 
-> Garry Tan (Y Combinator CEO) 的 Claude Code 工具集 — 25 个技能，将 Claude 变成虚拟工程团队
+> Garry Tan (Y Combinator CEO) 的 Claude Code 工具集 — 27 个技能，将 Claude 变成虚拟工程团队
+>
+> **当前版本: v0.11.18.2** (2026-03-24)
 
 ---
 
@@ -10,6 +12,7 @@
 - [思考阶段](#思考阶段)
   - [/office-hours](#office-hours)
 - [规划阶段](#规划阶段)
+  - [/autoplan](#autoplan)
   - [/plan-ceo-review](#plan-ceo-review)
   - [/plan-eng-review](#plan-eng-review)
   - [/plan-design-review](#plan-design-review)
@@ -95,6 +98,28 @@ Claude: 我要挑战你的框架。你说的是"每日简报应用"，
 
 ## 规划阶段
 
+### /autoplan
+
+**角色**: 三位 AI 评审同时审查
+
+**用途**: CEO + Design + Eng 评审自动串联执行，每个阶段同时获得 Codex 和 Claude 独立评审。
+
+**核心功能**:
+- **Triple-Voice 评审** — 每个阶段同时运行 Codex (OpenAI) 和 Claude 子代理，3 个 AI 视角审视你的计划
+- **结构化一致性表格** — 展示各模型在 6 个战略维度上的 CONFIRMED/DISAGREE
+- **跨阶段综合** — 前期发现为后期提供上下文，高置信度信号自动突出
+- **优雅降级** — Codex 或 Claude 失败时仍能继续，清晰标注降级模式
+
+**流程**: CEO Review → Design Review → Eng Review，每个阶段包含：
+1. Codex 挑战 + Claude 独立评审（并行）
+2. 一致性表格生成
+3. 跨阶段综合（下一阶段继承前一阶段发现）
+4. 阶段门禁（STOP 标记防止跳过）
+
+**输出**: 完整评审报告写入计划文件，附评分和建议。
+
+---
+
 ### /plan-ceo-review
 
 **角色**: CEO / 创始人模式 (Brian Chesby 模式)
@@ -148,6 +173,8 @@ Claude: "照片上传"甚至不是真正的功能。
 **关键解锁**: **图表** — 序列图、状态图、组件图、数据流图、测试矩阵。图表迫使隐藏假设浮出水面。
 
 **输出**: 测试计划写入 `~/.gstack/projects/`，供 `/qa` 使用
+
+**Outside Voice**: 计划评审结束后，可获得来自不同 AI 模型（Codex CLI 或 Claude 子代理）的独立意见——找出评审遗漏的逻辑漏洞、未说明的假设、可行性风险。发现的分歧自动作为 TODO 建议。
 
 **Review Readiness Dashboard**:
 ```
@@ -281,9 +308,11 @@ Claude: 设计评分: C  |  AI 模式评分: D
 - 测试通过但遗漏真正失败模式
 - 遗忘的枚举处理
 
+**新增功能**:
+- **覆盖率警告** — 低覆盖率测试在评审中醒目提示，避免到 `/ship` 才暴露问题
+- **计划感知范围漂移检测** — 不仅检查 TODOS.md 和 PR 描述，还读取计划文件核对范围变更
+
 **修复优先**:
-- 明显的机械修复（死代码、陈旧注释、N+1 查询）自动应用
-- 真正模糊的问题（安全、竞态条件、设计决策）交给你决定
 
 ---
 
@@ -378,6 +407,7 @@ Claude: [探索 12 页面，填写 3 表单，测试 2 流程]
 - 首次调用启动浏览器 (~3s)
 - 后续调用 ~100-200ms
 - 浏览器在命令之间保持运行，cookies/tabs/localStorage 保留
+- **支持 Windows** — 所有平台健康检查统一修复，Chromium sandbox 在 Windows 上自动禁用（需要提升权限时）
 
 **常用命令**:
 ```
@@ -413,6 +443,11 @@ Claude: > browse resume
 **用途**: 从你的真实浏览器导入 cookies 到无头会话，测试需要登录的页面。
 
 **支持的浏览器**: Comet, Chrome, Arc, Brave, Edge
+
+**新增功能**:
+- **Chrome 多 Profile 支持** — 可从任意 Chrome profile 导入，不只是 Default，profile picker 显示账户邮箱便于识别
+- **Linux Chromium cookie 导入** — 支持 Chrome、Chromium、Brave、Edge；支持 GNOME Keyring (libsecret) 和 headless 环境回退
+- **Chrome 扩展支持** — 设置 `BROWSE_EXTENSIONS_DIR` 加载扩展（广告拦截、无障碍工具、自定义 headers）
 
 **用法**:
 ```
@@ -459,7 +494,14 @@ Claude: > browse resume
 - 设置 CI/CD (GitHub Actions)
 - 创建 TESTING.md
 
+**质量门禁**:
+- **覆盖率门禁** — AI 评估测试覆盖率低于 60% 强制停止；60-79% 提示警告；80%+ 通过。阈值可在 `CLAUDE.md` 中通过 `## Test Coverage` 配置
+- **计划完成审计** — 读取计划文件，提取每个可操作项，对照 diff 交叉检查，显示 DONE/NOT DONE/PARTIAL/CHANGED 清单
+- **自动验证** — 若检测到 localhost 运行 dev server，自动执行 `/qa-only` 进行验证
+
 **覆盖审计**: 每次 `/ship` 运行生成 ASCII 覆盖图，PR body 显示：`Tests: 42 → 47 (+5 new)`
+
+**发布指标日志**: 覆盖率%、计划完成比率、验证结果写入 review JSONL，供 `/retro` 追踪趋势
 
 ---
 
@@ -523,6 +565,7 @@ Claude: > browse resume
 - 计算指标：commits, LOC, 测试比例, PR 大小, 修复比例
 - 检测编码会话、热点文件、发布连续天数
 - 跟踪测试健康：测试文件总数、新增测试、回归测试提交、趋势增量
+- **计划完成率** — 每周回顾显示已发布分支的计划完成比率
 
 **示例**:
 ```
@@ -547,6 +590,21 @@ Claude: 3月1日周: 47 commits (3 贡献者), 3.2k LOC, 38% 测试, 12 PRs, 峰
 ---
 
 ## 安全工具
+
+### /cso
+
+**角色**: 首席安全官 (CSO)
+
+**用途**: 基础设施优先的安全审计。v2 版本从真实发生 breach 的地方开始——基础设施攻击面，而非应用代码。
+
+**v2 核心功能**:
+- **15 阶段审计** — 密钥考古、依赖 CVE、CI/CD 管道配置、未验证 webhook、Dockerfile 安全、LLM/AI 安全、技能供应链、OWASP Top 10、STRIDE、主动验证
+- **两种模式** — `--daily` 零噪音扫描（8/10 置信度门禁）；`--comprehensive` 深度月度扫描（2/10 置信度）
+- **主动验证** — 每个发现都经独立子代理验证，无 grep-and-guess；发现一个漏洞后变体分析整个代码库
+- **趋势追踪** — 发现指纹化，跨审计运行追踪：新发现、已修复、已忽略
+- **Diff 范围审计** — `--diff` 模式只审计分支上的变更，适合 pre-merge 安全检查
+
+---
 
 ### /careful
 
@@ -625,6 +683,7 @@ Claude: BLOCKED — 冻结边界外的编辑 (src/billing/)。跳过此更改。
 - 运行升级
 - 如果双重安装，同步两个副本
 - 显示变更内容
+- **支持项目级安装** — `setup --local` 在当前项目 `.claude/skills/` 安装 gstack，按项目固定版本
 
 **自动升级**: 在 `~/.gstack/config.yaml` 中设置 `auto_upgrade: true` 跳过提示。
 
@@ -635,6 +694,7 @@ Claude: BLOCKED — 冻结边界外的编辑 (src/billing/)。跳过此更改。
 | 阶段 | 技能 | 角色 |
 |------|------|------|
 | 思考 | `/office-hours` | YC 合伙人 |
+| 规划 | `/autoplan` | 三位 AI 评审 |
 | 规划 | `/plan-ceo-review` | CEO |
 | 规划 | `/plan-eng-review` | 工程经理 |
 | 规划 | `/plan-design-review` | 高级设计师 |
@@ -653,6 +713,7 @@ Claude: BLOCKED — 冻结边界外的编辑 (src/billing/)。跳过此更改。
 | 发布 | `/canary` | SRE |
 | 发布 | `/document-release` | 技术作家 |
 | 反思 | `/retro` | 工程经理 |
+| 安全 | `/cso` | 首席安全官 |
 | 安全 | `/careful` | 安全护栏 |
 | 安全 | `/freeze` | 编辑锁 |
 | 安全 | `/guard` | 完全安全 |

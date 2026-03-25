@@ -1,0 +1,242 @@
+.ai-recommendation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.ai-recommendation-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  outline: none;
+}
+
+.ai-recommendation-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.ai-recommendation-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.ai-recommendation-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+}
+
+.ai-confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-confidence-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-confidence-value {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.ai-confidence-value.high {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.ai-confidence-value.medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.ai-confidence-value.low {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.ai-recommendation-reason {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+}
+
+.ai-recommendation-content {
+  margin-bottom: 16px;
+}
+
+.ai-section-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-task-count {
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.ai-topic-list,
+.ai-time-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-topic-tag {
+  padding: 4px 12px;
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.ai-time-tag {
+  padding: 4px 12px;
+  background: rgba(251, 191, 36, 0.2);
+  border-radius: 16px;
+  font-size: 13px;
+  color: #f59e0b;
+}
+
+.ai-warnings {
+  margin-top: 12px;
+}
+
+.ai-warning-item {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.ai-hot-topic-info {
+  margin-bottom: 12px;
+}
+
+.ai-hot-topic-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f43f5e;
+  margin-top: 4px;
+}
+
+.ai-content-angle {
+  margin-top: 8px;
+}
+
+.ai-angle-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.ai-tasks-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+  margin-bottom: 16px;
+}
+
+.ai-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ai-task-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.ai-task-item:hover {
+  border-color: var(--border);
+}
+
+.ai-task-item.selected {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.ai-task-checkbox {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.ai-task-item.selected .ai-task-checkbox {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.ai-task-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-task-title {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-task-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-recommendation-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}

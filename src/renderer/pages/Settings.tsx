@@ -279,7 +279,17 @@ export default function Settings() {
             }}>
               {/* Header - 可点击展开/收起 */}
               <div
+                role="button"
+                aria-expanded={expandedTask === type}
+                aria-controls={`task-config-${type}`}
+                tabIndex={0}
                 onClick={() => setExpandedTask(expandedTask === type ? null : type)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setExpandedTask(expandedTask === type ? null : type);
+                  }
+                }}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -306,7 +316,7 @@ export default function Settings() {
 
               {/* 展开的内容 */}
               {expandedTask === type && (
-                <div style={{
+                <div id={`task-config-${type}`} style={{
                   padding: 'var(--space-md)',
                   borderTop: '1px solid var(--border-subtle)',
                   background: 'var(--bg-surface)',
@@ -429,16 +439,6 @@ export default function Settings() {
           </p>
         </div>
       </div>
-      {/* 关于 */}
-      <div className="card">
-        <h3 style={{ marginBottom: 'var(--space-lg)' }}>关于</h3>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          <p>MatrixHub {version}</p>
-          <p style={{ marginTop: 'var(--space-xs)' }}>
-            多平台内容创作与发布管理工具
-          </p>
-        </div>
-      </div>
       {showClearConfirm && (
         <ConfirmModal
           title="确认清除所有数据？"
@@ -467,7 +467,17 @@ const settingRow: React.CSSProperties = {
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div
+      role="switch"
+      aria-checked={checked}
+      aria-label={checked ? '已启用' : '已禁用'}
+      tabIndex={0}
       onClick={() => onChange(!checked)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onChange(!checked);
+        }
+      }}
       style={{
         width: 44,
         height: 24,

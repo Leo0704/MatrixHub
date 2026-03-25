@@ -8,6 +8,13 @@ interface TaskDraft {
   content: string;
   platform: string;
   accountIds: string[];
+  contentMode: 'text' | 'image' | 'voice';
+}
+
+interface HotTopicDraft {
+  title: string;
+  platform: string;
+  link: string;
 }
 
 interface AppState {
@@ -33,6 +40,10 @@ interface AppState {
   taskDraft: TaskDraft | null;
   setTaskDraft: (draft: TaskDraft | null) => void;
   clearTaskDraft: () => void;
+
+  hotTopicDraft: HotTopicDraft | null;
+  setHotTopicDraft: (draft: HotTopicDraft | null) => void;
+  clearHotTopicDraft: () => void;
 }
 
 const savedOnboarding = localStorage.getItem('onboardingCompleted');
@@ -87,4 +98,8 @@ export const useAppStore = create<AppState>((set) => ({
     set({ taskDraft: null });
     localStorage.removeItem('taskDraft');
   },
+
+  hotTopicDraft: null,
+  setHotTopicDraft: (draft) => set({ hotTopicDraft: draft }),
+  clearHotTopicDraft: () => set({ hotTopicDraft: null }),
 }));

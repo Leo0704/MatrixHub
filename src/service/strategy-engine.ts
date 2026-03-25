@@ -178,8 +178,7 @@ export async function callAI(type: PromptType, context: object): Promise<Record<
   const prompt = buildPrompt(type, context)
 
   const resp = await aiGateway.generate({
-    providerType: 'openai',
-    model: undefined,
+    // 不指定 providerType，让 AI Gateway 使用用户配置的默认 provider
     prompt,
     system: '你是一个严谨的社交媒体运营 AI。请严格按照指定的 JSON 格式输出，不要输出任何其他内容。'
   })
@@ -194,8 +193,6 @@ export async function callAI(type: PromptType, context: object): Promise<Record<
     // 重试一次
     log.warn('[StrategyEngine] 首次解析失败，重试一次')
     const resp2 = await aiGateway.generate({
-      providerType: 'openai',
-      model: undefined,
       prompt: prompt + '\n\n请严格按 JSON 格式输出，不要输出其他内容。',
       system: '你是一个严谨的社交媒体运营 AI。'
     })

@@ -70,6 +70,12 @@ export function deleteGroup(id: string): boolean {
   return transaction();
 }
 
+export function getGroupAccountCount(groupId: string): number {
+  const db = getDb();
+  const row = db.prepare('SELECT COUNT(*) as count FROM accounts WHERE group_id = ? AND (creation_status = \'complete\' OR creation_status IS NULL)').get(groupId) as { count: number };
+  return row.count;
+}
+
 export function listGroups(): AccountGroup[] {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM account_groups ORDER BY sort_order ASC, created_at ASC').all() as any[];

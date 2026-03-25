@@ -17,15 +17,27 @@ export default function EditAccountModal({
 }: EditAccountModalProps) {
   const [username, setUsername] = useState(account.username);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [nickname, setNickname] = useState(account.displayName);
   const [groupId, setGroupId] = useState<string | undefined>(account.groupId);
   const [saving, setSaving] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState<'weak' | 'medium' | 'strong' | null>(null);
   const { showToast } = useToast();
 
   const platformNames = {
     douyin: '🎵 抖音',
     kuaishou: '📱 快手',
     xiaohongshu: '📕 小红书',
+  };
+
+  const checkPasswordStrength = (pwd: string) => {
+    if (!pwd) { setPasswordStrength(null); return; }
+    if (pwd.length < 6) { setPasswordStrength('weak'); return; }
+    if (pwd.length >= 12 && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd)) {
+      setPasswordStrength('strong');
+    } else {
+      setPasswordStrength('medium');
+    }
   };
 
   const handleSave = async () => {
@@ -38,6 +50,7 @@ export default function EditAccountModal({
         groupId,
       });
       if (result && 'id' in result) {
+        showToast('账号更新成功', 'success');
         onSave(result);
       }
     } catch (error) {
@@ -98,14 +111,56 @@ export default function EditAccountModal({
         {/* 密码 */}
         <div style={{ marginBottom: 'var(--space-lg)' }}>
           <label style={labelStyle}>密码</label>
-          <input
-            className="input"
-            type="password"
-            style={{ width: '100%' }}
-            placeholder="留空则不修改"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              className="input"
+              type={showPassword ? 'text' : 'password'}
+              style={{ width: '100%', paddingRight: 40 }}
+              placeholder="留空则不修改"
+              value={password}
+              onChange={e => {
+                setPassword(e.target.value);
+                checkPasswordStrength(e.target.value);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 16,
+                color: 'var(--text-muted)',
+                padding: 4
+              }}
+            >
+              {showPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
+          {password && (
+            <div style={{
+              fontSize: 11,
+              color: passwordStrength === 'weak' ? 'var(--error)' :
+                     passwordStrength === 'medium' ? 'var(--warning)' : 'var(--success)',
+              marginTop: 4
+            }}>
+              {passwordStrength === 'weak' && '密码强度: 弱 - 建议至少6位'}
+              {passwordStrength === 'medium' && '密码强度: 中等'}
+              {passwordStrength === 'strong' && '密码强度: 强'}
+            </div>
+          )}
+          <div style={{
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            marginTop: 4
+          }}>
+            💡 填写新密码将更新现有凭证，留空则保持不变
+          </div>
         </div>
 
         {/* 昵称 */}

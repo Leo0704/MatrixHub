@@ -1,6 +1,6 @@
 interface ContentTabsProps {
-  contentMode: 'text' | 'image' | 'voice';
-  onChange: (mode: 'text' | 'image' | 'voice') => void;
+  contentMode: 'text' | 'image' | 'voice' | 'video';
+  onChange: (mode: 'text' | 'image' | 'voice' | 'video') => void;
 }
 
 export function ContentTabs({ contentMode, onChange }: ContentTabsProps) {
@@ -28,6 +28,13 @@ export function ContentTabs({ contentMode, onChange }: ContentTabsProps) {
           onClick={() => onChange('voice')}
         >
           🔊 语音
+        </button>
+        <button
+          className={`btn ${contentMode === 'video' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ flex: 1, fontSize: 13 }}
+          onClick={() => onChange('video')}
+        >
+          🎬 视频
         </button>
       </div>
     </div>

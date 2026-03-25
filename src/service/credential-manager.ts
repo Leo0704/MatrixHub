@@ -142,9 +142,15 @@ export class CredentialManager {
   /**
    * 检查凭证是否有效
    */
-  async validateCredential(accountId: string): Promise<boolean> {
+  async validateCredential(accountId: string): Promise<{ valid: boolean; error?: string }> {
     const cred = await this.getCredential(accountId);
-    return cred !== null && !!cred.password;
+    if (!cred) {
+      return { valid: false, error: '凭证不存在' };
+    }
+    if (!cred.password && !cred.cookies && !cred.tokens) {
+      return { valid: false, error: '账号无有效凭证' };
+    }
+    return { valid: true };
   }
 
   private getCredentialPath(accountId: string): string {

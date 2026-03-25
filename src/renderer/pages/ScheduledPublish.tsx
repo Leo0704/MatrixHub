@@ -200,8 +200,8 @@ function CreateScheduledTaskModal({
               value={selectedMinute}
               onChange={e => setSelectedMinute(parseInt(e.target.value))}
             >
-              {[0, 15, 30, 45].map(m => (
-                <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
+              {Array.from({ length: 60 }, (_, i) => (
+                <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
               ))}
             </select>
           </div>

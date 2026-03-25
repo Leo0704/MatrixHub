@@ -272,7 +272,7 @@ export class AIGateway {
 
   /**
    * 调用具体的 Provider
-   * 根据 request.taskType 分发到不同的生成器
+   * 根据 request.taskType + provider.type 分发到不同的生成器
    */
   private async callProvider(provider: AIProvider, request: AIRequest): Promise<string> {
     const model = request.model ?? provider.models[0];
@@ -282,12 +282,14 @@ export class AIGateway {
       throw new Error(`API key not configured for provider: ${provider.type}`);
     }
 
-    // 根据 taskType 分发
+    // 根据 taskType 分发到对应的生成器，再由生成器根据 provider.type 分发
     switch (request.taskType) {
       case 'image':
         return this.callImageProvider(provider, model, request, apiKey);
       case 'voice':
         return this.callVoiceProvider(provider, model, request, apiKey);
+      case 'video':
+        return this.callVideoProvider(provider, model, request, apiKey);
       default:
         return this.callTextProvider(provider, model, request, apiKey);
     }
@@ -328,11 +330,32 @@ export class AIGateway {
   }
 
   /**
-   * 图片生成调用
+   * 图片生成调用 - 根据 provider.type 分发到不同实现
    */
   private async callImageProvider(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
-    // 目前主要支持 OpenAI DALL-E 系列
-    // 其他 provider 的图片生成可以后续扩展
+    switch (provider.type) {
+      case 'openai':
+      case 'zhipu':
+      case 'deepseek':
+      case 'kimi':
+      case 'qwen':
+      case 'siliconflow':
+        // OpenAI 兼容格式 (DALL-E, CogView 等)
+        return this.callImageOpenAICompatible(provider, model, request, apiKey);
+      case 'doubao':
+        return this.callImageDoubao(provider, model, request, apiKey);
+      case 'minimax':
+        return this.callImageMinimax(provider, model, request, apiKey);
+      default:
+        // 兜底：尝试 OpenAI 兼容格式
+        return this.callImageOpenAICompatible(provider, model, request, apiKey);
+    }
+  }
+
+  /**
+   * OpenAI 兼容格式的图片生成 (OpenAI DALL-E, 智谱 CogView, DeepSeek, Kimi, Qwen, SiliconFlow 等)
+   */
+  private async callImageOpenAICompatible(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const imageModel = model || 'dall-e-3';
 
     const response = await fetch(`${provider.baseUrl}/images/generations`, {
@@ -360,7 +383,6 @@ export class AIGateway {
       throw new Error('Image generation failed');
     }
 
-    // 返回图片URL和修订后的prompt
     return JSON.stringify({
       url: data.data[0].url,
       revisedPrompt: data.data[0].revised_prompt
@@ -368,10 +390,109 @@ export class AIGateway {
   }
 
   /**
-   * 语音合成调用
+   * 豆包 (Doubao) 图片生成 - Dreamina API
+   * 文档: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=102
+   */
+  private async callImageDoubao(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    // 豆包视觉生成使用 OpenAI 兼容接口
+    const imageModel = model || 'doubao-image';
+
+    const response = await fetch(`${provider.baseUrl}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: imageModel,
+        prompt: request.prompt,
+        size: '1024x1024',
+        quality: 'standard',
+        n: 1,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Doubao Image API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const imageUrl = data.data?.[0]?.url || data.url || data.output;
+    if (!imageUrl) {
+      throw new Error('Image generation failed - no URL in response');
+    }
+
+    return JSON.stringify({
+      url: imageUrl,
+      revisedPrompt: data.data?.[0]?.revised_prompt || data.revised_prompt || request.prompt
+    });
+  }
+
+  /**
+   * MiniMax 图片生成
+   * MiniMax 的图片 API 为 OpenAI 兼容格式
+   */
+  private async callImageMinimax(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const imageModel = model || 'image-01';
+
+    const response = await fetch(`${provider.baseUrl}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: imageModel,
+        prompt: request.prompt,
+        size: '1024x1024',
+        quality: 'standard',
+        n: 1,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`MiniMax Image API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const imageUrl = data.data?.[0]?.url || data.urls?.[0] || data.output;
+    if (!imageUrl) {
+      throw new Error('Image generation failed - no URL in response');
+    }
+
+    return JSON.stringify({
+      url: imageUrl,
+      revisedPrompt: data.data?.[0]?.revised_prompt || request.prompt
+    });
+  }
+
+  /**
+   * 语音合成调用 - 根据 provider.type 分发到不同实现
    */
   private async callVoiceProvider(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
-    // 目前主要支持 OpenAI TTS
+    switch (provider.type) {
+      case 'openai':
+      case 'zhipu':
+      case 'deepseek':
+      case 'kimi':
+      case 'qwen':
+      case 'siliconflow':
+        return this.callVoiceOpenAICompatible(provider, model, request, apiKey);
+      case 'doubao':
+        return this.callVoiceDoubao(provider, model, request, apiKey);
+      case 'minimax':
+        return this.callVoiceMinimax(provider, model, request, apiKey);
+      default:
+        return this.callVoiceOpenAICompatible(provider, model, request, apiKey);
+    }
+  }
+
+  /**
+   * OpenAI 兼容格式的语音合成 (OpenAI TTS, 智谱, DeepSeek, Kimi, Qwen 等)
+   */
+  private async callVoiceOpenAICompatible(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const voiceModel = model || 'tts-1';
 
     const response = await fetch(`${provider.baseUrl}/audio/speech`, {
@@ -393,9 +514,234 @@ export class AIGateway {
       throw new Error(`Voice API error: ${response.status} - ${errorText}`);
     }
 
-    // 返回音频的 base64 编码
     const buffer = await response.arrayBuffer();
     return Buffer.from(buffer).toString('base64');
+  }
+
+  /**
+   * 豆包 (Doubao) 语音合成 - Cosmo TTS
+   */
+  private async callVoiceDoubao(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const voiceModel = model || 'Cosmos-1.0';
+
+    const response = await fetch(`${provider.baseUrl}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: voiceModel,
+        input: request.prompt,
+        voice_type: 'male-qn-qingse',
+        speed_ratio: 1.0,
+        pitch_ratio: 1.0,
+        volume_ratio: 1.0,
+        output_format: 'mp3',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Doubao Voice API error: ${response.status} - ${errorText}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    return Buffer.from(buffer).toString('base64');
+  }
+
+  /**
+   * MiniMax 语音合成 - Speech-02 API
+   */
+  private async callVoiceMinimax(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const voiceModel = model || 'Speech-02-Hd';
+
+    const response = await fetch(`${provider.baseUrl}/t2a_v2`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: voiceModel,
+        text: request.prompt,
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`MiniMax Voice API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+    const audioData = data.data?.audio || data.audio || data.base64;
+    if (!audioData) {
+      throw new Error('Voice generation failed - no audio in response');
+    }
+
+    return Buffer.from(audioData, 'base64').toString('base64');
+  }
+
+  /**
+   * 视频生成调用 - 根据 provider.type 分发到不同实现
+   */
+  private async callVideoProvider(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    switch (provider.type) {
+      case 'doubao':
+        return this.callVideoDoubao(provider, model, request, apiKey);
+      case 'minimax':
+        return this.callVideoMinimax(provider, model, request, apiKey);
+      default:
+        // 兜底：尝试通用端点
+        return this.callVideoGeneric(provider, model, request, apiKey);
+    }
+  }
+
+  /**
+   * 豆包即梦 (Doubao Dreamina) 视频生成
+   * 文档: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=102
+   */
+  private async callVideoDoubao(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const videoModel = model || 'dreamina-video';
+
+    const response = await fetch(`${provider.baseUrl}/v1/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: videoModel,
+        prompt: request.prompt,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Doubao Video API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+
+    // 即梦返回 task_id，需要轮询获取结果（同步直接返回 task_id）
+    if (data.task_id || data.id) {
+      return JSON.stringify({
+        taskId: data.task_id || data.id,
+        model: videoModel,
+        status: 'processing',
+        // 前端可据此轮询
+      });
+    }
+
+    // 如果直接返回了视频 URL
+    const videoUrl = data.video_url || data.url || data.output;
+    if (videoUrl) {
+      return JSON.stringify({ url: videoUrl, model: videoModel });
+    }
+
+    throw new Error('Video generation failed - unrecognized response');
+  }
+
+  /**
+   * MiniMax 视频生成 - Video-01 API
+   * 文档: https://www.minimaxi.com/document/Guides/Video Generation
+   */
+  private async callVideoMinimax(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const videoModel = model || 'video-01';
+
+    const response = await fetch(`${provider.baseUrl}/v1/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: videoModel,
+        prompt: request.prompt,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`MiniMax Video API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as any;
+
+    // MiniMax 返回 task_id，前端需要轮询
+    if (data.task_id || data.id) {
+      return JSON.stringify({
+        taskId: data.task_id || data.id,
+        model: videoModel,
+        status: 'processing',
+      });
+    }
+
+    const videoUrl = data.video_url || data.url || data.output;
+    if (videoUrl) {
+      return JSON.stringify({ url: videoUrl, model: videoModel });
+    }
+
+    throw new Error('Video generation failed - unrecognized response');
+  }
+
+  /**
+   * 通用视频生成 - 尝试多个常见端点
+   * 作为未知 provider 的兜底
+   */
+  private async callVideoGeneric(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
+    const videoModel = model || 'video-model';
+    const endpoints = ['/video/generations', '/video/generate', '/v1/video/generate'];
+
+    let lastError: Error | null = null;
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${provider.baseUrl}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: videoModel,
+            prompt: request.prompt,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+
+          const videoUrl = data.video_url || data.url || data.video?.url || data.output || data.data?.video_url;
+          if (videoUrl) {
+            return JSON.stringify({ url: videoUrl, model: videoModel });
+          }
+
+          if (data.video_data || data.base64) {
+            return JSON.stringify({ videoData: data.video_data || data.base64, model: videoModel });
+          }
+
+          if (data.id || data.task_id) {
+            return JSON.stringify({
+              taskId: data.id || data.task_id,
+              model: videoModel,
+              status: data.status || 'processing'
+            });
+          }
+
+          throw new Error('Video API response format not recognized');
+        }
+
+        const errorText = await response.text();
+        lastError = new Error(`Video API error at ${endpoint}: ${response.status} - ${errorText}`);
+      } catch (e) {
+        lastError = e as Error;
+        continue;
+      }
+    }
+
+    throw lastError || new Error('Video generation failed - no valid endpoint found');
   }
 
   private async callOpenAI(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {

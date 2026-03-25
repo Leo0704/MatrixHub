@@ -1,7 +1,7 @@
 interface GenerateButtonProps {
   generating: boolean;
   disabled: boolean;
-  contentMode: 'text' | 'image' | 'voice';
+  contentMode: 'text' | 'image' | 'voice' | 'video';
   onClick: () => void;
 }
 

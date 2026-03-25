@@ -3,8 +3,26 @@ import type {
   Platform, TaskType, Task, TaskFilter,
   Account, AIRequest, AIResponse, AIIterationRequest,
 } from '../shared/types.js';
+import type { HotTopic as FetcherHotTopic } from '../service/data-fetcher/types.js';
 
 export interface ElectronAPI {
+  // 热点话题
+  fetchHotTopics: (platform?: Platform) => Promise<{
+    topics: Array<{
+      id: string;
+      title: string;
+      rank: number;
+      heat: number;
+      link: string;
+      coverUrl?: string;
+      platform: Platform;
+      fetchedAt: number;
+    }>;
+    source: Platform | 'all';
+    fetchedAt: number;
+    error?: string;
+  }>;
+
   // 任务
   createTask: (params: {
     type: TaskType;
@@ -41,7 +59,7 @@ export interface ElectronAPI {
   }) => Promise<Account | { success: false; error: string }>;
   updateAccount: (accountId: string, updates: Partial<Pick<Account, 'displayName' | 'avatar' | 'status' | 'groupId' | 'tags'> & { username?: string; password?: string }>) => Promise<Account | null>;
   removeAccount: (accountId: string) => Promise<{ success: boolean }>;
-  validateAccount: (accountId: string) => Promise<boolean>;
+  validateAccount: (accountId: string) => Promise<{ valid: boolean; error?: string }>;
 
   // 分组管理
   createGroup: (name: string, color?: string) => Promise<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number }>;
@@ -50,6 +68,7 @@ export interface ElectronAPI {
   listGroups: () => Promise<Array<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number }>>;
   getGroup: (groupId: string) => Promise<{ id: string; name: string; color: string; sortOrder: number; createdAt: number; updatedAt: number } | null>;
   reorderGroups: (groups: { id: string; sortOrder: number }[]) => Promise<{ success: boolean }>;
+  getGroupAccountCount: (groupId: string) => Promise<number>;
 
   // 限流
   getRateStatus: (platform: Platform) => Promise<{
@@ -70,7 +89,18 @@ export interface ElectronAPI {
     platform: Platform;
     accountId?: string;
     config?: Record<string, unknown>;
-  }) => Promise<boolean>;
+  }) => Promise<{ confirmed: boolean; dontAskAgain: boolean }>;
+
+  // 事件监听
+  onAutomationConfirmRequest: (callback: (params: {
+    action: string;
+    actionLabel: string;
+    platform: Platform;
+    platformLabel: string;
+    accountId?: string;
+    riskMessage: string;
+  }) => void) => void;
+  sendAutomationConfirmResponse: (result: { confirmed: boolean; dontAskAgain: boolean }) => void;
 
   // AI
   generateAI: (request: AIRequest) => Promise<AIResponse>;
@@ -203,11 +233,47 @@ export interface ElectronAPI {
   onGroupUpdated: (callback: (group: any) => void) => void;
   onGroupDeleted: (callback: (data: { groupId: string }) => void) => void;
 
+  // AI 推荐监听
+  onAIRecommendation: (callback: (data: {
+    action: string;
+    reason: string;
+    confidence: number;
+    params: {
+      platform?: Platform;
+      result?: unknown;
+      tasks?: Array<{
+        type: string;
+        platform: Platform;
+        title: string;
+        payload: Record<string, unknown>;
+        scheduledAt?: number;
+      }>;
+      task?: {
+        type: string;
+        platform: Platform;
+        title: string;
+        payload: Record<string, unknown>;
+      };
+    };
+  }) => void) => void;
+  onAIFeedback: (callback: (data: {
+    taskId: string;
+    result?: unknown;
+    error?: string;
+    skipped?: boolean;
+    reason?: string;
+  }) => void) => void;
+  onAIDailyPlan: (callback: (data: { platform: Platform; result: unknown }) => void) => void;
+  onAIHotTopic: (callback: (data: { platform: Platform; result: unknown }) => void) => void;
+
   // 移除监听
   removeAllListeners: (channel: string) => void;
 }
 
 const api: ElectronAPI = {
+  // ============ 热点话题 ============
+  fetchHotTopics: (platform) => ipcRenderer.invoke('fetch:hot-topics', { platform }),
+
   // ============ 任务 ============
   createTask: (params) => ipcRenderer.invoke('task:create', params),
   getTask: (taskId) => ipcRenderer.invoke('task:get', { taskId }),
@@ -230,6 +296,7 @@ const api: ElectronAPI = {
   listGroups: () => ipcRenderer.invoke('group:list'),
   getGroup: (groupId) => ipcRenderer.invoke('group:get', { groupId }),
   reorderGroups: (groups) => ipcRenderer.invoke('group:reorder', { groups }),
+  getGroupAccountCount: (groupId) => ipcRenderer.invoke('group:get-account-count', { groupId }),
 
   // ============ 限流 ============
   getRateStatus: (platform) => ipcRenderer.invoke('rate:status', { platform }),
@@ -326,6 +393,30 @@ const api: ElectronAPI = {
 
   onGroupDeleted: (callback) => {
     ipcRenderer.on('group:deleted', (_, d) => callback(d));
+  },
+
+  onAutomationConfirmRequest: (callback) => {
+    ipcRenderer.on('automation:confirm-request', (_, params) => callback(params));
+  },
+
+  sendAutomationConfirmResponse: (result) => {
+    ipcRenderer.send('automation:confirm-response', result);
+  },
+
+  onAIRecommendation: (callback) => {
+    ipcRenderer.on('ai:recommendation', (_, data) => callback(data));
+  },
+
+  onAIFeedback: (callback) => {
+    ipcRenderer.on('ai:feedback', (_, data) => callback(data));
+  },
+
+  onAIDailyPlan: (callback) => {
+    ipcRenderer.on('ai:daily-plan', (_, data) => callback(data));
+  },
+
+  onAIHotTopic: (callback) => {
+    ipcRenderer.on('ai:hot-topic', (_, data) => callback(data));
   },
 
   removeAllListeners: (channel) => {

@@ -1,5 +1,6 @@
 import type { Task } from '~shared/types';
 import { StatusBadge } from '../../../components/StatusBadge';
+import { formatErrorMessage } from '../../../utils/errorMessage';
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN', {
@@ -33,19 +34,37 @@ interface ContentCardProps {
   onRetry: () => void;
   onViewDetail: () => void;
   onDuplicate?: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export function ContentCard({ task, onCancel, onRetry, onViewDetail, onDuplicate }: ContentCardProps) {
+export function ContentCard({ task, onCancel, onRetry, onViewDetail, onDuplicate, selected, onToggleSelect }: ContentCardProps) {
   const result = task.result as { views?: number; likes?: number; comments?: number } | undefined;
   const platformName = task.platform === 'douyin' ? '抖音' :
                       task.platform === 'kuaishou' ? '快手' : '小红书';
+
+  // 从 payload 中获取账号信息
+  const payload = task.payload as { accountId?: string; accountName?: string } | undefined;
+  const accountName = payload?.accountName || (payload?.accountId ? `账号 ${payload.accountId.slice(0, 8)}...` : null);
 
   return (
     <div className="card" style={{
       display: 'flex',
       gap: 'var(--space-lg)',
-      alignItems: 'flex-start'
+      alignItems: 'flex-start',
+      border: selected ? '2px solid var(--primary)' : undefined,
     }}>
+      {/* 选择框 */}
+      {onToggleSelect && (
+        <div style={{ flexShrink: 0 }}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            style={{ width: 16, height: 16, cursor: 'pointer' }}
+          />
+        </div>
+      )}
       {/* 缩略图占位 */}
       <div style={{
         width: 120,
@@ -72,6 +91,17 @@ export function ContentCard({ task, onCancel, onRetry, onViewDetail, onDuplicate
           <span className={`badge badge-platform-${task.platform}`}>
             {platformName}
           </span>
+          {accountName && (
+            <span style={{
+              fontSize: 11,
+              padding: '2px 6px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+            }}>
+              {accountName}
+            </span>
+          )}
           <StatusBadge status={task.status} />
         </div>
 
@@ -123,7 +153,7 @@ export function ContentCard({ task, onCancel, onRetry, onViewDetail, onDuplicate
             fontSize: 12,
             color: 'var(--error)',
           }}>
-            错误: {task.error}
+            错误: {formatErrorMessage(task.error)}
           </div>
         )}
       </div>

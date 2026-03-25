@@ -21,16 +21,48 @@ export function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    // Store the previously focused element
+    previousActiveElement.current = document.activeElement as HTMLElement;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onCancel();
+        return;
+      }
+
+      // Focus trap for Tab key
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
       }
     };
+
     document.addEventListener('keydown', handleKeyDown);
-    modalRef.current?.focus();
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    // Focus the first focusable element in the modal
+    const firstFocusable = modalRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    firstFocusable?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      // Restore focus to the previously focused element
+      previousActiveElement.current?.focus();
+    };
   }, [onCancel]);
 
   return (
@@ -47,10 +79,10 @@ export function ConfirmModal({
         <h3 id="confirm-title">{title}</h3>
         <p>{message}</p>
         <div className="confirm-actions">
-          <button className="btn btn-secondary" onClick={onCancel}>
+          <button className="btn btn-secondary" onClick={onCancel} aria-label={cancelLabel}>
             {cancelLabel}
           </button>
-          <button className={`btn btn-${variant}`} onClick={onConfirm}>
+          <button className={`btn btn-${variant}`} onClick={onConfirm} aria-label={confirmLabel}>
             {confirmLabel}
           </button>
         </div>

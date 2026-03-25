@@ -69,12 +69,22 @@ function buildFailureDecision(result: AIFailureResult, task: Task): AIDecision {
 async function executeDecision(decision: AIDecision): Promise<void> {
   switch (decision.action) {
     case 'retry_with_fix':
-      await taskQueue.create(decision.params as any)
-      broadcastToRenderers('ai:recommendation', decision)
+      // 发送推荐消息让用户确认（不自动创建任务）
+      broadcastToRenderers('ai:recommendation', {
+        action: 'retry_with_fix',
+        reason: decision.reason,
+        confidence: decision.confidence,
+        params: { task: decision.params }
+      })
       break
     case 'create_task':
-      await taskQueue.create(decision.params as any)
-      broadcastToRenderers('ai:recommendation', decision)
+      // 发送推荐消息让用户确认（不自动创建任务）
+      broadcastToRenderers('ai:recommendation', {
+        action: 'create_task',
+        reason: decision.reason,
+        confidence: decision.confidence,
+        params: { task: decision.params }
+      })
       break
     case 'notify':
       broadcastToRenderers('ai:recommendation', decision)
@@ -141,8 +151,13 @@ export async function dailyBriefing(platform: Platform): Promise<DailyPlan | nul
     const confidence = (typeof result.confidence === 'number' && result.confidence >= 0 && result.confidence <= 1)
       ? result.confidence : 0.5
 
+    // 发送每日简报结果给前端（不自动创建任务）
+    broadcastToRenderers('ai:daily-plan', { platform, result })
+
+    // 置信度 >= 0.7 时，发送推荐消息让用户确认
     if (confidence >= 0.7) {
-      // 自动创建定时任务
+      // 构造推荐任务数据，等待用户确认
+      const recommendedTasks = []
       for (const topic of (result.recommendedTopics ?? []).slice(0, 2)) {
         for (const hour of (result.bestTimes ?? [9]).slice(0, 1)) {
           const scheduledAt = new Date()
@@ -150,7 +165,7 @@ export async function dailyBriefing(platform: Platform): Promise<DailyPlan | nul
           if (scheduledAt.getTime() < Date.now()) {
             scheduledAt.setDate(scheduledAt.getDate() + 1)
           }
-          await taskQueue.create({
+          recommendedTasks.push({
             type: 'ai_generate',
             platform,
             title: `AI生成-${topic}`,
@@ -159,7 +174,13 @@ export async function dailyBriefing(platform: Platform): Promise<DailyPlan | nul
           })
         }
       }
-      broadcastToRenderers('ai:daily-plan', { platform, result })
+
+      broadcastToRenderers('ai:recommendation', {
+        action: 'daily_briefing',
+        reason: `AI 每日简报推荐 ${result.recommendedTopics?.length ?? 0} 个话题（置信度: ${(confidence * 100).toFixed(0)}%）`,
+        confidence,
+        params: { platform, result, tasks: recommendedTasks }
+      })
     } else {
       broadcastToRenderers('ai:recommendation', {
         action: 'notify',
@@ -189,14 +210,26 @@ export async function checkHotTopics(platform: Platform): Promise<HotTopicDecisi
     const confidence = (typeof result.confidence === 'number' && result.confidence >= 0 && result.confidence <= 1)
       ? result.confidence : 0.5
 
+    // 发送热点追踪结果给前端
+    broadcastToRenderers('ai:hot-topic', { platform, result })
+
+    // 置信度 >= 0.8 时，发送推荐消息让用户确认（不自动创建任务）
     if (result.shouldChase && confidence >= 0.8) {
-      await taskQueue.create({
-        type: 'ai_generate',
-        platform,
-        title: `蹭热点-${result.topic}`,
-        payload: { promptType: 'default', topic: result.contentAngle }
+      broadcastToRenderers('ai:recommendation', {
+        action: 'hot_topic',
+        reason: `AI 推荐蹭热点：${result.topic}（置信度: ${(confidence * 100).toFixed(0)}%）`,
+        confidence,
+        params: {
+          platform,
+          result,
+          task: {
+            type: 'ai_generate',
+            platform,
+            title: `蹭热点-${result.topic}`,
+            payload: { promptType: 'default', topic: result.contentAngle }
+          }
+        }
       })
-      broadcastToRenderers('ai:hot-topic', { platform, result })
     } else if (result.shouldChase && confidence >= 0.6) {
       broadcastToRenderers('ai:recommendation', {
         action: 'notify',

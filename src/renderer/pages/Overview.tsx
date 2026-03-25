@@ -54,7 +54,79 @@ export default function Overview() {
   };
 
   if (loading) {
-    return <div className="empty-state"><div className="empty-state-icon">⏳</div><p>加载中...</p></div>;
+    return (
+      <div>
+        {/* 统计卡片骨架屏 */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 'var(--space-lg)',
+          marginBottom: 'var(--space-xl)'
+        }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="card" style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-md)'
+            }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-elevated)',
+                animation: 'pulse 1.5s infinite'
+              }} />
+              <div>
+                <div style={{
+                  width: 60,
+                  height: 22,
+                  borderRadius: 4,
+                  background: 'var(--bg-elevated)',
+                  animation: 'pulse 1.5s infinite',
+                  marginBottom: 4
+                }} />
+                <div style={{
+                  width: 40,
+                  height: 12,
+                  borderRadius: 4,
+                  background: 'var(--bg-elevated)',
+                  animation: 'pulse 1.5s infinite'
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 最近任务骨架屏 */}
+        <div className="card">
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 'var(--space-lg)'
+          }}>
+            <div style={{
+              width: 80,
+              height: 20,
+              borderRadius: 4,
+              background: 'var(--bg-elevated)',
+              animation: 'pulse 1.5s infinite'
+            }} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} style={{
+                height: 56,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-elevated)',
+                animation: 'pulse 1.5s infinite'
+              }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const totalTasks = stats?.total ?? 0;
