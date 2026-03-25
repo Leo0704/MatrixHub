@@ -259,7 +259,7 @@ export interface PipelineTask {
   config: PipelineConfig;
   platform: Platform;
   steps: PipelineStep[];
-  currentStep: string;
+  currentStep: 'parse' | 'text' | 'media' | 'voice' | 'publish';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   result?: {
     text?: string;

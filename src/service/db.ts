@@ -287,6 +287,8 @@ function initializeSchema(db: Database.Database): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_pipeline_platform ON pipeline_tasks(platform);
   `);
 
   log.info('数据库 Schema 初始化完成');
