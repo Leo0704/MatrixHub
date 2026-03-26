@@ -35,7 +35,6 @@ import {
   registerTaskHandlers,
   registerAccountHandlers,
   registerRateHandlers,
-  registerAutomationHandlers,
   registerAIHandlers,
   registerMonitoringHandlers,
   registerConfigHandlers,
@@ -58,7 +57,6 @@ export function registerIpcHandlers(): void {
   registerAccountHandlers();
   registerGroupHandlers(ipcMain);
   registerRateHandlers();
-  registerAutomationHandlers();
   registerAIHandlers();
   registerMonitoringHandlers();
   registerConfigHandlers();

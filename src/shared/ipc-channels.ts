@@ -31,9 +31,6 @@ export const IpcChannel = {
   RATE_CHECK: 'rate:check',
   RATE_STATUS_ALL: 'rate:status-all',
 
-  // Automation
-  AUTOMATION_CONFIRM: 'automation:confirm',
-
   // AI
   AI_GENERATE: 'ai:generate',
   AI_ITERATE: 'ai:iterate',

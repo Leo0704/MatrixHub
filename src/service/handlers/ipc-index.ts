@@ -4,7 +4,6 @@
 export { registerTaskHandlers } from './ipc-task-handlers.js';
 export { registerAccountHandlers } from './ipc-account-handlers.js';
 export { registerRateHandlers } from './ipc-rate-handlers.js';
-export { registerAutomationHandlers } from './ipc-automation-handlers.js';
 export { registerAIHandlers } from './ipc-ai-handlers.js';
 export { registerMonitoringHandlers } from './ipc-monitoring-handlers.js';
 export { registerConfigHandlers } from './ipc-config-handlers.js';

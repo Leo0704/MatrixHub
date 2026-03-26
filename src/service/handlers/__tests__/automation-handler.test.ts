@@ -2,12 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeAutomationTask } from '../automation-handler.js';
 import type { Task } from '../../../shared/types.js';
 
-vi.mock('electron', () => ({
-  ipcRenderer: {
-    invoke: vi.fn(),
-  },
-}));
-
 vi.mock('../../platform-launcher.js', () => ({
   markPageLoggedIn: vi.fn(),
 }));
@@ -53,18 +47,8 @@ describe('Automation Handler', () => {
     } as any;
   });
 
-  it('should throw when user cancels automation', async () => {
-    const { ipcRenderer } = await import('electron');
-    ipcRenderer.invoke.mockResolvedValueOnce(false); // User denied
-
-    await expect(executeAutomationTask(mockPage, mockTask, mockSignal))
-      .rejects.toThrow('用户取消自动化任务');
-  });
-
   it('should throw when account is not logged in', async () => {
-    const { ipcRenderer } = await import('electron');
     const { checkLoginState } = await import('../../utils/page-helpers.js');
-    ipcRenderer.invoke.mockResolvedValueOnce(true); // User confirmed
     checkLoginState.mockResolvedValueOnce(false);
 
     await expect(executeAutomationTask(mockPage, mockTask, mockSignal))
@@ -73,8 +57,6 @@ describe('Automation Handler', () => {
   });
 
   it('should throw if aborted before starting', async () => {
-    const { ipcRenderer } = await import('electron');
-    ipcRenderer.invoke.mockResolvedValueOnce(true); // User confirmed
     mockSignal.throwIfAborted.mockImplementationOnce(() => {
       throw new Error('AbortError');
     });
@@ -94,9 +76,7 @@ describe('Automation Handler', () => {
   });
 
   it('should mark page as logged in after successful login check', async () => {
-    const { ipcRenderer } = await import('electron');
     const { markPageLoggedIn } = await import('../../platform-launcher.js');
-    ipcRenderer.invoke.mockResolvedValueOnce(true); // User confirmed
 
     await executeAutomationTask(mockPage, mockTask, mockSignal);
 
@@ -104,9 +84,7 @@ describe('Automation Handler', () => {
   });
 
   it('should execute auto_reply action successfully', async () => {
-    const { ipcRenderer } = await import('electron');
     const { navigateTo } = await import('../../utils/page-helpers.js');
-    ipcRenderer.invoke.mockResolvedValueOnce(true); // User confirmed
 
     const result = await executeAutomationTask(mockPage, mockTask, mockSignal);
 
@@ -121,7 +99,6 @@ describe('Automation Handler', () => {
       ...mockTask,
       payload: { action: 'comment_management', platform: 'douyin', accountId: 'acc-1' },
     } as any;
-    // comment_management is not HIGH_RISK, so no IPC confirmation needed
 
     const result = await executeAutomationTask(mockPage, commentTask, mockSignal);
 
