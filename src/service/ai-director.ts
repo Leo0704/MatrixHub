@@ -3,7 +3,7 @@ import { getDb } from './db.js'
 import { broadcastToRenderers } from './ipc-handlers.js'
 import { callAI } from './strategy-engine.js'
 import { getHotTopics } from './hot-topic-detector.js'
-import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, Platform, RetryAdvice } from '../shared/types.js'
+import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, Platform, RetryAdvice, ProductInfo, CampaignReport } from '../shared/types.js'
 import log from 'electron-log'
 import { getAiMaxAnalysisPerTask } from './config/runtime-config.js'
 
@@ -292,4 +292,148 @@ export async function dailyBriefingAll(): Promise<void> {
 
   broadcastToRenderers('ai:daily-briefing-all', { results })
   log.info('[AIDirector] 每日简报完成:', results.length, '个平台')
+}
+
+// ============ Campaign 内容策略 ============
+
+export interface AccountContentPlan {
+  accountId: string;
+  contentAngle: string;        // 内容角度描述
+  targetAudience: string;      // 目标人群
+  hashtagHints: string[];      // Hashtag 提示
+}
+
+export interface IterationDecision {
+  action: 'continue' | 'iterate' | 'stop';
+  reason: string;
+  newStrategyHints?: string;
+}
+
+/**
+ * 为推广活动制定内容策略
+ * 核心驱动 AI 分析产品信息，为每个账号分配不同的内容角度
+ */
+export async function generateContentStrategy(
+  campaignId: string,
+  productInfo: ProductInfo,
+  accountCount: number
+): Promise<AccountContentPlan[]> {
+  const prompt = `你是一个社交媒体内容策略专家。
+为一款产品制定在抖音平台的内容矩阵策略。
+
+产品信息：
+- 名称：${productInfo.name}
+- 描述：${productInfo.description}
+${productInfo.targetAudience ? `- 目标人群：${productInfo.targetAudience}` : ''}
+${productInfo.brand ? `- 品牌：${productInfo.brand}` : ''}
+
+需要为 ${accountCount} 个账号制定不同的内容角度，每个账号需要有明显差异但主题一致。
+
+请为每个账号输出：
+1. 内容角度（如：产品测评/用户体验/故事分享/对比分析/知识科普等）
+2. 目标人群（如：年轻白领/学生群体/新手妈妈等）
+3. 3-5个 Hashtag 提示
+
+以 JSON 数组格式输出，每个元素包含：accountIndex, contentAngle, targetAudience, hashtagHints`;
+
+  const result = await callAI('content_strategy', {
+    prompt,
+    expectedFormat: 'json_array',
+  });
+
+  const plans = JSON.parse(result.content);
+  return plans.map((p: any, i: number) => ({
+    accountId: `strategy-${i}`,
+    contentAngle: p.contentAngle,
+    targetAudience: p.targetAudience,
+    hashtagHints: p.hashtagHints || [],
+  }));
+}
+
+/**
+ * 决定是否需要迭代
+ */
+export async function decideIteration(
+  report: CampaignReport,
+  currentIteration: number
+): Promise<IterationDecision> {
+  // 计算平均播放量
+  const avgViews = report.metrics.reduce((sum, m) => sum + m.views, 0) / report.metrics.length;
+
+  // 判断账号健康状态
+  const bannedAccounts = report.metrics.filter(m => m.healthStatus === 'banned').length;
+  const limitedAccounts = report.metrics.filter(m => m.healthStatus === 'limited').length;
+
+  if (bannedAccounts > 0) {
+    return {
+      action: 'stop',
+      reason: `${bannedAccounts}个账号已被封禁，建议人工介入处理账号问题后再继续`,
+    };
+  }
+
+  if (avgViews < 500 && currentIteration > 0) {
+    // 连续迭代后效果仍然很差，停止
+    if (currentIteration >= 2) {
+      return {
+        action: 'stop',
+        reason: `连续${currentIteration}次迭代后平均播放量仅${Math.round(avgViews)}，效果未达预期，建议人工调整策略`,
+      };
+    }
+    return {
+      action: 'iterate',
+      reason: `平均播放量${Math.round(avgViews)}偏低，尝试换一种内容策略`,
+      newStrategyHints: '建议更换内容角度，如从产品介绍改为用户故事',
+    };
+  }
+
+  if (avgViews < 1000) {
+    return {
+      action: 'iterate',
+      reason: `平均播放量${Math.round(avgViews)}有提升空间，尝试优化内容策略`,
+      newStrategyHints: '建议调整 Hashtag 或发布时间策略',
+    };
+  }
+
+  return {
+    action: 'continue',
+    reason: `平均播放量${Math.round(avgViews)}表现良好，继续当前策略`,
+  };
+}
+
+/**
+ * 生成迭代内容策略
+ */
+export async function generateIterationStrategy(
+  productInfo: ProductInfo,
+  previousReport: CampaignReport,
+  badAccountIndices: number[]
+): Promise<AccountContentPlan[]> {
+  const avgViews = previousReport.metrics.reduce((sum, m) => sum + m.views, 0) / previousReport.metrics.length;
+  const worstMetrics = badAccountIndices.map(i => previousReport.metrics[i]);
+
+  const prompt = `产品：${productInfo.name}
+描述：${productInfo.description}
+
+上一轮内容效果：
+- 平均播放量：${Math.round(avgViews)}
+- 效果最差的账号表现：${worstMetrics.map(m => `播放${m.views}/点赞${m.likes}`).join(', ')}
+
+需要为账号重新制定内容策略，避开上一轮效果差的方向。
+
+请为每个账号输出新的内容角度，要求与之前有明显差异。
+
+以 JSON 数组格式输出，每个元素包含：accountIndex, contentAngle, targetAudience, hashtagHints`;
+
+  const result = await callAI('content_strategy', {
+    prompt,
+    expectedFormat: 'json_array',
+  });
+
+  const plans = JSON.parse(result.content);
+  return plans.map((p: any, i: number) => ({
+    accountId: `strategy-${i}`,
+    contentAngle: p.contentAngle,
+    targetAudience: p.targetAudience,
+    hashtagHints: p.hashtagHints || [],
+  }));
 }
