@@ -12,6 +12,8 @@ import {
   type KeychainBackend
 } from './keychain/index.js';
 
+const VALID_PLATFORMS: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
+
 /**
  * 凭证管理器
  * - 使用 Electron safeStorage 加密敏感数据
@@ -353,6 +355,10 @@ export class AccountManager {
     cookies?: string;
     tokens?: Record<string, string>;
   }): Promise<Account> {
+    if (!VALID_PLATFORMS.includes(params.platform)) {
+      throw new Error(`Invalid platform: ${params.platform}. Must be one of: ${VALID_PLATFORMS.join(', ')}`);
+    }
+
     const db = getDb();
     const now = Date.now();
 

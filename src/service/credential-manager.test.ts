@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CredentialManager, AccountManager } from './credential-manager.js';
 
 // Use vi.hoisted to create mocks that properly hoist with vi.mock
-const { mockFs, mockDb } = vi.hoisted(() => {
+const { mockFs, mockDb, mockSafeStorage, mockApp } = vi.hoisted(() => {
   const mockFs = {
     writeFileSync: vi.fn(),
     readFileSync: vi.fn(),
@@ -20,7 +20,17 @@ const { mockFs, mockDb } = vi.hoisted(() => {
     transaction: vi.fn((fn: Function) => fn),
   };
 
-  return { mockFs, mockDb };
+  const mockSafeStorage = {
+    isEncryptionAvailable: vi.fn(() => true),
+    encryptString: vi.fn((s: string) => Buffer.from(`encrypted:${s}`)),
+    decryptString: vi.fn((b: Buffer) => Buffer.from(Buffer.from(b).toString().replace('encrypted:', ''))),
+  };
+
+  const mockApp = {
+    getPath: vi.fn(() => '/tmp/test-user-data'),
+  };
+
+  return { mockFs, mockDb, mockSafeStorage, mockApp };
 });
 
 // Mock fs module
@@ -29,6 +39,12 @@ vi.mock('fs', () => mockFs);
 // Mock db module
 vi.mock('./db.js', () => ({
   getDb: vi.fn(() => mockDb),
+}));
+
+// Mock electron module
+vi.mock('electron', () => ({
+  safeStorage: mockSafeStorage,
+  app: mockApp,
 }));
 
 describe('CredentialManager', () => {
@@ -190,5 +206,41 @@ describe('AccountManager rollback behavior', () => {
 
     // Verify rollback was attempted
     expect(updateRun).toHaveBeenCalled();
+  });
+});
+
+describe('AccountManager platform validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset mockDb.prepare to return proper mocks (previous tests may have modified it)
+    mockDb.prepare.mockImplementation((_sql: string) => ({
+      run: vi.fn(() => ({ changes: 1 })),
+      get: vi.fn(() => null),
+      all: vi.fn(() => []),
+    }));
+  });
+
+  it('should reject invalid platform', async () => {
+    const accountManager = new AccountManager();
+
+    await expect(accountManager.add({
+      platform: 'invalid_platform',
+      username: 'test',
+      displayName: 'Test',
+      password: 'test',
+    })).rejects.toThrow('Invalid platform');
+  });
+
+  it('should accept valid platforms', async () => {
+    const accountManager = new AccountManager();
+
+    for (const platform of ['douyin', 'kuaishou', 'xiaohongshu']) {
+      await expect(accountManager.add({
+        platform,
+        username: `test_${platform}`,
+        displayName: `Test ${platform}`,
+        password: 'test',
+      })).resolves.toBeDefined();
+    }
   });
 });
