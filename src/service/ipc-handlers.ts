@@ -41,7 +41,7 @@ interface SelectorVersionRow {
 
 const taskCreateSchema = z.object({
   type: z.enum(['publish', 'ai_generate', 'fetch', 'automation', 'page_agent']),
-  platform: z.enum(['douyin', 'kuaishu', 'xiaohongshu']),
+  platform: z.enum(['douyin', 'kuaishou', 'xiaohongshu']),
   title: z.string().min(1).max(200),
   payload: z.record(z.string(), z.unknown()),
   scheduledAt: z.number().optional(),
