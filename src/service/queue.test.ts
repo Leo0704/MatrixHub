@@ -11,6 +11,8 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { AppError, ErrorCode, ErrorType, classifyErrorCode, isAppError } from '../shared/errors.js';
+import { taskQueue } from './queue.js';
 
 // 临时测试数据库路径
 const TEST_DB_DIR = '/tmp/matrixhub-test';
@@ -497,6 +499,88 @@ describe('TaskQueue', () => {
       expect(row.retry_count).toBe(3);
       expect(row.status).toBe('failed');
       expect(row.error).toContain('重试次数耗尽');
+    });
+  });
+
+  describe('classifyError', () => {
+    it('should classify AppError by code - SELECTOR_ERROR', () => {
+      const err = new AppError('test', ErrorCode.SELECTOR_ERROR);
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.SELECTOR);
+    });
+
+    it('should classify AppError by code - RATE_LIMIT_EXCEEDED', () => {
+      const err = new AppError('test', ErrorCode.RATE_LIMIT_EXCEEDED);
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.RATE_LIMIT);
+    });
+
+    it('should classify AppError by code - NETWORK_ERROR', () => {
+      const err = new AppError('test', ErrorCode.NETWORK_ERROR);
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.NETWORK);
+    });
+
+    it('should classify AppError by code - LOGIN_REQUIRED', () => {
+      const err = new AppError('test', ErrorCode.LOGIN_REQUIRED);
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.LOGIN);
+    });
+
+    it('should classify AppError by code - TIMEOUT', () => {
+      const err = new AppError('test', ErrorCode.TIMEOUT);
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.TIMEOUT);
+    });
+
+    it('should classify AppError by code - ELEMENT_NOT_FOUND', () => {
+      const err = new AppError('test', ErrorCode.ELEMENT_NOT_FOUND);
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.SELECTOR);
+    });
+
+    it('should classify regular Error with string matching', () => {
+      const err = new Error('Selector not found');
+      const type = taskQueue.classifyError(err);
+      expect(type).toBe(ErrorType.SELECTOR);
+    });
+  });
+
+  describe('classifyErrorCode', () => {
+    it('should map SELECTOR_ERROR to SELECTOR', () => {
+      expect(classifyErrorCode(ErrorCode.SELECTOR_ERROR)).toBe(ErrorType.SELECTOR);
+    });
+
+    it('should map ELEMENT_NOT_FOUND to SELECTOR', () => {
+      expect(classifyErrorCode(ErrorCode.ELEMENT_NOT_FOUND)).toBe(ErrorType.SELECTOR);
+    });
+
+    it('should map PAGE_ACTION_FAILED to SELECTOR', () => {
+      expect(classifyErrorCode(ErrorCode.PAGE_ACTION_FAILED)).toBe(ErrorType.SELECTOR);
+    });
+
+    it('should map RATE_LIMIT_EXCEEDED to RATE_LIMIT', () => {
+      expect(classifyErrorCode(ErrorCode.RATE_LIMIT_EXCEEDED)).toBe(ErrorType.RATE_LIMIT);
+    });
+
+    it('should map NETWORK_ERROR to NETWORK', () => {
+      expect(classifyErrorCode(ErrorCode.NETWORK_ERROR)).toBe(ErrorType.NETWORK);
+    });
+
+    it('should map SESSION_EXPIRED to LOGIN', () => {
+      expect(classifyErrorCode(ErrorCode.SESSION_EXPIRED)).toBe(ErrorType.LOGIN);
+    });
+
+    it('should map LOGIN_REQUIRED to LOGIN', () => {
+      expect(classifyErrorCode(ErrorCode.LOGIN_REQUIRED)).toBe(ErrorType.LOGIN);
+    });
+
+    it('should map TIMEOUT to TIMEOUT', () => {
+      expect(classifyErrorCode(ErrorCode.TIMEOUT)).toBe(ErrorType.TIMEOUT);
+    });
+
+    it('should map UNKNOWN_ERROR to UNKNOWN', () => {
+      expect(classifyErrorCode(ErrorCode.UNKNOWN_ERROR)).toBe(ErrorType.UNKNOWN);
     });
   });
 });

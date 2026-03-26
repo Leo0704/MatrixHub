@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from './db.js';
 import { getMaintenanceWindows, getErrorWeights, getTaskStaleTimeout } from './config/runtime-config.js';
 import type { Task, TaskFilter, TaskStatus, TaskCheckpoint, Platform } from '../shared/types.js';
+import { AppError, ErrorCode, ErrorType, classifyErrorCode, isAppError } from '../shared/errors.js';
 import log from 'electron-log';
 
 export class TaskQueue {
@@ -230,12 +231,13 @@ export class TaskQueue {
   /**
    * 标记任务失败并增加重试计数（智能重试）
    */
-  markFailed(taskId: string, error: string): Task | null {
+  markFailed(taskId: string, error: Error | AppError): Task | null {
     const db = getDb();
     const task = this.get(taskId);
     if (!task) return null;
 
     const retryCount = task.retryCount + 1;
+    const errorMessage = error.message;
 
     if (retryCount >= task.maxRetries) {
       log.warn(`任务 ${taskId} 已达最大重试次数 (${task.maxRetries})`);
@@ -248,7 +250,7 @@ export class TaskQueue {
       }).catch(err => {
         log.error('[Queue] 加载ai-director失败:', err)
       })
-      return this.updateStatus(taskId, 'failed', { error: `重试次数耗尽: ${error}` });
+      return this.updateStatus(taskId, 'failed', { error: `重试次数耗尽: ${errorMessage}` });
     }
 
     const now = Date.now();
@@ -287,7 +289,7 @@ export class TaskQueue {
         updated_at = ?,
         version = version + 1
       WHERE id = ?
-    `).run(error, retryCount, now + finalDelay, now, taskId);
+    `).run(errorMessage, retryCount, now + finalDelay, now, taskId);
 
     log.info(`任务 ${taskId} 失败 [${errorType}]，` +
       `将于 ${Math.round(finalDelay)}ms 后重试 (${retryCount}/${task.maxRetries})`);
@@ -297,26 +299,29 @@ export class TaskQueue {
   /**
    * 分类错误类型
    */
-  private classifyError(error: string): string {
-    const lowerError = error.toLowerCase();
-
-    if (lowerError.includes('selector') || lowerError.includes('元素未找到') || lowerError.includes('找不到')) {
-      return 'selector';
-    }
-    if (lowerError.includes('rate') || lowerError.includes('限流') || lowerError.includes('频繁')) {
-      return 'rate_limit';
-    }
-    if (lowerError.includes('network') || lowerError.includes('网络') || lowerError.includes('连接')) {
-      return 'network';
-    }
-    if (lowerError.includes('login') || lowerError.includes('登录') || lowerError.includes('未登录') || lowerError.includes('session')) {
-      return 'login';
-    }
-    if (lowerError.includes('timeout') || lowerError.includes('超时')) {
-      return 'timeout';
+  private classifyError(error: Error | AppError): ErrorType {
+    if (isAppError(error)) {
+      return classifyErrorCode(error.code);
     }
 
-    return 'unknown';
+    // Fallback to string matching for non-AppError
+    const message = error.message.toLowerCase();
+    if (message.includes('selector') || message.includes('元素') || message.includes('element')) {
+      return ErrorType.SELECTOR;
+    }
+    if (message.includes('rate') || message.includes('限流') || message.includes('频率')) {
+      return ErrorType.RATE_LIMIT;
+    }
+    if (message.includes('network') || message.includes('网络') || message.includes('fetch')) {
+      return ErrorType.NETWORK;
+    }
+    if (message.includes('login') || message.includes('登录') || message.includes('session')) {
+      return ErrorType.LOGIN;
+    }
+    if (message.includes('timeout') || message.includes('超时')) {
+      return ErrorType.TIMEOUT;
+    }
+    return ErrorType.UNKNOWN;
   }
 
   /**

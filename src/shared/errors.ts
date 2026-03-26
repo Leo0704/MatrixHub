@@ -38,3 +38,33 @@ export class AppError extends Error {
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
 }
+
+export enum ErrorType {
+  SELECTOR = 'selector',
+  RATE_LIMIT = 'rate_limit',
+  NETWORK = 'network',
+  LOGIN = 'login',
+  TIMEOUT = 'timeout',
+  UNKNOWN = 'unknown',
+}
+
+// ErrorCode to ErrorType mapping
+export function classifyErrorCode(code: ErrorCode): ErrorType {
+  switch (code) {
+    case ErrorCode.SELECTOR_ERROR:
+    case ErrorCode.ELEMENT_NOT_FOUND:
+    case ErrorCode.PAGE_ACTION_FAILED:
+      return ErrorType.SELECTOR;
+    case ErrorCode.RATE_LIMIT_EXCEEDED:
+      return ErrorType.RATE_LIMIT;
+    case ErrorCode.NETWORK_ERROR:
+      return ErrorType.NETWORK;
+    case ErrorCode.SESSION_EXPIRED:
+    case ErrorCode.LOGIN_REQUIRED:
+      return ErrorType.LOGIN;
+    case ErrorCode.TIMEOUT:
+      return ErrorType.TIMEOUT;
+    default:
+      return ErrorType.UNKNOWN;
+  }
+}
