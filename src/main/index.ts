@@ -32,6 +32,7 @@ log.info(`平台: ${process.platform}`);
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serviceManager: ServiceManager | null = null;
+let isShuttingDown = false;
 
 function createWindow(): void {
   log.info('创建主窗口...');
@@ -323,12 +324,38 @@ app.whenReady().then(async () => {
   });
 });
 
-// 在 before-quit 时确保服务停止
-app.on('before-quit', () => {
-  log.info('[Main] 应用准备退出，停止服务...');
+// 单一 before-quit handler，执行完整清理
+app.on('before-quit', async (event) => {
+  // 阻止 Electron 的默认行为，给我们时间清理
+  event.preventDefault();
+
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  log.info('=== MatrixHub 关闭 ===');
+
+  // 1. 停止服务循环
   if (serviceManager) {
     serviceManager.stop();
+    serviceManager = null;
   }
+
+  // 2. 停止页面池清理定时器
+  stopPoolCleanup();
+
+  // 3. 停止监控定时器
+  monitoringService.stop();
+
+  // 4. 关闭所有浏览器
+  await closeAllBrowsers();
+
+  // 5. 关闭数据库
+  closeDb();
+
+  log.info('服务已关闭');
+
+  // 现在允许退出
+  app.exit(0);
 });
 
 app.on('window-all-closed', () => {
@@ -336,11 +363,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
-});
-
-app.on('before-quit', async () => {
-  log.info('=== MatrixHub 关闭 ===');
-  await shutdownServices();
 });
 
 // 注意: 不再在 will-quit 中调用 shutdownServices，
