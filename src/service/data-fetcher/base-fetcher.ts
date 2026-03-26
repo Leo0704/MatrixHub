@@ -1,7 +1,10 @@
 import { Page } from 'playwright';
 import type { Platform } from '../../shared/types.js';
 import type { HotTopic, FetchOptions, FetchResult } from './types.js';
+import { LoginRequiredError } from './types.js';
 import log from 'electron-log';
+
+const LOGIN_TIMEOUT_MS = 300000; // 5 minutes
 
 export abstract class BaseFetcher {
   protected page: Page | null = null;
@@ -19,9 +22,29 @@ export abstract class BaseFetcher {
   abstract login(): Promise<void>;
 
   protected async ensureLogin(): Promise<void> {
-    if (!(await this.checkLoginStatus())) {
+    let isLoggedIn = false;
+    try {
+      isLoggedIn = await this.checkLoginStatus();
+    } catch (err) {
+      // Network/timeout errors from checkLoginStatus indicate the page
+      // is unreachable, not that the user is logged out — rethrow
+      const error = err as Error;
+      if (error.name === 'TimeoutError' || error.name === 'TargetClosedError') {
+        log.warn(`[${this.platform}] checkLoginStatus failed (${error.name}), rethrowing`);
+        throw err;
+      }
+      // For other errors (e.g., eval errors), treat as not logged in
+      log.warn(`[${this.platform}] checkLoginStatus error, treating as not logged in:`, error.message);
+      isLoggedIn = false;
+    }
+
+    if (!isLoggedIn) {
       log.info(`[${this.platform}] 未登录，开始登录流程`);
-      await this.login();
+      try {
+        await this.login();
+      } catch (loginErr) {
+        throw new LoginRequiredError(this.platform);
+      }
     }
   }
 
@@ -32,11 +55,31 @@ export abstract class BaseFetcher {
     return this.page;
   }
 
+  /**
+   * Wait for a condition with timeout during login.
+   * Subclasses use this in their login() implementations.
+   */
+  protected async waitForLoginCondition(
+    condition: () => Promise<boolean> | boolean,
+    timeoutMs = LOGIN_TIMEOUT_MS
+  ): Promise<void> {
+    await this.page!.waitForFunction(
+      async () => {
+        try {
+          return await condition();
+        } catch {
+          return false;
+        }
+      },
+      { timeout: timeoutMs }
+    );
+  }
+
   async close(): Promise<void> {
-    if (this.page) {
+    if (this.page && !this.page.isClosed()) {
       await this.page.close();
-      this.page = null;
     }
+    this.page = null;
   }
 
   protected buildResult(topics: HotTopic[]): FetchResult {

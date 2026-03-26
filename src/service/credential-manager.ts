@@ -405,6 +405,7 @@ export class AccountManager {
       status: 'active',
       groupId: params.groupId,
       tags: params.tags ?? [],
+      version: 1,  // CAS 乐观锁初始版本
       createdAt: now,
       updatedAt: now,
     };
@@ -513,7 +514,12 @@ export class AccountManager {
     const db = getDb();
     const now = Date.now();
 
-    const sets: string[] = ['updated_at = ?'];
+    // 先读取当前 version
+    const current = this.get(accountId);
+    if (!current) return null;
+    const currentVersion = current.version ?? 1;
+
+    const sets: string[] = ['updated_at = ?', 'version = version + 1'];
     const values: any[] = [now];
 
     if (updates.displayName !== undefined) {
@@ -538,9 +544,15 @@ export class AccountManager {
     }
 
     values.push(accountId);
-    db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    values.push(currentVersion);
 
-    log.info(`账号更新: ${accountId}`);
+    // CAS: 只在 version 匹配时更新
+    const result = db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ? AND version = ?`).run(...values);
+    if (result.changes === 0) {
+      throw new Error(`账号更新冲突: ${accountId}，当前版本已变更，请重试`);
+    }
+
+    log.info(`账号更新: ${accountId} (v${currentVersion} -> v${currentVersion + 1})`);
     return this.get(accountId);
   }
 
@@ -578,6 +590,7 @@ export class AccountManager {
       groupId: row.group_id ?? undefined,
       tags: row.tags ? JSON.parse(row.tags) : [],
       lastUsedAt: row.last_used_at ?? undefined,
+      version: (row as any).version ?? 1,  // 向后兼容旧数据
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

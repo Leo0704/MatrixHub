@@ -27,7 +27,7 @@ export function TaskFilters({
           className="input"
           style={{ width: 120 }}
           value={selectedPlatform}
-          onChange={e => onPlatformChange(e.target.value as any)}
+          onChange={e => onPlatformChange(e.target.value as 'all' | Platform)}
         >
           <option value="all">全部平台</option>
           <option value="douyin">抖音</option>
@@ -39,7 +39,7 @@ export function TaskFilters({
           className="input"
           style={{ width: 120 }}
           value={filter}
-          onChange={e => onFilterChange(e.target.value as any)}
+          onChange={e => onFilterChange(e.target.value as 'all' | 'pending' | 'running' | 'completed' | 'failed')}
         >
           <option value="all">全部状态</option>
           <option value="pending">等待中</option>

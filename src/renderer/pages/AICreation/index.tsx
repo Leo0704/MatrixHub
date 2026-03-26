@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Platform } from '~shared/types';
+import type { Platform, AIRequest } from '~shared/types';
+import type { AIProvider } from '~shared/ipc-api';
 import { AIStatusIndicator } from '../../components/AIStatusIndicator';
 import PublishModal from '../../components/PublishModal';
 import { useToast } from '../../components/Toast';
@@ -86,9 +87,9 @@ export default function AICreation() {
   // 加载可用 providers
   useEffect(() => {
     window.electronAPI?.getAIProviders().then(providers => {
-      setAvailableProviders(providers.filter((p: any) => p.status === 'active'));
+      setAvailableProviders(providers.filter((p: AIProvider) => p.status === 'active'));
       if (providers.length > 0) {
-        const first = providers.find((p: any) => p.status === 'active');
+        const first = providers.find((p: AIProvider) => p.status === 'active');
         if (first) setMediaProvider({ type: first.type, model: first.models?.[0] || '' });
       }
     }).catch(() => {});
@@ -229,7 +230,7 @@ ${result}
 
       const response = await window.electronAPI?.generateAI({
         taskType: 'image',
-        providerType: mediaProvider.type as any,
+        providerType: mediaProvider.type as AIRequest['providerType'],
         model: mediaProvider.model || 'dall-e-3',
         prompt: enhancedPrompt,
         system: getImageSystemPrompt(platform),
@@ -264,7 +265,7 @@ ${result}
 
       const response = await window.electronAPI?.generateAI({
         taskType: 'voice',
-        providerType: mediaProvider.type as any,
+        providerType: mediaProvider.type as AIRequest['providerType'],
         model: mediaProvider.model || 'tts-1',
         prompt: prompt,
       });
@@ -292,7 +293,7 @@ ${result}
 
       const response = await window.electronAPI?.generateAI({
         taskType: 'video',
-        providerType: mediaProvider.type as any,
+        providerType: mediaProvider.type as AIRequest['providerType'],
         model: mediaProvider.model || '',
         prompt: enhancedPrompt,
       });

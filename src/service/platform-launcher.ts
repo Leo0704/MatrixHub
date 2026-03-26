@@ -5,7 +5,12 @@ import * as os from 'os';
 import log from 'electron-log';
 import type { Platform } from '../shared/types.js';
 import { jitterDelay } from './utils/page-helpers.js';
-import { getFingerprintScript } from './utils/fingerprint-randomizer.js';
+import { buildFingerprintScript, getHumanMouseScript } from './utils/fingerprint-randomizer.js';
+import { getAntiFingerprint } from './config/runtime-config.js';
+
+function randomBetween(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
 
 // 浏览器实例缓存（按平台区分）
 const browserPool: Map<Platform, Browser> = new Map();
@@ -29,6 +34,7 @@ const pagePool: PooledPage[] = [];
 // 页面池配置
 const POOL_CONFIG = {
   maxPoolSizePerPlatform: 5,
+  maxGlobalPoolSize: 15,               // 全局页面数上限，防止内存溢出
   idleTimeoutMs: 30 * 60 * 1000,     // 30分钟空闲超时
   cleanupIntervalMs: 5 * 60 * 1000,  // 5分钟检查一次
   maxPageAgeMs: 4 * 60 * 60 * 1000,  // 4小时最大存活
@@ -117,16 +123,21 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
   // User Agent 轮换
   const userAgent = getRandomUserAgent();
 
+  // 从配置获取反指纹参数
+  const fpConfig = getAntiFingerprint();
+  const viewportWidth = Math.floor(randomBetween(fpConfig.viewportWidthRange[0], fpConfig.viewportWidthRange[1]));
+  const viewportHeight = Math.floor(randomBetween(fpConfig.viewportHeightRange[0], fpConfig.viewportHeightRange[1]));
+
   // 启动浏览器
   const browser = await chromium.launch({
     headless: !process.env.DEV_DEBUG_BROWSER,
     args,
   });
 
-  // 创建 context 并设置
+  // 创建 context 并设置（viewport 尺寸来自配置）
   const context = await browser.newContext({
     userAgent,
-    viewport: { width: 1280, height: 800 },
+    viewport: { width: viewportWidth, height: viewportHeight },
     timezoneId: 'Asia/Shanghai',
     locale: 'zh-CN',
     permissions: [],
@@ -134,12 +145,17 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
 
   contextPool.set(platform, context);
 
-  // 注入反检测脚本（运行在浏览器中）
-  // 组合：指纹随机化 + Chrome runtime 模拟
-  await context.addInitScript(`
-    ${getFingerprintScript()}
+  // 生成并注入反指纹脚本（指纹随机化 + Chrome runtime 模拟）
+  const fingerprintScript = buildFingerprintScript(viewportWidth, viewportHeight, fpConfig);
+  const humanMouseScript = getHumanMouseScript();
 
-    // 模拟 Chrome runtime（原有功能保留）
+  await context.addInitScript(`
+    ${fingerprintScript}
+
+    // 人类鼠标行为脚本
+    ${humanMouseScript}
+
+    // 模拟 Chrome runtime
     globalThis.chrome = {
       runtime: { id: undefined, getURL: (s) => s },
       app: {},
@@ -147,7 +163,7 @@ async function launchBrowser(platform: Platform): Promise<Browser> {
     };
   `);
 
-  log.info(`浏览器启动成功: ${platform}, User-Agent: ${userAgent.substring(0, 50)}...`);
+  log.info(`浏览器启动成功: ${platform}, UA: ${userAgent.substring(0, 50)}..., VP: ${viewportWidth}x${viewportHeight}`);
   return browser;
 }
 
@@ -201,21 +217,32 @@ export async function createPage(platform: Platform, accountId?: string): Promis
     }
   }
 
+  // 全局池大小限制
+  if (pagePool.length >= POOL_CONFIG.maxGlobalPoolSize) {
+    throw new Error(`[PagePool] 全局页面池已满 (${POOL_CONFIG.maxGlobalPoolSize})，无法创建新页面`);
+  }
+
   // 创建新页面
   const browser = await getBrowser(platform);
   let context = contextPool.get(platform);
   if (!context) {
+    const fpConfig = getAntiFingerprint();
+    const vpWidth = Math.floor(randomBetween(fpConfig.viewportWidthRange[0], fpConfig.viewportWidthRange[1]));
+    const vpHeight = Math.floor(randomBetween(fpConfig.viewportHeightRange[0], fpConfig.viewportHeightRange[1]));
     context = await browser.newContext({
       userAgent: getRandomUserAgent(),
-      viewport: { width: 1280, height: 800 },
+      viewport: { width: vpWidth, height: vpHeight },
       timezoneId: 'Asia/Shanghai',
       locale: 'zh-CN',
       permissions: [],
     });
 
-    // 注入反检测脚本
+    // 注入反检测脚本 + 人类鼠标行为
+    const fingerprintScript = buildFingerprintScript(vpWidth, vpHeight, fpConfig);
+    const humanMouseScript = getHumanMouseScript();
     await context.addInitScript(`
-      ${getFingerprintScript()}
+      ${fingerprintScript}
+      ${humanMouseScript}
       globalThis.chrome = {
         runtime: { id: undefined, getURL: (s) => s },
         app: {},
@@ -317,9 +344,13 @@ function cleanupPagesForPlatform(platform: Platform): void {
 }
 
 /**
- * 从池中移除页面
+ * 从池中移除页面（幂等，防 double-removal）
  */
 function removeFromPool(pooled: PooledPage): void {
+  // 防止重复移除
+  if (pooled.removed) return;
+  pooled.removed = true;
+
   const idx = pagePool.indexOf(pooled);
   if (idx !== -1) {
     pagePool.splice(idx, 1);
@@ -335,7 +366,9 @@ function removeFromPool(pooled: PooledPage): void {
   }
 
   try {
-    pooled.page.close();
+    if (!pooled.page.isClosed()) {
+      pooled.page.close().catch(() => {});
+    }
   } catch (err) {
     log.warn(`[PagePool] 关闭页面失败:`, err);
   }

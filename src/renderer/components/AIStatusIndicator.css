@@ -1,9 +1,38 @@
 .ai-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid;
+  transition: all 200ms ease;
 }
 
-.ai-status.loading { color: var(--text-secondary); }
-.ai-status.success { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
-.ai-status.error { color: #ef4444; background: rgba(239, 68, 68, 0.1); cursor: pointer; }
+.ai-status.loading {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-color: var(--border-default);
+}
+
+.ai-status.success {
+  color: var(--success);
+  background: var(--success-glow);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.ai-status.error {
+  color: var(--error);
+  background: var(--error-glow);
+  border-color: rgba(248, 113, 113, 0.25);
+  cursor: pointer;
+}
+
+.ai-status-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

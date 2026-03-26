@@ -83,6 +83,12 @@ function initializeSchema(db: Database.Database): void {
     db.exec(`ALTER TABLE accounts ADD COLUMN creation_status TEXT DEFAULT 'complete' CHECK(creation_status IN ('pending', 'complete', 'failed'))`);
   }
 
+  // 向后兼容：添加 version 列用于 CAS 乐观锁
+  const hasVersion = accountTableInfo.some((col) => col.name === 'version');
+  if (!hasVersion) {
+    db.exec(`ALTER TABLE accounts ADD COLUMN version INTEGER DEFAULT 1`);
+  }
+
   // 向后兼容：已存在的数据库添加 pipeline 相关列
   const hasPipelineId = tableInfo.some((col) => col.name === 'pipeline_id');
   const hasPipelineStatus = tableInfo.some((col) => col.name === 'pipeline_status');
@@ -197,24 +203,6 @@ function initializeSchema(db: Database.Database): void {
     );
   `);
 
-  // Selector 版本表（平台 UI 元素定位器）
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS selector_versions (
-      id TEXT PRIMARY KEY,
-      platform TEXT NOT NULL,
-      selector_key TEXT NOT NULL,
-      selector_value TEXT NOT NULL,
-      version INTEGER NOT NULL DEFAULT 1,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      success_rate REAL DEFAULT 1.0,
-      failure_count INTEGER DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_selectors_platform ON selector_versions(platform, selector_key);
-  `);
-
   // 告警表
   db.exec(`
     CREATE TABLE IF NOT EXISTS alerts (
@@ -275,14 +263,16 @@ function initializeSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS pipeline_tasks (
       id TEXT PRIMARY KEY,
+      trace_id TEXT NOT NULL,
       input_type TEXT NOT NULL CHECK(input_type IN ('url', 'product_detail', 'hot_topic')),
       input_data TEXT NOT NULL DEFAULT '{}',
       platform TEXT NOT NULL CHECK(platform IN ('douyin', 'kuaishou', 'xiaohongshu')),
       config TEXT NOT NULL DEFAULT '{}',
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'compensating', 'compensated')),
       steps TEXT NOT NULL DEFAULT '[]',
       current_step TEXT,
       result TEXT,
+      compensation TEXT,
       error TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -445,7 +435,6 @@ export function exportData(): ExportData {
     accounts: database.prepare('SELECT * FROM accounts').all() as ExportData['accounts'],
     tasks: database.prepare('SELECT * FROM tasks').all() as ExportData['tasks'],
     groups: database.prepare('SELECT * FROM account_groups').all() as ExportData['groups'],
-    selectors: database.prepare('SELECT * FROM selector_versions').all() as ExportData['selectors'],
   };
 }
 
@@ -453,7 +442,7 @@ export function importData(data: ExportData): void {
   const database = getDb();
   const tx = database.transaction(() => {
     // Clear existing data (except credentials for security)
-    database.exec('DELETE FROM accounts; DELETE FROM tasks; DELETE FROM account_groups; DELETE FROM selector_versions;');
+    database.exec('DELETE FROM accounts; DELETE FROM tasks; DELETE FROM account_groups;');
 
     // Re-import accounts
     const accountStmt = database.prepare(`

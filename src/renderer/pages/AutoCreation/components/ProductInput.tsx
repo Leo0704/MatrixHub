@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import type { Platform } from '~shared/types';
+import { useState } from 'react';
 
 interface ProductInputProps {
   value: { type: 'url' | 'product_detail'; url?: string; productDetail?: string };

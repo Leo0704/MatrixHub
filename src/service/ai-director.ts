@@ -5,9 +5,17 @@ import { callAI } from './strategy-engine.js'
 import { getHotTopics } from './hot-topic-detector.js'
 import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, Platform, RetryAdvice } from '../shared/types.js'
 import log from 'electron-log'
+import { getAiMaxAnalysisPerTask } from './config/runtime-config.js'
 
 // ============ 并发控制 ============
 let pendingAnalysis = false
+
+// 向 TaskQueue 注册失败回调（解循环依赖）
+taskQueue.onFailure((task) => {
+  analyzeFailure(task).catch((err) => {
+    log.error('[AIDirector] analyzeFailure 注册回调执行失败:', err);
+  });
+});
 const analysisQueue: Task[] = []
 
 async function analyzeWithQueue(task: Task): Promise<void> {
@@ -26,7 +34,7 @@ async function analyzeWithQueue(task: Task): Promise<void> {
 }
 
 // ============ 循环保护 ============
-const MAX_ANALYSIS_PER_TASK = 2
+// MAX_ANALYSIS_PER_TASK 从 runtime-config 动态读取（支持运行时配置）
 
 // ============ AIFailureResult → AIDecision 转换 ============
 function buildFailureDecision(result: AIFailureResult, task: Task): AIDecision {
@@ -103,7 +111,7 @@ async function analyzeFailureImpl(task: Task): Promise<void> {
   const row = db.prepare('SELECT ai_analysis_count FROM tasks WHERE id = ?').get(task.id) as { ai_analysis_count: number } | undefined
   const analysisCount = row?.ai_analysis_count ?? 0
 
-  if (analysisCount >= MAX_ANALYSIS_PER_TASK) {
+  if (analysisCount >= getAiMaxAnalysisPerTask()) {
     broadcastToRenderers('ai:feedback', {
       taskId: task.id,
       skipped: true,
@@ -130,11 +138,16 @@ async function analyzeFailureImpl(task: Task): Promise<void> {
     broadcastToRenderers('ai:feedback', { taskId: task.id, result })
 
   } catch (err) {
-    log.error('[AIDirector] analyzeFailure 失败:', err)
+    const errorMsg = (err as Error).message;
+    // AI 服务不可用时降级到本地日志记录，不抛异常
+    log.warn(`[AIDirector] AI 分析不可用，降级到本地日志: ${task.id} - ${errorMsg}`);
+    // 写入本地日志作为降级
+    log.info(`[AIDirector][Fallback] task=${task.id} platform=${task.platform} error=${errorMsg} retryCount=${task.retryCount}`);
     broadcastToRenderers('ai:feedback', {
       taskId: task.id,
-      error: (err as Error).message
-    })
+      error: errorMsg,
+      degraded: true  // 标记为降级状态
+    });
   }
 }
 

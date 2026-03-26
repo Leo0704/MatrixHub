@@ -66,6 +66,7 @@ export interface Account {
   lastValidatedAt?: number;
   groupId?: string;
   tags: string[];
+  version: number;  // CAS 乐观锁版本号
   createdAt: number;
   updatedAt: number;
 }
@@ -255,18 +256,24 @@ export interface PipelineStep {
 
 export interface PipelineTask {
   id: string;
+  traceId: string;  // 贯穿整个 pipeline 的追踪 ID
   input: InputSource;
   config: PipelineConfig;
   platform: Platform;
   steps: PipelineStep[];
   currentStep: 'parse' | 'text' | 'voice' | 'publish';
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'compensating' | 'compensated';
   result?: {
     text?: string;
     imageUrls?: string[];
     voiceBase64?: string;
     videoUrl?: string;
     publishedTaskIds?: string[];
+  };
+  compensation?: {
+    parse?: { cleanupFiles?: string[] };
+    text?: { deletedMedia?: string[] };
+    publish?: { deletedTaskIds?: string[] };
   };
   error?: string;
   createdAt: number;

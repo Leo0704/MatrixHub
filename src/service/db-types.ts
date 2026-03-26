@@ -47,6 +47,7 @@ export interface AccountRow {
   group_id: string | null;
   tags: string;
   creation_status: 'pending' | 'complete' | 'failed';
+  version: number;
 }
 
 export interface AccountGroupRow {
@@ -80,19 +81,6 @@ export interface AiProviderRow {
   models: string;
   is_default: number;
   status: 'active' | 'inactive' | 'error';
-  created_at: number;
-  updated_at: number;
-}
-
-export interface SelectorVersionRow {
-  id: string;
-  platform: string;
-  selector_key: string;
-  selector_value: string;
-  version: number;
-  is_active: number;
-  success_rate: number;
-  failure_count: number;
   created_at: number;
   updated_at: number;
 }

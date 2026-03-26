@@ -78,7 +78,10 @@ export class DouYinClient {
    */
   private async getMsToken(): Promise<string> {
     try {
-      const localStorage = await this.page.evaluate(() => window.localStorage);
+      const localStorage = await this.page.evaluate(
+        () => window.localStorage,
+        { timeout: 10000 }
+      );
       return localStorage.get('xmst') || '';
     } catch {
       return '';

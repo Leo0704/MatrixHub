@@ -1,4 +1,4 @@
-import type { ElectronAPI } from '../preload/index.js';
+import type { ElectronAPI } from '../shared/ipc-api.js';
 
 declare global {
   interface Window {

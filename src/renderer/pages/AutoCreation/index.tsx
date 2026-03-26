@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import type { Platform, Account } from '~shared/types';
+import { useState, useEffect } from 'react';
+import type { Platform, Account, PipelineTask } from '~shared/types';
 import { ProductInput } from './components/ProductInput';
 import { PipelineConfig } from './components/PipelineConfig';
 import { PipelineProgress } from './components/PipelineProgress';
@@ -18,7 +18,7 @@ export default function AutoCreation() {
     targetAccounts: [] as string[],
   });
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [pipelineTask, setPipelineTask] = useState<any>(null);
+  const [pipelineTask, setPipelineTask] = useState<PipelineTask | null>(null);
   const [running, setRunning] = useState(false);
   const { showToast } = useToast();
 
@@ -32,19 +32,20 @@ export default function AutoCreation() {
   // 监听 pipeline 更新
   useEffect(() => {
     window.electronAPI?.onPipelineUpdated((task) => {
-      setPipelineTask(task);
-      if (task.status === 'completed') {
+      const fullTask = task as unknown as import('~shared/types').PipelineTask;
+      setPipelineTask(fullTask);
+      if (fullTask.status === 'completed') {
         setRunning(false);
         showToast('流水线执行完成！', 'success');
-      } else if (task.status === 'failed') {
+      } else if (fullTask.status === 'failed') {
         setRunning(false);
-        showToast(`执行失败: ${task.error}`, 'error');
+        showToast(`执行失败: ${fullTask.error}`, 'error');
       }
     });
   }, []);
 
   const handleStart = async () => {
-    if (!input.url && !input.productDetail) {
+    if (!input.url && !(input as { productDetail?: string }).productDetail) {
       showToast('请输入产品链接或详情', 'warning');
       return;
     }
@@ -60,7 +61,7 @@ export default function AutoCreation() {
         input: {
           type: input.type,
           url: input.url,
-          productDetail: input.productDetail,
+          productDetail: (input as { productDetail?: string }).productDetail,
         },
         config: {
           contentType: config.contentType,
@@ -73,7 +74,7 @@ export default function AutoCreation() {
       });
 
       if (result?.success) {
-        setPipelineTask(result.task);
+        setPipelineTask(result.task as import('~shared/types').PipelineTask);
         showToast('流水线已启动', 'success');
       } else {
         showToast(result?.error || '启动失败', 'error');
@@ -110,18 +111,18 @@ export default function AutoCreation() {
 
           <div className="card">
             <h3>产品信息</h3>
-            <ProductInput value={input} onChange={setInput} />
+            <ProductInput value={input} onChange={(val) => setInput(val as { type: 'url'; url: string })} />
           </div>
 
           <div className="card">
             <h3>生成与发布配置</h3>
-            <PipelineConfig config={config} accounts={accounts} onChange={setConfig} />
+            <PipelineConfig config={config} accounts={accounts} onChange={(val) => setConfig(val as typeof config)} />
           </div>
 
           <button
             className="btn btn-primary btn-large"
             onClick={handleStart}
-            disabled={running || (!input.url && !input.productDetail)}
+            disabled={running || (!input.url && !(input as { productDetail?: string }).productDetail)}
           >
             {running ? '执行中...' : '启动自动化创作'}
           </button>

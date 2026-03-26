@@ -317,11 +317,11 @@ export class MonitoringService {
       id: row.id,
       type: row.type as Alert['type'],
       title: row.title,
-      message: row.message,
+      message: row.message ?? '',
       timestamp: row.timestamp,
       acknowledged: row.acknowledged === 1,
-      metricName: row.metric_name,
-      metricValue: row.metric_value,
+      metricName: row.metric_name ?? undefined,
+      metricValue: row.metric_value ?? undefined,
     }));
   }
 
@@ -448,25 +448,6 @@ export class MonitoringService {
       this.recordMetric('task_max_duration_ms', durationStats.max_duration_ms);
     }
 
-    // ============ 选择器命中率 ============
-    interface SelectorStatRow { platform: string; selector_key: string; success_rate: number; failure_count: number }
-    const selectorStats = asRows<SelectorStatRow>(db.prepare(`
-      SELECT
-        platform,
-        selector_key,
-        success_rate,
-        failure_count
-      FROM selector_versions
-      WHERE is_active = 1
-    `).all());
-
-    for (const stat of selectorStats) {
-      this.recordMetric('selector_success_rate', stat.success_rate, {
-        platform: stat.platform,
-        selector: stat.selector_key,
-      });
-    }
-
     // ============ 重试统计 ============
     const retryStats = db.prepare(`
       SELECT
@@ -521,10 +502,6 @@ export class MonitoringService {
       avgDuration: number;
       taskCount: number;
     }>;
-    selectors: Record<string, Record<string, {
-      successRate: number;
-      isActive: boolean;
-    }>>;
     pagePool: ReturnType<typeof getPagePoolStatus>;
     alerts: Alert[];
   }> {
@@ -545,7 +522,7 @@ export class MonitoringService {
       WHERE updated_at > ?
     `).get(oneDayAgo) as { total: number; completed: number; failed: number; avg_duration: number; total_retries: number } | undefined;
 
-    const successRate = overview.total > 0 ? overview.completed / overview.total : 1;
+    const successRate = (overview?.total ?? 0) > 0 ? (overview?.completed ?? 0) / (overview?.total ?? 0) : 1;
 
     // By platform
     interface PlatformStatRow2 { platform: string; total: number; completed: number; avg_duration: number }
@@ -570,32 +547,14 @@ export class MonitoringService {
       };
     }
 
-    // Selectors
-    interface SelectorStatRow2 { platform: string; selector_key: string; success_rate: number; is_active: number }
-    const selectorStats = asRows<SelectorStatRow2>(db.prepare(`
-      SELECT platform, selector_key, success_rate, is_active
-      FROM selector_versions
-      WHERE is_active = 1
-    `).all());
-
-    const selectors: Record<string, Record<string, any>> = {};
-    for (const stat of selectorStats) {
-      if (!selectors[stat.platform]) selectors[stat.platform] = {};
-      selectors[stat.platform][stat.selector_key] = {
-        successRate: stat.success_rate,
-        isActive: stat.is_active === 1,
-      };
-    }
-
     return {
       overview: {
-        totalTasks: overview.total ?? 0,
+        totalTasks: overview?.total ?? 0,
         successRate,
-        avgDuration: overview.avg_duration ?? 0,
-        totalRetries: overview.total_retries ?? 0,
+        avgDuration: overview?.avg_duration ?? 0,
+        totalRetries: overview?.total_retries ?? 0,
       },
       byPlatform,
-      selectors,
       pagePool: getPagePoolStatus(),
       alerts: this.getAlerts({ limit: 10 }),
     };

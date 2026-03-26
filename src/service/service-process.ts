@@ -17,6 +17,7 @@ import { aiGateway } from './ai-gateway.js';
 import { dailyBriefingAll, checkHotTopics } from './ai-director.js';
 import { sleep } from './utils/sleep.js';
 import type { Task, Platform } from '../shared/types.js';
+import { getActiveHours } from './config/runtime-config.js';
 import log from 'electron-log';
 import {
   executePublishTask,
@@ -128,7 +129,13 @@ export async function startServiceLoop(): Promise<void> {
       const beijingHour = Math.floor((beijingMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
       const beijingMinute = Math.floor((beijingMs % (60 * 60 * 1000)) / (60 * 1000));
       if (beijingHour === 8 && beijingMinute < 5) {
-        dailyBriefingAll().catch(err => log.error('[Service] 每日简报失败:', err));
+        // 活跃时段感知：只在用户活跃时段内执行简报
+        const activeHours = getActiveHours();
+        if (beijingHour >= activeHours.start && beijingHour < activeHours.end) {
+          dailyBriefingAll().catch(err => log.error('[Service] 每日简报失败:', err));
+        } else {
+          log.debug(`[Service] 跳过每日简报：不在活跃时段 (${activeHours.start}:00-${activeHours.end}:00)`);
+        }
       }
     };
 
@@ -234,7 +241,7 @@ async function executeTask(task: Task): Promise<void> {
     }
 
     log.error(`[Service] 任务失败: ${task.id}`, err.message);
-    taskQueue.markFailed(task.id, err.message);
+    taskQueue.markFailed(task.id, err);
   } finally {
     runningTasks.delete(task.id);
   }

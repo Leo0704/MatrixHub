@@ -1,9 +1,11 @@
+import { memo } from 'react';
+
 interface TopicInputProps {
   topic: string;
   onChange: (topic: string) => void;
 }
 
-export function TopicInput({ topic, onChange }: TopicInputProps) {
+export const TopicInput = memo(function TopicInput({ topic, onChange }: TopicInputProps) {
   return (
     <div style={{ marginBottom: 'var(--space-lg)' }}>
       <label style={labelStyle}>创作主题</label>
@@ -14,6 +16,7 @@ export function TopicInput({ topic, onChange }: TopicInputProps) {
           height: 100,
           padding: 'var(--space-md)',
           resize: 'none',
+          lineHeight: 1.6,
         }}
         placeholder="输入你想要创作的主题..."
         value={topic}
@@ -21,12 +24,12 @@ export function TopicInput({ topic, onChange }: TopicInputProps) {
       />
     </div>
   );
-}
+});
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
   fontSize: 13,
   fontWeight: 500,
   color: 'var(--text-secondary)',
-  marginBottom: 'var(--space-sm)'
+  marginBottom: 'var(--space-sm)',
 };

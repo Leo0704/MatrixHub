@@ -45,7 +45,7 @@ export async function generateContent(ctx: GenerationContext): Promise<Generatio
     // 可选配音（作为语音版本附件）
     if (generateVoice) {
       log.info('[ContentGenerator] 生成配音（语音版本附件）...');
-      result.voiceBase64 = await generateVoice(platform, product, result.text);
+      result.voiceBase64 = await generateVoiceover(platform, product, result.text);
     }
   } else {
     // 视频模式：文案 → 视频（视频自带音频，轮询等待）
@@ -290,7 +290,7 @@ async function generateImage(platform: Platform, product: ParsedProduct, text: s
 /**
  * 生成配音
  */
-async function generateVoice(platform: Platform, product: ParsedProduct, text: string): Promise<string> {
+async function generateVoiceover(platform: Platform, product: ParsedProduct, text: string): Promise<string> {
   const voiceContext = getPlatformVoiceContext(platform);
 
   // 配音文本要简洁

@@ -1,6 +1,6 @@
 import { Page } from 'playwright';
 import { createPage, screenshot } from './platform-launcher.js';
-import { selectorManager, DEFAULT_SELECTORS } from './selector-versioning.js';
+import { getPublishSelectors } from './config/selectors.js';
 import { taskQueue } from './queue.js';
 import { rateLimiter } from './rate-limiter.js';
 import type { Platform, Task, ExecutionContext } from '../shared/types.js';
@@ -90,7 +90,7 @@ export class PlatformAutomation {
           break;
       }
 
-      selectorManager.reportSuccess(platform, 'publish_button');
+      log.info(`发布成功: ${platform}`);
 
       // 获取发布后的真实 URL
       const publishedUrl = this.page ? this.page.url() : null;
@@ -101,12 +101,6 @@ export class PlatformAutomation {
       };
     } catch (error) {
       const err = error as Error;
-
-      // 报告选择器失败
-      const lastSelector = this.getLastFailedSelector(err.message);
-      if (lastSelector) {
-        selectorManager.reportFailure(platform, lastSelector);
-      }
 
       // 保存检查点以便恢复
       taskQueue.saveCheckpoint({
@@ -152,36 +146,25 @@ export class PlatformAutomation {
    * 检查登录状态
    */
   private async checkLoginState(platform: Platform): Promise<boolean> {
-    const selector = selectorManager.get(platform, 'login_state');
+    const loginStateSelectors = getPublishSelectors(platform, 'login_state');
 
-    if (!selector) {
-      // 使用默认选择器注册
-      const defaults = DEFAULT_SELECTORS[platform];
-      if (defaults.login_state) {
-        selectorManager.register({
-          platform,
-          selectorKey: 'login_state',
-          value: defaults.login_state.css,
-          type: 'css',
-        });
+    for (const sel of loginStateSelectors) {
+      try {
+        await this.page!.waitForSelector(sel.value, { timeout: 5000 });
+        return true;
+      } catch {
+        // 继续试下一个
       }
     }
 
-    try {
-      if (selector) {
-        await this.page!.waitForSelector(selector.value, { timeout: 5000 });
-        return true;
-      }
-    } catch {
-      // 可能在登录页
-      const loginSelector = selectorManager.get(platform, 'login_button');
-      if (loginSelector) {
-        try {
-          await this.page!.waitForSelector(loginSelector.value, { timeout: 3000 });
-          return false;
-        } catch {
-          // 未知状态
-        }
+    // 尝试登录按钮（未登录状态）
+    const loginButtonSelectors = getPublishSelectors(platform, 'login_button');
+    for (const sel of loginButtonSelectors) {
+      try {
+        await this.page!.waitForSelector(sel.value, { timeout: 3000 });
+        return false;
+      } catch {
+        // 继续试下一个
       }
     }
 
@@ -193,17 +176,31 @@ export class PlatformAutomation {
    */
   private async fillPublishForm(platform: Platform, payload: Record<string, unknown>): Promise<void> {
     // 填写标题
-    const titleSelector = selectorManager.get(platform, 'title_input');
-    if (titleSelector && payload.title) {
-      await this.page!.fill(titleSelector.value, payload.title as string);
-      selectorManager.reportSuccess(platform, 'title_input');
+    if (payload.title) {
+      const titleSelectors = getPublishSelectors(platform, 'title_input');
+      for (const sel of titleSelectors) {
+        try {
+          await this.page!.fill(sel.value, payload.title as string);
+          log.info(`标题已填写: ${platform}, selector=${sel.value}`);
+          break;
+        } catch {
+          // 继续试下一个
+        }
+      }
     }
 
     // 填写内容
-    const contentSelector = selectorManager.get(platform, 'content_input');
-    if (contentSelector && payload.content) {
-      await this.page!.fill(contentSelector.value, payload.content as string);
-      selectorManager.reportSuccess(platform, 'content_input');
+    if (payload.content) {
+      const contentSelectors = getPublishSelectors(platform, 'content_input');
+      for (const sel of contentSelectors) {
+        try {
+          await this.page!.fill(sel.value, payload.content as string);
+          log.info(`内容已填写: ${platform}, selector=${sel.value}`);
+          break;
+        } catch {
+          // 继续试下一个
+        }
+      }
     }
 
     log.info(`表单已填写: ${platform}`);
@@ -213,25 +210,32 @@ export class PlatformAutomation {
    * 确认发布
    */
   private async confirmPublish(platform: Platform): Promise<void> {
-    const publishSelector = selectorManager.get(platform, 'publish_confirm');
-    if (publishSelector) {
-      const currentUrl = this.page!.url();
-      await this.page!.click(publishSelector.value);
+    const publishSelectors = getPublishSelectors(platform, 'publish_confirm');
 
-      // 等待页面导航或成功提示出现
+    for (const sel of publishSelectors) {
       try {
-        await Promise.race([
-          this.page!.waitForURL(url => url !== currentUrl, { timeout: 10000 }),
-          this.page!.waitForSelector('[class*="success"], [class*="publish-success"], [data-e2e="success"]', { timeout: 10000 }),
-        ]);
-      } catch {
-        // 如果等待失败，至少等待一下让发布完成
-        await this.page!.waitForTimeout(2000);
-      }
+        const currentUrl = this.page!.url();
+        await this.page!.click(sel.value);
 
-      selectorManager.reportSuccess(platform, 'publish_confirm');
-      log.info(`发布确认: ${platform}`);
+        // 等待页面导航或成功提示出现
+        try {
+          await Promise.race([
+            this.page!.waitForURL(url => url.href !== currentUrl, { timeout: 10000 }),
+            this.page!.waitForSelector('[class*="success"], [class*="publish-success"], [data-e2e="success"]', { timeout: 10000 }),
+          ]);
+        } catch {
+          // 如果等待失败，至少等待一下让发布完成
+          await this.page!.waitForTimeout(2000);
+        }
+
+        log.info(`发布确认成功: ${platform}, selector=${sel.value}`);
+        return;
+      } catch {
+        // 继续试下一个选择器
+      }
     }
+
+    log.warn(`发布确认：所有选择器均失败: ${platform}`);
   }
 
   /**
@@ -250,25 +254,6 @@ export class PlatformAutomation {
     } catch {
       return '{}';
     }
-  }
-
-  /**
-   * 从错误消息中提取失败的选择器 key
-   */
-  private getLastFailedSelector(errorMsg: string): string | null {
-    const selectors = [
-      'title_input', 'content_input', 'publish_button',
-      'publish_confirm', 'login_state', 'login_button',
-    ];
-
-    for (const sel of selectors) {
-      if (errorMsg.includes(sel)) {
-        return sel;
-      }
-    }
-
-    // 尝试从 selector_manager 获取当前活跃选择器
-    return null;
   }
 
   /**

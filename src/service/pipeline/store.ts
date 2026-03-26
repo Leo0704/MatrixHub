@@ -20,10 +20,11 @@ export function savePipelineTask(task: PipelineTask): void {
   const steps = JSON.stringify(task.steps);
   db.prepare(`
     INSERT OR REPLACE INTO pipeline_tasks
-    (id, input_type, input_data, platform, config, status, steps, current_step, result, error, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, trace_id, input_type, input_data, platform, config, status, steps, current_step, result, compensation, error, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     task.id,
+    task.traceId,
     task.input.type,
     JSON.stringify(task.input),
     task.platform,
@@ -32,6 +33,7 @@ export function savePipelineTask(task: PipelineTask): void {
     steps,
     task.currentStep,
     task.result ? JSON.stringify(task.result) : null,
+    task.compensation ? JSON.stringify(task.compensation) : null,
     task.error ?? null,
     task.createdAt,
     task.updatedAt
@@ -48,13 +50,15 @@ export function updatePipelineStatus(id: string, status: string): void {
 function rowToPipelineTask(row: PipelineTaskRow): PipelineTask {
   return {
     id: row.id,
+    traceId: (row as any).trace_id ?? row.id,
     input: JSON.parse(row.input_data),
     config: JSON.parse(row.config),
     platform: row.platform,
     status: row.status,
     steps: JSON.parse(row.steps),
-    currentStep: row.current_step,
+    currentStep: row.current_step as "parse" | "text" | "voice" | "publish",
     result: row.result ? JSON.parse(row.result) : undefined,
+    compensation: (row as any).compensation ? JSON.parse((row as any).compensation) : undefined,
     error: row.error ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

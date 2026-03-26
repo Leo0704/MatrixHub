@@ -51,6 +51,7 @@ enum CircuitState {
 const DEFAULT_FAILURE_THRESHOLD = 5;
 const DEFAULT_RESET_TIMEOUT = 60000;  // 1分钟后重试
 const DEFAULT_SUCCESS_THRESHOLD = 3;   // 半开后需要 3 次成功才关闭
+const REQUEST_TIMEOUT_MS = 60000;      // 所有 fetch 请求的统一超时
 
 class Breaker {
   private state: CircuitState = CircuitState.CLOSED;
@@ -183,7 +184,7 @@ export class AIGateway {
           return this.callProvider(provider, request);
         });
 
-        // 如果请求了 JSON 格式响应，尝试解析
+        // 如果请求了 JSON 格式响应，尝试解析（带 fallback）
         if (request.responseFormat === 'json') {
           try {
             const structuredContent = JSON.parse(content);
@@ -197,7 +198,19 @@ export class AIGateway {
               latencyMs: Date.now() - startTime,
             };
           } catch {
-            // JSON 解析失败，返回错误而不是 fallback
+            // JSON 解析失败，尝试从损坏内容中提取 JSON（fallback）
+            const extracted = this.tryExtractJSON(content);
+            if (extracted !== null) {
+              return {
+                success: true,
+                content,
+                structuredContent: extracted,
+                contentType: 'text',
+                provider: provider.name,
+                model: request.model ?? provider.models[0],
+                latencyMs: Date.now() - startTime,
+              };
+            }
             return {
               success: false,
               error: `JSON解析失败: ${content.substring(0, 100)}...`,
@@ -271,6 +284,29 @@ export class AIGateway {
     }
 
     return result;
+  }
+
+  /**
+   * 尝试从损坏的文本中提取 JSON（fallback when JSON.parse fails）
+   */
+  private tryExtractJSON(content: string): Record<string, unknown> | null {
+    // 策略1：trim 后直接 JSON.parse
+    const trimmed = content.trim();
+    try { return JSON.parse(trimmed); } catch { /* ignore */ }
+
+    // 策略2：去掉 markdown code fence（如 ```json ... ```）
+    const withoutFence = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    try { return JSON.parse(withoutFence); } catch { /* ignore */ }
+
+    // 策略3：找到第一个 { 到最后一个 } 之间的内容
+    const firstBrace = withoutFence.indexOf('{');
+    const lastBrace = withoutFence.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const substr = withoutFence.substring(firstBrace, lastBrace + 1);
+      try { return JSON.parse(substr); } catch { /* ignore */ }
+    }
+
+    return null;
   }
 
   /**
@@ -367,6 +403,7 @@ export class AIGateway {
     const imageModel = model || 'dall-e-3';
 
     const response = await fetch(`${provider.baseUrl}/images/generations`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -406,6 +443,7 @@ export class AIGateway {
     const imageModel = model || 'doubao-image';
 
     const response = await fetch(`${provider.baseUrl}/images/generations`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -445,6 +483,7 @@ export class AIGateway {
     const imageModel = model || 'image-01';
 
     const response = await fetch(`${provider.baseUrl}/images/generations`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -504,6 +543,7 @@ export class AIGateway {
     const voiceModel = model || 'tts-1';
 
     const response = await fetch(`${provider.baseUrl}/audio/speech`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -533,6 +573,7 @@ export class AIGateway {
     const voiceModel = model || 'Cosmos-1.0';
 
     const response = await fetch(`${provider.baseUrl}/audio/speech`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -565,6 +606,7 @@ export class AIGateway {
     const voiceModel = model || 'Speech-02-Hd';
 
     const response = await fetch(`${provider.baseUrl}/t2a_v2`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -614,6 +656,7 @@ export class AIGateway {
     const videoModel = model || 'dreamina-video';
 
     const response = await fetch(`${provider.baseUrl}/v1/video/generate`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -659,6 +702,7 @@ export class AIGateway {
     const videoModel = model || 'video-01';
 
     const response = await fetch(`${provider.baseUrl}/v1/video/generate`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -707,6 +751,7 @@ export class AIGateway {
     for (const endpoint of endpoints) {
       try {
         const response = await fetch(`${provider.baseUrl}${endpoint}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -754,6 +799,7 @@ export class AIGateway {
 
   private async callOpenAI(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -785,6 +831,7 @@ export class AIGateway {
 
   private async callAnthropic(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const response = await fetch(`${provider.baseUrl}/messages`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -815,6 +862,7 @@ export class AIGateway {
 
   private async callOllama(provider: AIProvider, model: string, request: AIRequest): Promise<string> {
     const response = await fetch(`${provider.baseUrl}/api/generate`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -840,6 +888,7 @@ export class AIGateway {
    */
   private async callOpenAICompatible(provider: AIProvider, model: string, request: AIRequest, apiKey: string): Promise<string> {
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -881,6 +930,7 @@ export class AIGateway {
     messages.push({ role: 'user', content: request.prompt });
 
     const response = await fetch(`${provider.baseUrl}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -982,6 +1032,49 @@ export class AIGateway {
   /**
    * 加载所有 Provider
    */
+  async seedDefaultProviders(): Promise<void> {
+    const db = getDb();
+    const now = Date.now();
+
+    const defaults: Array<{
+      id: string; name: string; type: AIProviderType; baseUrl: string; models: string[];
+    }> = [
+      { id: 'prov-openai', name: 'OpenAI', type: 'openai', baseUrl: 'https://api.openai.com', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-3.5-turbo'] },
+      { id: 'prov-anthropic', name: 'Anthropic', type: 'anthropic', baseUrl: 'https://api.anthropic.com', models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'] },
+      { id: 'prov-ollama', name: 'Ollama', type: 'ollama', baseUrl: 'http://localhost:11434', models: ['llama3.2', 'qwen2.5', 'deepseek-v2'] },
+      { id: 'prov-zhipu', name: '智谱 AI', type: 'zhipu', baseUrl: 'https://open.bigmodel.cn', models: ['glm-4-flash', 'glm-4', 'glm-4-plus'] },
+      { id: 'prov-minimax', name: 'MiniMax', type: 'minimax', baseUrl: 'https://api.minimax.chat', models: ['MiniMax-Text-01', 'abab6.5s-chat'] },
+      { id: 'prov-kimi', name: 'Kimi', type: 'kimi', baseUrl: 'https://api.moonshot.cn', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
+      { id: 'prov-qwen', name: '通义千问', type: 'qwen', baseUrl: 'https://dashscope.aliyuncs.com', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'] },
+      { id: 'prov-doubao', name: '豆包', type: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com', models: ['doubao-pro-32k', 'doubao-pro-128k', 'doubao-lite-32k'] },
+      { id: 'prov-deepseek', name: 'DeepSeek', type: 'deepseek', baseUrl: 'https://api.deepseek.com', models: ['deepseek-chat', 'deepseek-coder'] },
+      { id: 'prov-spark', name: '讯飞星火', type: 'spark', baseUrl: 'https://spark-api.xf-yun.com', models: ['v3.5', 'v3.0', 'v2.0'] },
+      { id: 'prov-yi', name: '零一万物', type: 'yi', baseUrl: 'https://api.lingyiwanwu.com', models: ['yi-large', 'yi-medium', 'yi-small'] },
+      { id: 'prov-siliconflow', name: 'SiliconFlow', type: 'siliconflow', baseUrl: 'https://api.siliconflow.cn', models: ['Qwen/Qwen2.5-7B-Instruct', 'deepseek-ai/DeepSeek-V2.5'] },
+    ];
+
+    for (const p of defaults) {
+      db.prepare(`
+        INSERT INTO ai_providers (id, name, provider_type, api_key_keychain_key, base_url, models, is_default, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(p.id, p.name, p.type, '', p.baseUrl, JSON.stringify(p.models), p.type === 'openai' ? 1 : 0, 'active', now, now);
+
+      const provider: AIProvider = {
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        apiKeyKeychainKey: '',
+        baseUrl: p.baseUrl,
+        models: p.models,
+        isDefault: p.type === 'openai',
+        status: 'active',
+      };
+      this._providers.set(p.type, provider);
+    }
+
+    log.info(`Seeded ${defaults.length} default AI providers`);
+  }
+
   async loadProviders(): Promise<void> {
     const db = getDb();
     const rows = asRows<AiProviderRow>(db.prepare('SELECT * FROM ai_providers WHERE status = ?').all('active'));
@@ -990,15 +1083,20 @@ export class AIGateway {
       const provider: AIProvider = {
         id: row.id,
         name: row.name,
-        type: row.provider_type,
+        type: row.provider_type as AIProviderType,
         apiKeyKeychainKey: row.api_key_keychain_key,
-        baseUrl: row.base_url,
+        baseUrl: row.base_url ?? '',
         models: JSON.parse(row.models),
         isDefault: row.is_default === 1,
         status: row.status,
       };
 
       this._providers.set(provider.type, provider);
+    }
+
+    // 如果表为空，插入内置 provider 模板（用户需在 UI 配置 API Key）
+    if (this._providers.size === 0) {
+      await this.seedDefaultProviders();
     }
 
     log.info(`Loaded ${this._providers.size} AI providers`);
@@ -1037,12 +1135,12 @@ export class AIGateway {
       const provider: AIProvider = {
         id: row.p_id,
         name: row.p_name,
-        type: row.provider_type,
+        type: row.provider_type as AIProviderType,
         apiKeyKeychainKey: row.api_key_keychain_key,
-        baseUrl: row.base_url,
+        baseUrl: row.base_url ?? '',
         models: JSON.parse(row.models),
-        isDefault: row.p_is_default === 1,
-        status: row.status,
+        isDefault: row.is_default === 1,
+        status: row.status as 'active' | 'inactive' | 'error',
       };
       this.taskTypeBindings.set(row.task_type as TaskType, provider);
     }
@@ -1158,7 +1256,7 @@ ${request.feedback}
     let actualProviderType: string | undefined;
 
     if (providerType) {
-      provider = this._providers.get(providerType);
+      provider = this._providers.get(providerType as AIProviderType);
       actualProviderType = providerType;
     } else {
       // 尝试获取视频provider
@@ -1220,6 +1318,7 @@ ${request.feedback}
     for (const endpoint of endpoints) {
       try {
         const response = await fetch(`${baseUrl}${endpoint}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -1261,6 +1360,7 @@ ${request.feedback}
     for (const endpoint of endpoints) {
       try {
         const response = await fetch(`${baseUrl}${endpoint}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -1301,6 +1401,7 @@ ${request.feedback}
     for (const endpoint of endpoints) {
       try {
         const response = await fetch(`${baseUrl}${endpoint}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${apiKey}`,

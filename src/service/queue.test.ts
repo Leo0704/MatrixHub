@@ -503,12 +503,6 @@ describe('TaskQueue', () => {
   });
 
   describe('classifyError', () => {
-    it('should classify AppError by code - SELECTOR_ERROR', () => {
-      const err = new AppError('test', ErrorCode.SELECTOR_ERROR);
-      const type = taskQueue.classifyError(err);
-      expect(type).toBe(ErrorType.SELECTOR);
-    });
-
     it('should classify AppError by code - RATE_LIMIT_EXCEEDED', () => {
       const err = new AppError('test', ErrorCode.RATE_LIMIT_EXCEEDED);
       const type = taskQueue.classifyError(err);
@@ -536,27 +530,17 @@ describe('TaskQueue', () => {
     it('should classify AppError by code - ELEMENT_NOT_FOUND', () => {
       const err = new AppError('test', ErrorCode.ELEMENT_NOT_FOUND);
       const type = taskQueue.classifyError(err);
-      expect(type).toBe(ErrorType.SELECTOR);
-    });
-
-    it('should classify regular Error with string matching', () => {
-      const err = new Error('Selector not found');
-      const type = taskQueue.classifyError(err);
-      expect(type).toBe(ErrorType.SELECTOR);
+      expect(type).toBe(ErrorType.UNKNOWN);
     });
   });
 
   describe('classifyErrorCode', () => {
-    it('should map SELECTOR_ERROR to SELECTOR', () => {
-      expect(classifyErrorCode(ErrorCode.SELECTOR_ERROR)).toBe(ErrorType.SELECTOR);
+    it('should map ELEMENT_NOT_FOUND to UNKNOWN', () => {
+      expect(classifyErrorCode(ErrorCode.ELEMENT_NOT_FOUND)).toBe(ErrorType.UNKNOWN);
     });
 
-    it('should map ELEMENT_NOT_FOUND to SELECTOR', () => {
-      expect(classifyErrorCode(ErrorCode.ELEMENT_NOT_FOUND)).toBe(ErrorType.SELECTOR);
-    });
-
-    it('should map PAGE_ACTION_FAILED to SELECTOR', () => {
-      expect(classifyErrorCode(ErrorCode.PAGE_ACTION_FAILED)).toBe(ErrorType.SELECTOR);
+    it('should map PAGE_ACTION_FAILED to UNKNOWN', () => {
+      expect(classifyErrorCode(ErrorCode.PAGE_ACTION_FAILED)).toBe(ErrorType.UNKNOWN);
     });
 
     it('should map RATE_LIMIT_EXCEEDED to RATE_LIMIT', () => {

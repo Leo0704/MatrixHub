@@ -6,8 +6,34 @@ import { AppError, ErrorCode, ErrorType, classifyErrorCode, isAppError } from '.
 import log from 'electron-log';
 import type { TaskRow, TaskCheckpointRow } from './db-types.js';
 import { asRow, asRows } from './db-types.js';
+import { z } from 'zod';
+
+// Payload Zod Schema — 只校验字段类型，不强制必填（向后兼容）
+const publishPayloadSchema = z.object({
+  accountId: z.string().optional(),
+  title: z.string().optional(),
+  content: z.union([z.string(), z.undefined()]),  // 可选但若存在须为 string
+  contentType: z.enum(['image', 'video']).optional(),
+  images: z.array(z.string()).optional(),
+  video: z.string().optional(),
+  voiceBase64: z.string().optional(),
+});
+type ValidatedPublishPayload = z.infer<typeof publishPayloadSchema>;
 
 export class TaskQueue {
+  // 失败回调注册表（解循环依赖：queue 不直接 import ai-director）
+  private failureCallbacks: Array<(task: Task) => void> = [];
+
+  /** 注册失败回调（供 ai-director 等模块调用） */
+  onFailure(callback: (task: Task) => void): void {
+    this.failureCallbacks.push(callback);
+  }
+
+  private emitFailure(task: Task): void {
+    for (const cb of this.failureCallbacks) {
+      try { cb(task); } catch (e) { log.warn('[Queue] failure callback error:', e); }
+    }
+  }
   /**
    * 创建新任务
    */
@@ -19,6 +45,15 @@ export class TaskQueue {
     scheduledAt?: number;
     maxRetries?: number;
   }): Task {
+    // Zod Schema 校验 — publish 类型字段类型验证（松散模式，向后兼容）
+    if (params.type === 'publish') {
+      const result = publishPayloadSchema.safeParse(params.payload);
+      if (!result.success) {
+        // 只记录警告，不阻断创建（向后兼容旧数据）
+        log.warn(`[Queue] payload 类型警告: ${result.error.message}`);
+      }
+    }
+
     const db = getDb();
     const now = Date.now();
     const task: Task = {
@@ -123,6 +158,7 @@ export class TaskQueue {
 
     // 原子性：SELECT + UPDATE status = 'running' 在同一个语句中
     // 这防止了多个 worker 同时获取同一个任务的问题
+    // 注意：维护窗口检测在 SQL 层面做（见下文），这里先尝试出队
     const row = db.prepare(`
       UPDATE tasks
       SET status = 'running', updated_at = ?, version = version + 1
@@ -134,12 +170,22 @@ export class TaskQueue {
         LIMIT 1
       )
       RETURNING *
-    `).get(now, now);
+    `).get(now, now) as TaskRow | undefined;
 
-    if (row) {
-      return this.rowToTask(asRow<TaskRow>(row));
+    if (!row) return null;
+
+    const task = this.rowToTask(row);
+
+    // 维护窗口检查：处于维护窗口的平台不执行任务，直接放回队列
+    const maintenanceDelay = this.getMaintenanceDelay(task.platform);
+    if (maintenanceDelay > 0) {
+      log.info(`[Queue] ${task.platform} 处于维护窗口，跳过任务 ${task.id}，延迟 ${maintenanceDelay}ms`);
+      // 将任务重新放回 deferred 队列
+      this.updateStatus(task.id, 'deferred');
+      return null;
     }
-    return null;
+
+    return task;
   }
 
   /**
@@ -243,15 +289,8 @@ export class TaskQueue {
 
     if (retryCount >= task.maxRetries) {
       log.warn(`任务 ${taskId} 已达最大重试次数 (${task.maxRetries})`);
-      // 触发 AI 分析（异步，不阻塞返回）
-      // 注意：使用动态 import 避免循环依赖
-      import('./ai-director.js').then(({ analyzeFailure }) => {
-        analyzeFailure(task).catch(err => {
-          log.error('[Queue] AI分析调用失败:', err)
-        })
-      }).catch(err => {
-        log.error('[Queue] 加载ai-director失败:', err)
-      })
+      // 通过注册回调触发 AI 分析（解循环依赖）
+      this.emitFailure(task);
       return this.updateStatus(taskId, 'failed', { error: `重试次数耗尽: ${errorMessage}` });
     }
 

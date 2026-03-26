@@ -21,11 +21,24 @@ export interface ErrorWeight {
   waitMultiplier: number; // 等待时间乘数
 }
 
+export interface AntiFingerprintConfig {
+  canvasNoiseAmplitude: number;   // Canvas 噪声幅度 (0-1)，默认 0.03
+  webglVendorIndex: number;       // WebGL vendor 索引（0=随机）
+  webglRendererIndex: number;     // WebGL renderer 索引（0=随机）
+  viewportWidthRange: [number, number];  // Viewport 宽度范围 [min, max]
+  viewportHeightRange: [number, number]; // Viewport 高度范围 [min, max]
+  devicePixelRatio: number;        // 设备像素比，0=随机
+  mouseSpeedMultiplier: number;    // 鼠标移动速度乘数（越大越慢）
+}
+
 export interface RuntimeConfig {
   maintenanceWindows: Record<Platform, MaintenanceWindow[]>;
   errorWeights: Record<string, ErrorWeight>;
   rateLimits: Record<Platform, RateLimitConfig>;
   taskStaleTimeoutMs: number;
+  aiMaxAnalysisPerTask: number;  // AI 分析循环保护上限
+  activeHours: { start: number; end: number };  // 用户活跃时段（北京时间，小时）
+  antiFingerprint: AntiFingerprintConfig;  // 反指纹配置
 }
 
 // ============ 默认配置 ============
@@ -74,6 +87,17 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     },
   },
   taskStaleTimeoutMs: 60 * 60 * 1000, // 1 小时
+  aiMaxAnalysisPerTask: 2,              // AI 分析循环保护上限
+  activeHours: { start: 8, end: 22 },   // 用户活跃时段（北京时间 8:00-22:00）
+  antiFingerprint: {
+    canvasNoiseAmplitude: 0.03,
+    webglVendorIndex: 0,              // 0 = 随机
+    webglRendererIndex: 0,           // 0 = 随机
+    viewportWidthRange: [1280, 1920],
+    viewportHeightRange: [720, 1080],
+    devicePixelRatio: 0,             // 0 = 随机
+    mouseSpeedMultiplier: 1.5,       // 鼠标移动速度乘数
+  },
 };
 
 // ============ 配置管理器 ============
@@ -217,3 +241,6 @@ export const getMaintenanceWindows = () => runtimeConfig.getMaintenanceWindows()
 export const getErrorWeights = () => runtimeConfig.getErrorWeights();
 export const getRateLimits = () => runtimeConfig.getRateLimits();
 export const getTaskStaleTimeout = () => runtimeConfig.getTaskStaleTimeout();
+export const getAiMaxAnalysisPerTask = () => runtimeConfig.getKey('aiMaxAnalysisPerTask');
+export const getActiveHours = () => runtimeConfig.getKey('activeHours');
+export const getAntiFingerprint = () => runtimeConfig.getKey('antiFingerprint');

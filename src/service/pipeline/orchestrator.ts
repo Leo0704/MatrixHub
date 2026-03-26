@@ -43,9 +43,11 @@ export async function createPipelineTask(
   platform: Platform
 ): Promise<PipelineTask> {
   const id = uuidv4();
+  const traceId = uuidv4();  // 贯穿全链路的追踪 ID
 
   const pipelineTask: PipelineTask = {
     id,
+    traceId,
     input,
     config,
     platform,
@@ -81,7 +83,8 @@ export async function createPipelineTask(
  * 执行 Pipeline
  */
 async function executePipeline(pipelineTask: PipelineTask, abortSignal?: AbortSignal): Promise<void> {
-  log.info(`[Pipeline] 开始执行: ${pipelineTask.id}`);
+  const t = pipelineTask.traceId;
+  log.info(`[Pipeline][${t}] 开始执行: ${pipelineTask.id}`);
   let tempFiles: string[] = [];
 
   try {
@@ -202,19 +205,17 @@ async function executePipeline(pipelineTask: PipelineTask, abortSignal?: AbortSi
 
     savePipelineTask(pipelineTask);
     broadcastPipelineUpdate(pipelineTask);
-    log.info(`[Pipeline] 执行完成: ${pipelineTask.id}`);
+    log.info(`[Pipeline][${t}] 执行完成: ${pipelineTask.id}`);
 
   } catch (error) {
+    const err = error as Error;
     // 如果是用户取消，不记录为失败
-    if ((error as Error).message === 'Pipeline cancelled by user') {
-      log.info(`[Pipeline] 已取消: ${pipelineTask.id}`);
+    if (err.message === 'Pipeline cancelled by user') {
+      log.info(`[Pipeline][${t}] 已取消: ${pipelineTask.id}`);
     } else {
-      log.error(`[Pipeline] 执行失败: ${pipelineTask.id}`, error);
-      pipelineTask.status = 'failed';
-      pipelineTask.error = (error as Error).message;
-      pipelineTask.updatedAt = Date.now();
-      savePipelineTask(pipelineTask);
-      broadcastPipelineUpdate(pipelineTask);
+      log.error(`[Pipeline][${t}] 执行失败: ${pipelineTask.id}`, err);
+      // 执行 Saga 补偿：逆向执行已完成步骤的补偿逻辑
+      await compensate(pipelineTask);
     }
   } finally {
     // 清理临时文件
@@ -227,11 +228,67 @@ async function executePipeline(pipelineTask: PipelineTask, abortSignal?: AbortSi
 }
 
 /**
+ * Saga 补偿：逆向执行已完成步骤的补偿逻辑
+ */
+async function compensate(pipelineTask: PipelineTask): Promise<void> {
+  const t = pipelineTask.traceId;
+  log.info(`[Pipeline][${t}] 开始 Saga 补偿: ${pipelineTask.id}`);
+
+  pipelineTask.status = 'compensating';
+  pipelineTask.updatedAt = Date.now();
+  savePipelineTask(pipelineTask);
+  broadcastPipelineUpdate(pipelineTask);
+
+  const compensation: PipelineTask['compensation'] = {};
+  const completedSteps = pipelineTask.steps.filter(s => s.status === 'completed');
+
+  for (const step of completedSteps.reverse()) {
+    try {
+      if (step.step === 'parse') {
+        // parse 步骤：清理下载的临时文件
+        const result = step.result as { cleanupFiles?: string[] } | undefined;
+        if (result?.cleanupFiles?.length) {
+          cleanupTempFiles(result.cleanupFiles);
+          compensation.parse = { cleanupFiles: result.cleanupFiles };
+        }
+        log.info(`[Pipeline][${t}] 补偿 parse: 清理 ${result?.cleanupFiles?.length ?? 0} 个文件`);
+      }
+
+      if (step.step === 'publish') {
+        // publish 步骤：取消已创建的任务
+        const result = step.result as { publishedTaskIds?: string[] } | undefined;
+        if (result?.publishedTaskIds?.length) {
+          for (const taskId of result.publishedTaskIds) {
+            try {
+              await taskQueue.cancel(taskId);
+            } catch (cancelErr) {
+              log.warn(`[Pipeline][${t}] 补偿 publish: 取消任务 ${taskId} 失败`, cancelErr);
+            }
+          }
+          compensation.publish = { deletedTaskIds: result.publishedTaskIds };
+          log.info(`[Pipeline][${t}] 补偿 publish: 取消 ${result.publishedTaskIds.length} 个发布任务`);
+        }
+      }
+      // text 步骤：生成的媒体文件已在 finally 中通过 cleanupTempFiles 清理
+    } catch (compensateErr) {
+      log.warn(`[Pipeline][${t}] 补偿步骤 ${step.step} 失败`, compensateErr);
+    }
+  }
+
+  pipelineTask.status = 'compensated';
+  pipelineTask.compensation = compensation;
+  pipelineTask.updatedAt = Date.now();
+  savePipelineTask(pipelineTask);
+  broadcastPipelineUpdate(pipelineTask);
+  log.info(`[Pipeline][${t}] Saga 补偿完成: ${pipelineTask.id}`);
+}
+
+/**
  * 执行单个步骤
  */
 async function executeStep(
   pipelineTask: PipelineTask,
-  stepName: string,
+  stepName: "parse" | "text" | "voice" | "publish",
   fn: () => Promise<Record<string, unknown>>
 ): Promise<void> {
   const step = pipelineTask.steps.find(s => s.step === stepName);
@@ -260,7 +317,7 @@ async function executeStep(
 /**
  * 跳过步骤
  */
-async function skipStep(pipelineTask: PipelineTask, stepName: string): Promise<void> {
+async function skipStep(pipelineTask: PipelineTask, stepName: "parse" | "text" | "voice" | "publish"): Promise<void> {
   const step = pipelineTask.steps.find(s => s.step === stepName);
   if (!step) return;
 

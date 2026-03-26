@@ -7,6 +7,7 @@ import { Page } from 'playwright';
 import log from 'electron-log';
 import { BaseFetcher } from '../base-fetcher.js';
 import type { HotTopic, FetchOptions, FetchResult } from '../types.js';
+import { LoginRequiredError } from '../types.js';
 import { createPage } from '../../platform-launcher.js';
 
 // 快手 GraphQL API 端点
@@ -122,7 +123,7 @@ export class KuaishouFetcher extends BaseFetcher {
       log.info('[KuaishouFetcher] 登录成功！');
     } catch (err) {
       log.error('[KuaishouFetcher] 登录失败:', err);
-      throw new Error('登录超时或失败');
+      throw new LoginRequiredError('kuaishou');
     }
   }
 

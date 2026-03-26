@@ -3,8 +3,6 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   'rate_limit_exceeded': '操作太频繁，请稍后再试',
   'rate_limit': '操作太频繁，请稍后再试',
   'rate_limit_reached': '操作太频繁，请稍后再试',
-  'selector_not_found': '页面元素加载失败，请检查网络',
-  'selector_not_visible': '页面元素未显示，请稍后重试',
   'element_not_found': '页面元素未找到，请刷新重试',
   'network_error': '网络连接失败，请检查网络',
   'timeout': '请求超时，请稍后重试',

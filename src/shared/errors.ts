@@ -15,7 +15,6 @@ export enum ErrorCode {
   CONTENT_MODERATION_FAILED = 'content_moderation_failed',
 
   // Automation
-  SELECTOR_ERROR = 'selector_error',
   AUTOMATION_ERROR = 'automation_error',
   ELEMENT_NOT_FOUND = 'element_not_found',
   PAGE_ACTION_FAILED = 'page_action_failed',
@@ -40,7 +39,6 @@ export function isAppError(error: unknown): error is AppError {
 }
 
 export enum ErrorType {
-  SELECTOR = 'selector',
   RATE_LIMIT = 'rate_limit',
   NETWORK = 'network',
   LOGIN = 'login',
@@ -51,10 +49,9 @@ export enum ErrorType {
 // ErrorCode to ErrorType mapping
 export function classifyErrorCode(code: ErrorCode): ErrorType {
   switch (code) {
-    case ErrorCode.SELECTOR_ERROR:
     case ErrorCode.ELEMENT_NOT_FOUND:
     case ErrorCode.PAGE_ACTION_FAILED:
-      return ErrorType.SELECTOR;
+      return ErrorType.UNKNOWN;
     case ErrorCode.RATE_LIMIT_EXCEEDED:
       return ErrorType.RATE_LIMIT;
     case ErrorCode.NETWORK_ERROR:

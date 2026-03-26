@@ -8,6 +8,7 @@ import log from 'electron-log';
 import { BaseFetcher } from '../base-fetcher.js';
 import { DouYinClient, DouYinClientConfig } from './client.js';
 import type { HotTopic, FetchOptions, FetchResult } from '../types.js';
+import { LoginRequiredError } from '../types.js';
 import type { Platform } from '../../../shared/types.js';
 import { createPage } from '../../platform-launcher.js';
 
@@ -102,7 +103,7 @@ export class DouYinFetcher extends BaseFetcher {
       }
     } catch (err) {
       log.error('[DouYinFetcher] 登录失败:', err);
-      throw new Error('登录超时或失败');
+      throw new LoginRequiredError('douyin');
     }
   }
 

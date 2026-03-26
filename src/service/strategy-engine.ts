@@ -2,7 +2,7 @@ import { getDb } from './db.js'
 import { aiGateway } from './ai-gateway.js'
 import type { Task, Platform } from '../shared/types.js'
 import log from 'electron-log'
-import { asRow } from './db-types.js'
+import { asRow, asRows } from './db-types.js'
 
 export type PromptType = 'failure' | 'daily' | 'hot_topic'
 
@@ -30,7 +30,7 @@ export function buildFailureContext(task: Task): object {
     WHERE platform = ? AND type = 'publish'
   `).get(task.platform) as { total: number; completed: number } | undefined
 
-  const successRate = stats.total > 0 ? (stats.completed / stats.total) : 0
+  const successRate = (stats?.total ?? 0) > 0 ? ((stats?.completed ?? 0) / (stats?.total ?? 0)) : 0
 
   return {
     platform: task.platform,
@@ -39,7 +39,7 @@ export function buildFailureContext(task: Task): object {
     error: task.error ?? '未知错误',
     retryCount: task.retryCount,
     recentFailures,
-    accountStats: { totalPublished: stats.total, successRate }
+    accountStats: { totalPublished: stats?.total ?? 0, successRate }
   }
 }
 

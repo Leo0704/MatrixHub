@@ -1,5 +1,4 @@
-import React from 'react';
-import type { Platform, Account } from '~shared/types';
+import type { Account } from '~shared/types';
 
 interface PipelineConfigProps {
   config: {
