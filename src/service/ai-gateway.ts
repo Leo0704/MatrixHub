@@ -3,6 +3,7 @@ import { aiKeyManager } from './credential-manager.js';
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
 import type { Platform, AIRequest, AIResponse, AIIterationRequest } from '../shared/types.js';
+import { isUrlSafe } from '../shared/url-utils.js';
 
 /**
  * AI Provider 类型
@@ -280,6 +281,11 @@ export class AIGateway {
 
     if (!apiKey) {
       throw new Error(`API key not configured for provider: ${provider.type}`);
+    }
+
+    // Defense-in-depth: SSRF check before making fetch calls
+    if (!isUrlSafe(provider.baseUrl)) {
+      throw new Error(`SSRF protection: invalid baseUrl ${provider.baseUrl}`);
     }
 
     // 根据 taskType 分发到对应的生成器，再由生成器根据 provider.type 分发
@@ -919,6 +925,11 @@ export class AIGateway {
     models: string[];
     isDefault?: boolean;
   }): Promise<AIProvider> {
+    // SSRF protection: validate baseUrl before storing
+    if (!isUrlSafe(config.baseUrl)) {
+      throw new Error(`SSRF protection: invalid baseUrl ${config.baseUrl}`);
+    }
+
     const db = getDb();
     const now = Date.now();
 

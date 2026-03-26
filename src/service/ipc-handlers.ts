@@ -15,6 +15,7 @@ import { dailyBriefing, checkHotTopics, analyzeNow } from './ai-director.js';
 import { registerGroupHandlers } from './handlers/group-handlers.js';
 import { createFetcher, createAllFetchers } from './data-fetcher/index.js';
 import { z } from 'zod';
+import { isUrlSafe } from '../shared/url-utils.js';
 
 // 数据库行类型定义
 interface TaskAIConfigRow {
@@ -60,55 +61,6 @@ const aiTestConnectionSchema = z.object({
   apiKey: z.string().min(1),
   model: z.string().min(1),
 });
-
-/**
- * SSRF 防护：检查 URL 是否指向内部网络
- */
-function isUrlSafe(urlString: string): boolean {
-  try {
-    const url = new URL(urlString);
-
-    // 只允许 HTTPS（生产环境应强制要求）
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      return false;
-    }
-
-    const hostname = url.hostname.toLowerCase();
-
-    // 阻止回环地址
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-      return false;
-    }
-
-    // 阻止私有 IP 地址
-    const privateIpPatterns = [
-      /^10\./,                    // 10.0.0.0/8
-      /^172\.(1[6-9]|2\d|3[01])\./,  // 172.16.0.0/12
-      /^192\.168\./,              // 192.168.0.0/16
-      /^169\.254\./,              //链路本地地址 (AWS 元数据)
-      /^0\./,                    // 0.0.0.0/8
-    ];
-
-    if (privateIpPatterns.some(pattern => pattern.test(hostname))) {
-      return false;
-    }
-
-    // 阻止 IPv6 链接本地地址
-    if (hostname.startsWith('fe80:') || hostname.startsWith('fc') || hostname.startsWith('fd')) {
-      return false;
-    }
-
-    // 阻止内网域名
-    const blockedDomains = ['localhost', 'invalid', 'example.com'];
-    if (blockedDomains.includes(hostname)) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * 注册所有 IPC 处理器

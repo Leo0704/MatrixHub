@@ -58,6 +58,26 @@ describe('AIGateway', () => {
     it('should be a function', () => {
       expect(typeof gateway.addProvider).toBe('function');
     });
+
+    it('should reject SSRF attempts when adding provider', async () => {
+      await expect(gateway.addProvider({
+        name: 'Evil',
+        type: 'openai',
+        baseUrl: 'http://127.0.0.1:8080',
+        apiKey: 'test',
+        models: ['test'],
+      })).rejects.toThrow('SSRF protection');
+    });
+
+    it('should reject SSRF attempts with private IP', async () => {
+      await expect(gateway.addProvider({
+        name: 'Evil2',
+        type: 'openai',
+        baseUrl: 'https://192.168.1.1/internal-api',
+        apiKey: 'test',
+        models: ['test'],
+      })).rejects.toThrow('SSRF protection');
+    });
   });
 
   describe('getDefaultProvider', () => {
