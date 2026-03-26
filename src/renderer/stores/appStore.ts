@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Account, Task } from '~shared/types';
 
-export type Page = 'overview' | 'content' | 'ai' | 'schedule' | 'insights' | 'accounts' | 'settings' | 'auto-creation';
+export type Page = 'overview' | 'content' | 'ai' | 'schedule' | 'insights' | 'accounts' | 'settings' | 'auto-creation' | 'campaign' | 'campaignLaunch' | 'campaignDashboard' | 'campaignReport';
 
 interface TaskDraft {
   title: string;

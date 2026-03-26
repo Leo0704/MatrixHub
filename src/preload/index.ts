@@ -136,6 +136,31 @@ const api: ElectronAPI = {
     ipcRenderer.on('group:deleted', (_, d) => callback(d));
   },
 
+  // Campaign 事件监听
+  onCampaignStarted: (callback) => {
+    ipcRenderer.on('campaign:started', (_, data) => callback(data));
+  },
+
+  onCampaignUpdated: (callback) => {
+    ipcRenderer.on('campaign:updated', (_, data) => callback(data));
+  },
+
+  onCampaignReportReady: (callback) => {
+    ipcRenderer.on('campaign:report-ready', (_, data) => callback(data));
+  },
+
+  onCampaignContinued: (callback) => {
+    ipcRenderer.on('campaign:continued', (_, data) => callback(data));
+  },
+
+  onCampaignIterating: (callback) => {
+    ipcRenderer.on('campaign:iterating', (_, data) => callback(data));
+  },
+
+  onCampaignFailed: (callback) => {
+    ipcRenderer.on('campaign:failed', (_, data) => callback(data));
+  },
+
   onAutomationConfirmRequest: (callback) => {
     ipcRenderer.on('automation:confirm-request', (_, params) => callback(params));
   },
@@ -159,6 +184,29 @@ const api: ElectronAPI = {
   onAIHotTopic: (callback) => {
     ipcRenderer.on('ai:hot-topic', (_, data) => callback(data));
   },
+
+  // ============ Campaign ============
+  campaign_launch: (params: {
+    name: string;
+    productUrl?: string;
+    productDescription?: string;
+    contentType: 'video' | 'image_text';
+    addVoiceover: boolean;
+    marketingGoal: 'exposure' | 'engagement' | 'conversion';
+    targetAccountIds: string[];
+  }) => ipcRenderer.invoke('campaign:launch', params),
+
+  campaign_get: (campaignId: string) =>
+    ipcRenderer.invoke('campaign:get', campaignId),
+
+  campaign_list: (status?: string) =>
+    ipcRenderer.invoke('campaign:list', status),
+
+  campaign_feedback: (campaignId: string, feedback: 'good' | 'bad') =>
+    ipcRenderer.invoke('campaign:feedback', campaignId, feedback),
+
+  campaign_cancel: (campaignId: string) =>
+    ipcRenderer.invoke('campaign:cancel', campaignId),
 
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);

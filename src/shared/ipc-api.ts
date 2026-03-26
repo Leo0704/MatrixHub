@@ -219,6 +219,21 @@ export interface ElectronAPI {
   analyzeNow: (type: 'failure' | 'daily' | 'hot_topic', platform: Platform, taskId?: string) => Promise<{ success: boolean }>;
   analyzeFailure: (taskId: string) => Promise<{ success: boolean; error?: string }>;
 
+  // Campaign
+  campaign_launch: (params: {
+    name: string;
+    productUrl?: string;
+    productDescription?: string;
+    contentType: 'video' | 'image_text';
+    addVoiceover: boolean;
+    marketingGoal: 'exposure' | 'engagement' | 'conversion';
+    targetAccountIds: string[];
+  }) => Promise<{ success: boolean; task?: unknown; error?: string }>;
+  campaign_get: (campaignId: string) => Promise<{ success: boolean; campaign?: unknown; error?: string }>;
+  campaign_list: (status?: string) => Promise<{ success: boolean; campaigns?: unknown[]; error?: string }>;
+  campaign_feedback: (campaignId: string, feedback: 'good' | 'bad') => Promise<{ success: boolean; error?: string }>;
+  campaign_cancel: (campaignId: string) => Promise<{ success: boolean; error?: string }>;
+
   // Pipeline
   createPipeline: (params: {
     input: { type: 'url' | 'product_detail' | 'hot_topic'; url?: string; productDetail?: string; hotTopic?: { keyword: string; platform: Platform } };
@@ -235,6 +250,14 @@ export interface ElectronAPI {
   cancelPipeline: (pipelineId: string) => Promise<{ success: boolean; error?: string }>;
   onPipelineCreated: (callback: (task: PipelineTask) => void) => void;
   onPipelineUpdated: (callback: (task: PipelineTask) => void) => void;
+
+  // Campaign 事件监听
+  onCampaignStarted: (callback: (data: unknown) => void) => void;
+  onCampaignUpdated: (callback: (data: unknown) => void) => void;
+  onCampaignReportReady: (callback: (data: unknown) => void) => void;
+  onCampaignContinued: (callback: (data: unknown) => void) => void;
+  onCampaignIterating: (callback: (data: unknown) => void) => void;
+  onCampaignFailed: (callback: (data: unknown) => void) => void;
 
   // 系统
   getIpcChannelVersion: () => number;
