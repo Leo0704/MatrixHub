@@ -29,7 +29,8 @@ interface AppState {
   updateTask: (task: Task) => void;
 
   currentPage: Page;
-  setCurrentPage: (page: Page) => void;
+  selectedCampaignId: string | null;
+  setCurrentPage: (page: Page, campaignId?: string) => void;
 
   version: string;
   setVersion: (version: string) => void;
@@ -66,7 +67,8 @@ export const useAppStore = create<AppState>((set) => ({
   })),
 
   currentPage: 'overview',
-  setCurrentPage: (currentPage) => set({ currentPage }),
+  selectedCampaignId: null,
+  setCurrentPage: (currentPage, campaignId) => set({ currentPage, selectedCampaignId: campaignId || null }),
 
   version: '',
   setVersion: (version) => set({ version }),

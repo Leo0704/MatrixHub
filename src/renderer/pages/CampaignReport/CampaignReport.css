@@ -1,0 +1,151 @@
+.campaign-report {
+  padding: 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.report-header {
+  margin-bottom: 24px;
+}
+
+.report-header h1 {
+  font-size: 24px;
+  margin: 0 0 8px 0;
+}
+
+.report-time {
+  color: #888;
+  font-size: 13px;
+}
+
+.report-summary {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.report-summary p {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.recommendation {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.badge-continue { background: #d1fae5; color: #059669; }
+.badge-iterate { background: #fef3c7; color: #d97706; }
+.badge-stop { background: #fee2e2; color: #dc2626; }
+
+.metrics-table {
+  overflow-x: auto;
+  margin-bottom: 32px;
+}
+
+.metrics-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.metrics-table th,
+.metrics-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.metrics-table th {
+  background: #f9fafb;
+  font-weight: 500;
+  color: #666;
+}
+
+.metrics-table .row-best {
+  background: #f0fdf4;
+}
+
+.metrics-table .row-worst {
+  background: #fef2f2;
+}
+
+.positive { color: #22c55e; }
+.negative { color: #ef4444; }
+
+.health-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.health-badge.normal { background: #d1fae5; color: #059669; }
+.health-badge.limited { background: #fef3c7; color: #d97706; }
+.health-badge.banned { background: #fee2e2; color: #dc2626; }
+
+.feedback-section {
+  background: white;
+  border: 2px solid #6366f1;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.feedback-section p {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.feedback-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.btn-good, .btn-bad {
+  padding: 12px 32px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-good {
+  background: #22c55e;
+  color: white;
+}
+
+.btn-good:hover {
+  background: #16a34a;
+}
+
+.btn-bad {
+  background: #f59e0b;
+  color: white;
+}
+
+.btn-bad:hover {
+  background: #d97706;
+}
+
+.btn-good:disabled, .btn-bad:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loading, .error {
+  padding: 48px;
+  text-align: center;
+  color: #888;
+}
