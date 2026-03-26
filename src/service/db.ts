@@ -459,6 +459,7 @@ export function exportData(): ExportData {
     accounts: database.prepare('SELECT * FROM accounts').all() as ExportData['accounts'],
     tasks: database.prepare('SELECT * FROM tasks').all() as ExportData['tasks'],
     groups: database.prepare('SELECT * FROM account_groups').all() as ExportData['groups'],
+    selectors: database.prepare('SELECT * FROM selector_versions').all() as ExportData['selectors'],
   };
 }
 

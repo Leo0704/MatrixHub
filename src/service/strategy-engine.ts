@@ -4,7 +4,7 @@ import type { Task, Platform } from '../shared/types.js'
 import log from 'electron-log'
 import { asRow, asRows } from './db-types.js'
 
-export type PromptType = 'failure' | 'daily' | 'hot_topic'
+export type PromptType = 'failure' | 'daily' | 'hot_topic' | 'content_strategy' | 'iterate'
 
 /**
  * 构造 failure 类型的上下文（从数据库实时查询）
@@ -132,13 +132,17 @@ export function buildPrompt(type: PromptType, context: object): string {
   const roleMap: Record<PromptType, string> = {
     failure: '社交媒体发布失败分析专家',
     daily: '社交媒体内容策略专家',
-    hot_topic: '热点蹭点策略专家'
+    hot_topic: '热点蹭点策略专家',
+    content_strategy: '内容策略专家',
+    iterate: '内容迭代优化专家',
   }
 
   const taskMap: Record<PromptType, string> = {
     failure: '分析以下任务失败原因，给出修复建议',
     daily: '根据近期数据，制定今日内容计划',
-    hot_topic: '判断是否要蹭某个热点'
+    hot_topic: '判断是否要蹭某个热点',
+    content_strategy: '制定多账号内容策略',
+    iterate: '优化迭代内容策略',
   }
 
   return JSON.stringify({
@@ -149,6 +153,8 @@ export function buildPrompt(type: PromptType, context: object): string {
       ? { diagnosis: '限50字以内', suggestions: ['每条30字以内'], confidence: '0.0到1.0之间的数字', shouldRetry: true, retryAdvice: { action: 'update_selector', params: { selectorKey: 'publish_confirm', fallbackIndex: 1 } } }
       : type === 'daily'
       ? { recommendedTopics: ['选题方向'], bestTimes: [9, 12, 20], warnings: ['注意事项'], confidence: '0.0到1.0之间的数字' }
+      : type === 'content_strategy' || type === 'iterate'
+      ? { plans: [{ accountIndex: '账号序号', contentAngle: '内容角度', targetAudience: '目标人群', hashtagHints: ['#标签1', '#标签2'] }], confidence: '0.0到1.0之间的数字' }
       : { shouldChase: true, reason: '限50字以内', contentAngle: '蹭热点角度', confidence: '0.0到1.0之间的数字' }
   }, null, 2)
 }

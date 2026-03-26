@@ -34,6 +34,8 @@ export interface Task {
   updatedAt: number;
   // 字段锁用于乐观并发控制
   version: number;
+  // 关联的 Campaign ID（可选，用于 campaign 发起的任务）
+  pipelineId?: string;
 }
 
 export interface TaskFilter {

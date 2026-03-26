@@ -341,7 +341,7 @@ ${productInfo.brand ? `- 品牌：${productInfo.brand}` : ''}
     expectedFormat: 'json_array',
   });
 
-  const plans = JSON.parse(result.content);
+  const plans = JSON.parse(result.content as string);
   return plans.map((p: any, i: number) => ({
     accountId: `strategy-${i}`,
     contentAngle: p.contentAngle,
@@ -429,7 +429,7 @@ export async function generateIterationStrategy(
     expectedFormat: 'json_array',
   });
 
-  const plans = JSON.parse(result.content);
+  const plans = JSON.parse(result.content as string);
   return plans.map((p: any, i: number) => ({
     accountId: `strategy-${i}`,
     contentAngle: p.contentAngle,

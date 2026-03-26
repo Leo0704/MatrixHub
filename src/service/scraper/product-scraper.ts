@@ -1,5 +1,5 @@
-import { get } from 'http';
-import { get } from 'https';
+import http from 'http';
+import https from 'https';
 import type { ProductInfo } from '../../shared/types.js';
 
 const INTERNAL_HOSTS = [

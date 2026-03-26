@@ -173,25 +173,6 @@ export interface ElectronAPI {
     day: { remaining: number; resetAt: number };
   }>>;
 
-  // 自动化确认
-  requestAutomationConfirm: (params: {
-    action: string;
-    platform: Platform;
-    accountId?: string;
-    config?: Record<string, unknown>;
-  }) => Promise<{ confirmed: boolean; dontAskAgain: boolean }>;
-
-  // 事件监听
-  onAutomationConfirmRequest: (callback: (params: {
-    action: string;
-    actionLabel: string;
-    platform: Platform;
-    platformLabel: string;
-    accountId?: string;
-    riskMessage: string;
-  }) => void) => void;
-  sendAutomationConfirmResponse: (result: { confirmed: boolean; dontAskAgain: boolean }) => void;
-
   // AI
   generateAI: (request: AIRequest) => Promise<AIResponse>;
   iterateAI: (request: AIIterationRequest) => Promise<AIResponse>;

@@ -40,9 +40,6 @@ const api: ElectronAPI = {
   checkRate: (platform) => ipcRenderer.invoke(IpcChannel.RATE_CHECK, { platform }),
   getRateLimitStatusAll: () => ipcRenderer.invoke(IpcChannel.RATE_STATUS_ALL),
 
-  // ============ 自动化确认 ============
-  requestAutomationConfirm: (params) => ipcRenderer.invoke(IpcChannel.AUTOMATION_CONFIRM, params),
-
   // ============ AI ============
   generateAI: (request) => ipcRenderer.invoke(IpcChannel.AI_GENERATE, request),
   iterateAI: (request) => ipcRenderer.invoke(IpcChannel.AI_ITERATE, request),
@@ -159,14 +156,6 @@ const api: ElectronAPI = {
 
   onCampaignFailed: (callback) => {
     ipcRenderer.on('campaign:failed', (_, data) => callback(data));
-  },
-
-  onAutomationConfirmRequest: (callback) => {
-    ipcRenderer.on('automation:confirm-request', (_, params) => callback(params));
-  },
-
-  sendAutomationConfirmResponse: (result) => {
-    ipcRenderer.send('automation:confirm-response', result);
   },
 
   onAIRecommendation: (callback) => {

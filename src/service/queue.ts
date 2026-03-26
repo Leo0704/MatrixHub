@@ -44,6 +44,7 @@ export class TaskQueue {
     payload: Record<string, unknown>;
     scheduledAt?: number;
     maxRetries?: number;
+    pipelineId?: string;
   }): Task {
     // Zod Schema 校验 — publish 类型字段类型验证（松散模式，向后兼容）
     if (params.type === 'publish') {
@@ -69,11 +70,12 @@ export class TaskQueue {
       createdAt: now,
       updatedAt: now,
       version: 1,
+      pipelineId: params.pipelineId,
     };
 
     const stmt = db.prepare(`
-      INSERT INTO tasks (id, type, platform, status, title, payload, max_retries, scheduled_at, created_at, updated_at, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, type, platform, status, title, payload, max_retries, scheduled_at, created_at, updated_at, version, pipeline_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -87,7 +89,8 @@ export class TaskQueue {
       task.scheduledAt ?? null,
       task.createdAt,
       task.updatedAt,
-      task.version
+      task.version,
+      task.pipelineId ?? null,
     );
 
     log.info(`任务创建: ${task.id} [${task.platform}] ${task.title}`);
@@ -347,9 +350,6 @@ export class TaskQueue {
 
     // Fallback to string matching for non-AppError
     const message = error?.message?.toLowerCase() || '';
-    if (message.includes('selector') || message.includes('元素') || message.includes('element')) {
-      return ErrorType.SELECTOR;
-    }
     if (message.includes('rate') || message.includes('限流') || message.includes('频率')) {
       return ErrorType.RATE_LIMIT;
     }

@@ -6,7 +6,7 @@ import { createCampaign, getCampaign, updateCampaignStatus, updateCampaignIterat
 import { taskQueue } from './queue.js';
 import { broadcastToRenderers } from './ipc-handlers.js';
 import { createPage, releasePage } from './platform-launcher.js';
-import { accountManager } from './credential-manager.js';
+import { accountManager, credentialManager } from './credential-manager.js';
 import { generateContent, type GeneratedContent } from './strategy/content-executor.js';
 import type { Campaign, CampaignReport, AccountMetrics, ContentType, MarketingGoal, ProductInfo } from '../shared/types.js';
 import type { Page } from 'playwright';
@@ -314,7 +314,7 @@ export async function checkCampaignProgress(campaignId: string): Promise<void> {
     let page: Page | null = null;
     try {
       // 获取账号凭证
-      const credentials = await accountManager.getCredential(accountId);
+      const credentials = await credentialManager.getCredential(accountId);
       if (!credentials) {
         log.warn(`[CampaignManager] 账号 ${accountId} 无凭证`);
         metrics.push({

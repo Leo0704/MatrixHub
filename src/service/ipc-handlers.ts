@@ -34,6 +34,7 @@ export { broadcastToRenderers };
 import {
   registerTaskHandlers,
   registerAccountHandlers,
+  registerGroupHandlers,
   registerRateHandlers,
   registerAIHandlers,
   registerMonitoringHandlers,
