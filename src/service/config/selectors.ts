@@ -57,7 +57,7 @@ const AUTO_SELECTORS: Record<string, Record<string, string[]>> = {
   xiaohongshu: {
     comment_item: ['[class*="comment-item"]', '.comment-item'],
     comment_input: ['textarea[placeholder*="说点什么"]', '[class*="input"] textarea'],
-    like_button: ['[class*="like"]', '.heart-icon', 'button:has-text("收藏")]'],
+    like_button: ['[class*="like"]', '.heart-icon', 'button:has-text("收藏")'],
     follow_button: ['button:has-text("关注")', '[class*="follow"]'],
     note_item: ['[class*="note-item"]', '[class*="card"]'],
     note_like: ['[class*="like-icon"]', 'button:has-text("赞")'],

@@ -14,7 +14,7 @@ import Settings from './pages/Settings';
 import AutoCreation from './pages/AutoCreation';
 
 function App() {
-  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, setHasCompletedOnboarding } = useAppStore();
+  const { accounts, setAccounts, addAccount, removeAccount, version, setVersion, currentPage, setCurrentPage, setHasCompletedOnboarding, initTaskDraft } = useAppStore();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [aiRecommendation, setAIRecommendation] = useState<AIRecommendation | null>(null);
   const initializedRef = useRef(false);
@@ -34,6 +34,13 @@ function App() {
       } catch (error) {
         console.error('Failed to load accounts:', error);
         setAccounts([]);
+      }
+
+      // Initialize task draft from encrypted storage
+      try {
+        await initTaskDraft();
+      } catch (error) {
+        console.error('Failed to initialize task draft:', error);
       }
 
       // Then check if onboarding is needed
@@ -69,7 +76,7 @@ function App() {
       window.electronAPI?.removeAllListeners('account:removed');
       window.electronAPI?.removeAllListeners('ai:recommendation');
     };
-  }, [addAccount, removeAccount, setAccounts, setVersion]);
+  }, [addAccount, removeAccount, setAccounts, setVersion, initTaskDraft]);
 
   const handleAIRecommendationAccept = async (tasks: Array<{
     type: string;

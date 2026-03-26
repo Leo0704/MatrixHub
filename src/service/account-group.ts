@@ -1,12 +1,14 @@
 import { getDb } from './db.js';
 import type { AccountGroup } from '../shared/types.js';
 import { v4 as uuid } from 'uuid';
+import type { AccountGroupRow } from './db-types.js';
+import { asRow, asRows } from './db-types.js';
 
 export function createGroup(name: string, color?: string): AccountGroup {
   const db = getDb();
   const now = Date.now();
   const id = uuid();
-  const sortOrder = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM account_groups').get() as any).next;
+  const sortOrder = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM account_groups').get() as { next: number }).next;
 
   const group: AccountGroup = {
     id,
@@ -28,7 +30,7 @@ export function createGroup(name: string, color?: string): AccountGroup {
 export function updateGroup(id: string, updates: { name?: string; color?: string; sortOrder?: number }): AccountGroup | null {
   const db = getDb();
   const now = Date.now();
-  const existing = db.prepare('SELECT * FROM account_groups WHERE id = ?').get(id) as any;
+  const existing = asRow<AccountGroupRow>(db.prepare('SELECT * FROM account_groups WHERE id = ?').get(id));
   if (!existing) return null;
 
   const sets: string[] = ['updated_at = ?'];
@@ -78,7 +80,7 @@ export function getGroupAccountCount(groupId: string): number {
 
 export function listGroups(): AccountGroup[] {
   const db = getDb();
-  const rows = db.prepare('SELECT * FROM account_groups ORDER BY sort_order ASC, created_at ASC').all() as any[];
+  const rows = asRows<AccountGroupRow>(db.prepare('SELECT * FROM account_groups ORDER BY sort_order ASC, created_at ASC').all());
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -91,7 +93,7 @@ export function listGroups(): AccountGroup[] {
 
 export function getGroup(id: string): AccountGroup | null {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM account_groups WHERE id = ?').get(id) as any;
+  const row = asRow<AccountGroupRow>(db.prepare('SELECT * FROM account_groups WHERE id = ?').get(id));
   if (!row) return null;
   return {
     id: row.id,

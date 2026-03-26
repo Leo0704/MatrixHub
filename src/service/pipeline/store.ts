@@ -1,15 +1,17 @@
 import { getDb } from '../db.js';
 import type { PipelineTask } from '../../shared/types.js';
+import type { PipelineTaskRow } from '../db-types.js';
+import { asRow, asRows } from '../db-types.js';
 
 export function loadPipelineTask(id: string): PipelineTask | null {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM pipeline_tasks WHERE id = ?').get(id) as any;
-  return row ? rowToPipelineTask(row) : null;
+  const row = db.prepare('SELECT * FROM pipeline_tasks WHERE id = ?').get(id);
+  return row ? rowToPipelineTask(asRow<PipelineTaskRow>(row)) : null;
 }
 
 export function loadAllPipelineTasks(): PipelineTask[] {
   const db = getDb();
-  const rows = db.prepare('SELECT * FROM pipeline_tasks ORDER BY created_at DESC').all() as any[];
+  const rows = asRows<PipelineTaskRow>(db.prepare('SELECT * FROM pipeline_tasks ORDER BY created_at DESC').all());
   return rows.map(rowToPipelineTask);
 }
 
@@ -43,7 +45,7 @@ export function updatePipelineStatus(id: string, status: string): void {
   `).run(status, Date.now(), id);
 }
 
-function rowToPipelineTask(row: any): PipelineTask {
+function rowToPipelineTask(row: PipelineTaskRow): PipelineTask {
   return {
     id: row.id,
     input: JSON.parse(row.input_data),

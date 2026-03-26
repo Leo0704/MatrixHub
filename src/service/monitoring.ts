@@ -4,6 +4,8 @@ import log from 'electron-log';
 import type { Platform } from '../shared/types.js';
 import { getBrowserPoolStatus, getPagePoolStatus } from './platform-launcher.js';
 import { taskQueue } from './queue.js';
+import type { AlertRow, MetricRow, TaskRow } from './db-types.js';
+import { asRow, asRows } from './db-types.js';
 
 // Alert thresholds
 export const ALERT_THRESHOLDS = {
@@ -101,13 +103,13 @@ export class MonitoringService {
         SUM(CASE WHEN status = 'pending' OR status = 'deferred' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'failed' AND updated_at > ? THEN 1 ELSE 0 END) as failed_24h
       FROM tasks
-    `).get(now - 24 * 60 * 60 * 1000) as any;
+    `).get(now - 24 * 60 * 60 * 1000) as { pending: number; failed_24h: number } | undefined;
 
     // Check alerts
     const recentAlerts = db.prepare(`
       SELECT COUNT(*) as count FROM alerts
       WHERE timestamp > ? AND acknowledged = 0
-    `).get(now - 60 * 60 * 1000) as any;
+    `).get(now - 60 * 60 * 1000) as { count: number } | undefined;
 
     const pendingTasks = queueStats?.pending ?? 0;
     const queueHealthy = pendingTasks < ALERT_THRESHOLDS.queuePending;
@@ -309,7 +311,7 @@ export class MonitoringService {
     query += ' ORDER BY timestamp DESC LIMIT ?';
     params.push(limit);
 
-    const rows = db.prepare(query).all(...params) as any[];
+    const rows = asRows<AlertRow>(db.prepare(query).all(...params));
 
     return rows.map(row => ({
       id: row.id,
@@ -367,7 +369,7 @@ export class MonitoringService {
     query += ' ORDER BY timestamp DESC LIMIT ?';
     params.push(limit);
 
-    const rows = db.prepare(query).all(...params) as any[];
+    const rows = asRows<MetricRow>(db.prepare(query).all(...params));
 
     return rows.map(row => ({
       id: row.id,
@@ -395,7 +397,7 @@ export class MonitoringService {
         SUM(CASE WHEN status = 'pending' OR status = 'deferred' THEN 1 ELSE 0 END) as pending
       FROM tasks
       WHERE updated_at > ?
-    `).get(oneHourAgo) as any;
+    `).get(oneHourAgo) as { completed: number; failed: number; pending: number } | undefined;
 
     const total = (taskStats?.completed ?? 0) + (taskStats?.failed ?? 0);
     const successRate = total > 0 ? (taskStats?.completed ?? 0) / total : 1;
@@ -406,7 +408,8 @@ export class MonitoringService {
     this.recordMetric('tasks_failed', taskStats?.failed ?? 0);
 
     // ============ 按平台统计 ============
-    const platformStats = db.prepare(`
+    interface PlatformStatRow { platform: string; type: string; completed: number; failed: number }
+    const platformStats = asRows<PlatformStatRow>(db.prepare(`
       SELECT
         platform,
         type,
@@ -415,7 +418,7 @@ export class MonitoringService {
       FROM tasks
       WHERE updated_at > ?
       GROUP BY platform, type
-    `).all(oneDayAgo) as any[];
+    `).all(oneDayAgo));
 
     for (const stat of platformStats) {
       const platformTotal = stat.completed + stat.failed;
@@ -437,7 +440,7 @@ export class MonitoringService {
         AND completed_at IS NOT NULL
         AND started_at IS NOT NULL
         AND updated_at > ?
-    `).get(oneDayAgo) as any;
+    `).get(oneDayAgo) as { avg_duration_ms: number; min_duration_ms: number; max_duration_ms: number } | undefined;
 
     if (durationStats?.avg_duration_ms) {
       this.recordMetric('task_avg_duration_ms', durationStats.avg_duration_ms);
@@ -446,7 +449,8 @@ export class MonitoringService {
     }
 
     // ============ 选择器命中率 ============
-    const selectorStats = db.prepare(`
+    interface SelectorStatRow { platform: string; selector_key: string; success_rate: number; failure_count: number }
+    const selectorStats = asRows<SelectorStatRow>(db.prepare(`
       SELECT
         platform,
         selector_key,
@@ -454,7 +458,7 @@ export class MonitoringService {
         failure_count
       FROM selector_versions
       WHERE is_active = 1
-    `).all() as any[];
+    `).all());
 
     for (const stat of selectorStats) {
       this.recordMetric('selector_success_rate', stat.success_rate, {
@@ -471,7 +475,7 @@ export class MonitoringService {
       FROM tasks
       WHERE retry_count > 0
         AND updated_at > ?
-    `).get(oneDayAgo) as any;
+    `).get(oneDayAgo) as { retried_tasks: number; avg_retries: number } | undefined;
 
     if (retryStats) {
       this.recordMetric('tasks_retried', retryStats.retried_tasks ?? 0);
@@ -539,12 +543,13 @@ export class MonitoringService {
         SUM(retry_count) as total_retries
       FROM tasks
       WHERE updated_at > ?
-    `).get(oneDayAgo) as any;
+    `).get(oneDayAgo) as { total: number; completed: number; failed: number; avg_duration: number; total_retries: number } | undefined;
 
     const successRate = overview.total > 0 ? overview.completed / overview.total : 1;
 
     // By platform
-    const platformStats = db.prepare(`
+    interface PlatformStatRow2 { platform: string; total: number; completed: number; avg_duration: number }
+    const platformStats = asRows<PlatformStatRow2>(db.prepare(`
       SELECT
         platform,
         COUNT(*) as total,
@@ -554,7 +559,7 @@ export class MonitoringService {
       FROM tasks
       WHERE updated_at > ?
       GROUP BY platform
-    `).all(oneDayAgo) as any[];
+    `).all(oneDayAgo));
 
     const byPlatform: Record<string, any> = {};
     for (const stat of platformStats) {
@@ -566,11 +571,12 @@ export class MonitoringService {
     }
 
     // Selectors
-    const selectorStats = db.prepare(`
+    interface SelectorStatRow2 { platform: string; selector_key: string; success_rate: number; is_active: number }
+    const selectorStats = asRows<SelectorStatRow2>(db.prepare(`
       SELECT platform, selector_key, success_rate, is_active
       FROM selector_versions
       WHERE is_active = 1
-    `).all() as any[];
+    `).all());
 
     const selectors: Record<string, Record<string, any>> = {};
     for (const stat of selectorStats) {
@@ -628,7 +634,7 @@ export class MonitoringService {
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
       FROM tasks
       WHERE type = 'publish' AND created_at >= ?
-    `).get(todayStart) as any;
+    `).get(todayStart) as { total: number; completed: number } | undefined;
 
     const todayPublishCount = todayStats?.completed ?? 0;
 
@@ -639,7 +645,7 @@ export class MonitoringService {
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
       FROM tasks
       WHERE updated_at > ?
-    `).get(now - 24 * 60 * 60 * 1000) as any;
+    `).get(now - 24 * 60 * 60 * 1000) as { completed: number; failed: number } | undefined;
 
     const total = (dayStats?.completed ?? 0) + (dayStats?.failed ?? 0);
     const successRate = total > 0 ? (dayStats?.completed ?? 0) / total : 1;
@@ -648,7 +654,7 @@ export class MonitoringService {
     const pendingTasks = db.prepare(`
       SELECT COUNT(*) as count FROM tasks
       WHERE status = 'pending' OR status = 'deferred'
-    `).get() as any;
+    `).get() as { count: number } | undefined;
 
     // Failed tasks in 24h
     const failedTasks24h = dayStats?.failed ?? 0;

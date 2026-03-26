@@ -100,7 +100,7 @@ async function executeDecision(decision: AIDecision): Promise<void> {
 async function analyzeFailureImpl(task: Task): Promise<void> {
   // 循环保护：检查分析次数（直接从数据库读取）
   const db = getDb()
-  const row = db.prepare('SELECT ai_analysis_count FROM tasks WHERE id = ?').get(task.id) as any
+  const row = db.prepare('SELECT ai_analysis_count FROM tasks WHERE id = ?').get(task.id) as { ai_analysis_count: number } | undefined
   const analysisCount = row?.ai_analysis_count ?? 0
 
   if (analysisCount >= MAX_ANALYSIS_PER_TASK) {

@@ -22,6 +22,7 @@ interface PooledPage {
   isLoggedIn: boolean;
   createdAt: number;         // 页面创建时间
   closeHandler?: () => void;  // 保存关闭事件处理器引用，用于清理
+  removed?: boolean;          // 防止 double-removal 标志
 }
 const pagePool: PooledPage[] = [];
 
@@ -70,6 +71,8 @@ export async function getBrowser(platform: Platform): Promise<Browser> {
       browserPool.delete(platform);
       // 清理关联的 context
       contextPool.delete(platform);
+      // 清理所有关联的页面
+      cleanupPagesForPlatform(platform);
     });
   }
 
@@ -158,7 +161,7 @@ export async function createPage(platform: Platform, accountId?: string): Promis
     const pooled = pagePool.find(
       p => p.platform === platform && p.accountId === accountId && !p.inUse
     );
-    if (pooled && (pooled.page as any).isConnected?.() && pooled.isLoggedIn) {
+    if (pooled && !pooled.page.isClosed() && pooled.isLoggedIn) {
       pooled.inUse = true;
       pooled.lastUsed = Date.now();
       pooled.useCount++;
@@ -171,7 +174,7 @@ export async function createPage(platform: Platform, accountId?: string): Promis
   const genericPooled = pagePool.find(
     p => p.platform === platform && p.accountId === null && !p.inUse
   );
-  if (genericPooled && (genericPooled.page as any).isConnected?.()) {
+  if (genericPooled && !genericPooled.page.isClosed()) {
     genericPooled.inUse = true;
     genericPooled.lastUsed = Date.now();
     genericPooled.useCount++;
@@ -203,9 +206,23 @@ export async function createPage(platform: Platform, accountId?: string): Promis
   let context = contextPool.get(platform);
   if (!context) {
     context = await browser.newContext({
+      userAgent: getRandomUserAgent(),
+      viewport: { width: 1280, height: 800 },
       timezoneId: 'Asia/Shanghai',
       locale: 'zh-CN',
+      permissions: [],
     });
+
+    // 注入反检测脚本
+    await context.addInitScript(`
+      ${getFingerprintScript()}
+      globalThis.chrome = {
+        runtime: { id: undefined, getURL: (s) => s },
+        app: {},
+        storage: { local: {} },
+      };
+    `);
+
     contextPool.set(platform, context);
   }
 
@@ -230,7 +247,8 @@ export async function createPage(platform: Platform, accountId?: string): Promis
   // 监听页面关闭事件
   const closeHandler = () => {
     const pooled = pagePool.find(p => p.page === page);
-    if (pooled) {
+    if (pooled && !pooled.removed) {
+      pooled.removed = true;
       removeFromPool(pooled);
     }
   };
@@ -268,6 +286,37 @@ export async function releasePage(page: Page): Promise<void> {
 }
 
 /**
+ * 清理指定平台的所有页面（当浏览器断开连接时调用）
+ */
+function cleanupPagesForPlatform(platform: Platform): void {
+  const pagesToRemove = pagePool.filter(p => p.platform === platform);
+  for (const pooled of pagesToRemove) {
+    // 从池中移除
+    const idx = pagePool.indexOf(pooled);
+    if (idx !== -1) {
+      pagePool.splice(idx, 1);
+    }
+    // 安全移除事件监听器
+    if (pooled.closeHandler) {
+      try {
+        pooled.page.removeListener('close', pooled.closeHandler);
+      } catch (err) {
+        // 页面可能已经关闭，忽略错误
+      }
+    }
+    // 尝试关闭页面（可能已经无效）
+    try {
+      if (!pooled.page.isClosed()) {
+        pooled.page.close().catch(() => {});
+      }
+    } catch {
+      // 页面已经关闭或无效，忽略错误
+    }
+  }
+  log.info(`[PagePool] 清理了 ${pagesToRemove.length} 个页面: ${platform}`);
+}
+
+/**
  * 从池中移除页面
  */
 function removeFromPool(pooled: PooledPage): void {
@@ -278,7 +327,11 @@ function removeFromPool(pooled: PooledPage): void {
 
   // 移除事件监听器，避免内存泄漏
   if (pooled.closeHandler) {
-    pooled.page.removeListener('close', pooled.closeHandler);
+    try {
+      pooled.page.removeListener('close', pooled.closeHandler);
+    } catch (err) {
+      // 页面可能已经关闭，忽略错误
+    }
   }
 
   try {

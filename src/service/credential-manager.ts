@@ -11,8 +11,34 @@ import {
   getKeychainBackend,
   type KeychainBackend
 } from './keychain/index.js';
+import type { AccountRow } from './db-types.js';
+import { asRow, asRows } from './db-types.js';
 
 const VALID_PLATFORMS: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
+
+// Path traversal protection: validate inputs before use in file paths
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PROVIDER_TYPE_REGEX = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * Validates that accountId is a valid UUID format to prevent path traversal.
+ * Rejects any input containing path separators or other dangerous characters.
+ */
+function validateAccountId(accountId: string): void {
+  if (!UUID_REGEX.test(accountId)) {
+    throw new Error(`Invalid accountId format: must be a valid UUID. Got: ${accountId}`);
+  }
+}
+
+/**
+ * Validates that providerType contains only safe characters to prevent path traversal.
+ * Allows only alphanumeric characters, underscores, and hyphens.
+ */
+function validateProviderType(providerType: string): void {
+  if (!PROVIDER_TYPE_REGEX.test(providerType)) {
+    throw new Error(`Invalid providerType: must contain only alphanumeric characters, underscores, and hyphens. Got: ${providerType}`);
+  }
+}
 
 /**
  * 凭证管理器
@@ -58,6 +84,7 @@ export class CredentialManager {
     cookies?: string;
     tokens?: Record<string, string>;
   }): Promise<void> {
+    validateAccountId(accountId);
     const keychainKey = `credential:${accountId}`;
 
     // 序列化凭证
@@ -94,6 +121,7 @@ export class CredentialManager {
     cookies?: string;
     tokens?: Record<string, string>;
   } | null> {
+    validateAccountId(accountId);
     const keychainKey = `credential:${accountId}`;
 
     // 尝试从加密文件加载
@@ -123,6 +151,7 @@ export class CredentialManager {
    * 删除凭证
    */
   async deleteCredential(accountId: string): Promise<void> {
+    validateAccountId(accountId);
     const keychainKey = `credential:${accountId}`;
 
     // 删除加密文件
@@ -220,6 +249,7 @@ export class AIKeyManager {
    * 存储 AI API Key
    */
   async storeAPIKey(providerType: string, apiKey: string): Promise<void> {
+    validateProviderType(providerType);
     // 使用 safeStorage 加密存储
     if (safeStorage.isEncryptionAvailable()) {
       const encrypted = safeStorage.encryptString(apiKey);
@@ -238,6 +268,7 @@ export class AIKeyManager {
    * 获取 AI API Key
    */
   async getAPIKey(providerType: string): Promise<string | null> {
+    validateProviderType(providerType);
     const key = `ai:${providerType}`;
 
     // 尝试从加密文件加载
@@ -261,6 +292,7 @@ export class AIKeyManager {
    * 删除 AI API Key
    */
   async deleteAPIKey(providerType: string): Promise<void> {
+    validateProviderType(providerType);
     const key = `ai:${providerType}`;
 
     const storePath = this.getKeyPath(providerType);
@@ -276,6 +308,7 @@ export class AIKeyManager {
    * 检查 API Key 是否存在
    */
   async hasAPIKey(providerType: string): Promise<boolean> {
+    validateProviderType(providerType);
     const key = await this.getAPIKey(providerType);
     return key !== null && key.length > 0;
   }
@@ -423,8 +456,8 @@ export class AccountManager {
     const query = includePending
       ? 'SELECT * FROM accounts WHERE id = ?'
       : "SELECT * FROM accounts WHERE id = ? AND (creation_status = 'complete' OR creation_status IS NULL)";
-    const row = db.prepare(query).get(accountId) as any;
-    return row ? this.rowToAccount(row) : null;
+    const row = db.prepare(query).get(accountId);
+    return row ? this.rowToAccount(asRow<AccountRow>(row)) : null;
   }
 
   /**
@@ -451,7 +484,7 @@ export class AccountManager {
     }
     query += ' ORDER BY created_at DESC';
     const rows = db.prepare(query).all(...params);
-    return (rows as any[]).map(r => this.rowToAccount(r));
+    return asRows<AccountRow>(rows).map(r => this.rowToAccount(r));
   }
 
   /**
@@ -459,7 +492,7 @@ export class AccountManager {
    */
   listFailed(): Account[] {
     const db = getDb();
-    const rows = db.prepare("SELECT * FROM accounts WHERE creation_status = 'failed'").all() as any[];
+    const rows = asRows<AccountRow>(db.prepare("SELECT * FROM accounts WHERE creation_status = 'failed'").all());
     return rows.map(r => this.rowToAccount(r));
   }
 
@@ -534,7 +567,7 @@ export class AccountManager {
     db.prepare('UPDATE accounts SET last_used_at = ? WHERE id = ?').run(Date.now(), accountId);
   }
 
-  private rowToAccount(row: any): Account {
+  private rowToAccount(row: AccountRow): Account {
     return {
       id: row.id,
       platform: row.platform as Platform,

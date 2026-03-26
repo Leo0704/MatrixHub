@@ -2,6 +2,8 @@ import { getDb } from './db.js';
 import type { Platform } from '../shared/types.js';
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
+import type { SelectorVersionRow } from './db-types.js';
+import { asRow, asRows } from './db-types.js';
 
 export interface Selector {
   key: string;        // 唯一标识，如 'publish_button', 'login_username_input'
@@ -33,12 +35,12 @@ export class SelectorManager {
     const now = Date.now();
 
     // 检查是否已存在
-    const existing = db.prepare(`
+    const existing = asRow<SelectorVersionRow>(db.prepare(`
       SELECT * FROM selector_versions
       WHERE platform = ? AND selector_key = ? AND is_active = 1
       ORDER BY version DESC
       LIMIT 1
-    `).get(params.platform, params.selectorKey) as any;
+    `).get(params.platform, params.selectorKey));
 
     const newVersion = existing ? existing.version + 1 : 1;
 
@@ -85,12 +87,12 @@ export class SelectorManager {
    */
   get(platform: Platform, selectorKey: string): Selector | null {
     const db = getDb();
-    const row = db.prepare(`
+    const row = asRow<SelectorVersionRow>(db.prepare(`
       SELECT * FROM selector_versions
       WHERE platform = ? AND selector_key = ? AND is_active = 1
       ORDER BY version DESC
       LIMIT 1
-    `).get(platform, selectorKey) as any;
+    `).get(platform, selectorKey));
 
     if (!row) return null;
 
@@ -112,11 +114,11 @@ export class SelectorManager {
    */
   getAllVersions(platform: Platform, selectorKey: string): Selector[] {
     const db = getDb();
-    const rows = db.prepare(`
+    const rows = asRows<SelectorVersionRow>(db.prepare(`
       SELECT * FROM selector_versions
       WHERE platform = ? AND selector_key = ?
       ORDER BY success_rate DESC, version DESC
-    `).all(platform, selectorKey) as any[];
+    `).all(platform, selectorKey));
 
     return rows.map(row => ({
       key: row.selector_key,
@@ -156,7 +158,7 @@ export class SelectorManager {
     const newFailureCount = selector.failureCount + (delta < 0 ? 1 : 0);
     // 简单移动平均
     const newSuccessRate = Math.max(0,
-      selector.successRate * 0.9 + (delta > 0 ? 0.1 : 0)
+      selector.successRate * 0.9 + (delta > 0 ? 0.1 : -0.1)
     );
 
     // 如果成功率低于阈值，尝试降级
@@ -188,12 +190,12 @@ export class SelectorManager {
     `).run(now, platform, selectorKey);
 
     // 激活下一个最佳选择器
-    const fallback = db.prepare(`
+    const fallback = asRow<{ id: string }>(db.prepare(`
       SELECT id FROM selector_versions
       WHERE platform = ? AND selector_key = ?
       ORDER BY success_rate DESC, version DESC
       LIMIT 1
-    `).get(platform, selectorKey) as any;
+    `).get(platform, selectorKey));
 
     if (fallback) {
       db.prepare(`

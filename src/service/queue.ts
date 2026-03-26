@@ -4,6 +4,8 @@ import { getMaintenanceWindows, getErrorWeights, getTaskStaleTimeout } from './c
 import type { Task, TaskFilter, TaskStatus, TaskCheckpoint, Platform } from '../shared/types.js';
 import { AppError, ErrorCode, ErrorType, classifyErrorCode, isAppError } from '../shared/errors.js';
 import log from 'electron-log';
+import type { TaskRow, TaskCheckpointRow } from './db-types.js';
+import { asRow, asRows } from './db-types.js';
 
 export class TaskQueue {
   /**
@@ -62,8 +64,8 @@ export class TaskQueue {
    */
   get(taskId: string): Task | null {
     const db = getDb();
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
-    return row ? this.rowToTask(row) : null;
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+    return row ? this.rowToTask(asRow<TaskRow>(row)) : null;
   }
 
   /**
@@ -103,9 +105,9 @@ export class TaskQueue {
       SELECT * FROM tasks ${where}
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?
-    `).all(...values, limit, offset) as any[];
+    `).all(...values, limit, offset);
 
-    return rows.map(r => this.rowToTask(r));
+    return asRows<TaskRow>(rows).map(r => this.rowToTask(r));
   }
 
   /**
@@ -132,10 +134,10 @@ export class TaskQueue {
         LIMIT 1
       )
       RETURNING *
-    `).get(now, now) as any;
+    `).get(now, now);
 
     if (row) {
-      return this.rowToTask(row);
+      return this.rowToTask(asRow<TaskRow>(row));
     }
     return null;
   }
@@ -305,7 +307,7 @@ export class TaskQueue {
     }
 
     // Fallback to string matching for non-AppError
-    const message = error.message.toLowerCase();
+    const message = error?.message?.toLowerCase() || '';
     if (message.includes('selector') || message.includes('元素') || message.includes('element')) {
       return ErrorType.SELECTOR;
     }
@@ -391,26 +393,27 @@ export class TaskQueue {
    */
   getCheckpoint(taskId: string): TaskCheckpoint | null {
     const db = getDb();
-    const row = db.prepare('SELECT * FROM task_checkpoints WHERE task_id = ?').get(taskId) as any;
+    const row = db.prepare('SELECT * FROM task_checkpoints WHERE task_id = ?').get(taskId);
     if (!row) return null;
+    const checkpointRow = asRow<TaskCheckpointRow>(row);
 
     // 检查点过期时间：24小时
     const CHECKPOINT_EXPIRY_MS = 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    if (now - row.created_at > CHECKPOINT_EXPIRY_MS) {
+    if (now - checkpointRow.created_at > CHECKPOINT_EXPIRY_MS) {
       // 检查点已过期，清除并返回 null
-      log.warn(`检查点已过期: ${taskId} (${new Date(row.created_at).toISOString()})`);
+      log.warn(`检查点已过期: ${taskId} (${new Date(checkpointRow.created_at).toISOString()})`);
       this.clearCheckpoint(taskId);
       return null;
     }
 
     return {
-      taskId: row.task_id,
-      step: row.step,
-      payload: JSON.parse(row.payload),
-      browserState: row.browser_state ?? undefined,
-      createdAt: row.created_at,
+      taskId: checkpointRow.task_id,
+      step: checkpointRow.step,
+      payload: JSON.parse(checkpointRow.payload),
+      browserState: checkpointRow.browser_state ?? undefined,
+      createdAt: checkpointRow.created_at,
     };
   }
 
@@ -443,19 +446,19 @@ export class TaskQueue {
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
         SUM(CASE WHEN status = 'deferred' THEN 1 ELSE 0 END) as deferred
       FROM tasks
-    `).get() as any;
+    `).get();
 
     return {
-      total: row.total ?? 0,
-      pending: row.pending ?? 0,
-      running: row.running ?? 0,
-      completed: row.completed ?? 0,
-      failed: row.failed ?? 0,
-      deferred: row.deferred ?? 0,
+      total: (row as { total: number }).total ?? 0,
+      pending: (row as { pending: number }).pending ?? 0,
+      running: (row as { running: number }).running ?? 0,
+      completed: (row as { completed: number }).completed ?? 0,
+      failed: (row as { failed: number }).failed ?? 0,
+      deferred: (row as { deferred: number }).deferred ?? 0,
     };
   }
 
-  private rowToTask(row: any): Task {
+  private rowToTask(row: TaskRow): Task {
     return {
       id: row.id,
       type: row.type as Task['type'],

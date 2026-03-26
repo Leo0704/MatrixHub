@@ -4,6 +4,8 @@ import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
 import type { Platform, AIRequest, AIResponse, AIIterationRequest } from '../shared/types.js';
 import { isUrlSafe } from '../shared/url-utils.js';
+import type { AiProviderRow } from './db-types.js';
+import { asRow, asRows } from './db-types.js';
 
 /**
  * AI Provider 类型
@@ -586,7 +588,7 @@ export class AIGateway {
       throw new Error('Voice generation failed - no audio in response');
     }
 
-    return Buffer.from(audioData, 'base64').toString('base64');
+    return audioData;
   }
 
   /**
@@ -982,7 +984,7 @@ export class AIGateway {
    */
   async loadProviders(): Promise<void> {
     const db = getDb();
-    const rows = db.prepare('SELECT * FROM ai_providers WHERE status = ?').all('active') as any[];
+    const rows = asRows<AiProviderRow>(db.prepare('SELECT * FROM ai_providers WHERE status = ?').all('active'));
 
     for (const row of rows) {
       const provider: AIProvider = {
@@ -1010,13 +1012,25 @@ export class AIGateway {
    */
   async loadTaskTypeBindings(): Promise<void> {
     const db = getDb();
-    const rows = db.prepare(`
+    interface TaskTypeBindingRow {
+      task_type: string;
+      provider_id: string;
+      p_id: string;
+      p_name: string;
+      provider_type: string;
+      api_key_keychain_key: string;
+      base_url: string | null;
+      models: string;
+      is_default: number;
+      status: string;
+    }
+    const rows = asRows<TaskTypeBindingRow>(db.prepare(`
       SELECT tb.task_type, tb.provider_id,
              p.id as p_id, p.name as p_name, p.provider_type, p.api_key_keychain_key,
              p.base_url, p.models, p.is_default, p.status
       FROM task_type_bindings tb
       JOIN ai_providers p ON p.id = tb.provider_id
-    `).all() as any[];
+    `).all());
 
     this.taskTypeBindings.clear();
     for (const row of rows) {

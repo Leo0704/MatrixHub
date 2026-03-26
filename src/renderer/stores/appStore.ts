@@ -40,6 +40,7 @@ interface AppState {
   taskDraft: TaskDraft | null;
   setTaskDraft: (draft: TaskDraft | null) => void;
   clearTaskDraft: () => void;
+  initTaskDraft: () => Promise<void>;
 
   hotTopicDraft: HotTopicDraft | null;
   setHotTopicDraft: (draft: HotTopicDraft | null) => void;
@@ -48,14 +49,6 @@ interface AppState {
 
 const savedOnboarding = localStorage.getItem('onboardingCompleted');
 const hasCompletedOnboarding = savedOnboarding === 'true';
-
-let taskDraft = null;
-try {
-  const savedDraft = localStorage.getItem('taskDraft');
-  taskDraft = savedDraft ? JSON.parse(savedDraft) : null;
-} catch {
-  taskDraft = null;
-}
 
 export const useAppStore = create<AppState>((set) => ({
   accounts: [],
@@ -84,19 +77,42 @@ export const useAppStore = create<AppState>((set) => ({
     if (value) localStorage.setItem('onboardingCompleted', 'true');
   },
 
-  taskDraft,
-  setTaskDraft: (draft) => {
+  // Task draft - initialized as null, use initTaskDraft() to load from encrypted storage
+  taskDraft: null,
+
+  setTaskDraft: async (draft) => {
     set({ taskDraft: draft });
-    if (draft) {
-      localStorage.setItem('taskDraft', JSON.stringify(draft));
-    } else {
-      localStorage.removeItem('taskDraft');
+    try {
+      await window.electronAPI?.setTaskDraft(draft as TaskDraft | null);
+    } catch (error) {
+      console.error('[appStore] Failed to save task draft:', error);
     }
   },
 
-  clearTaskDraft: () => {
+  clearTaskDraft: async () => {
     set({ taskDraft: null });
-    localStorage.removeItem('taskDraft');
+    try {
+      await window.electronAPI?.setTaskDraft(null);
+    } catch (error) {
+      console.error('[appStore] Failed to clear task draft:', error);
+    }
+  },
+
+  initTaskDraft: async () => {
+    try {
+      const draft = await window.electronAPI?.getTaskDraft();
+      if (draft) {
+        // Validate that the draft has the required TaskDraft properties
+        if ('title' in draft && 'content' in draft && 'platform' in draft &&
+            'accountIds' in draft && 'contentMode' in draft) {
+          set({ taskDraft: draft as TaskDraft });
+        } else {
+          console.warn('[appStore] Loaded task draft has invalid structure, ignoring');
+        }
+      }
+    } catch (error) {
+      console.error('[appStore] Failed to load task draft:', error);
+    }
   },
 
   hotTopicDraft: null,

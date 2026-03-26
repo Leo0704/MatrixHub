@@ -131,16 +131,36 @@ async function generateVideoWithWait(platform: Platform, product: ParsedProduct,
   // 轮询等待视频生成完成（最多 5 分钟）
   log.info(`[ContentGenerator] 视频生成任务: ${taskId}，开始轮询...`);
   const maxWaitTime = 5 * 60 * 1000; // 5 分钟
-  const pollInterval = 10000; // 10 秒
+  const baseInterval = 1000; // 1 秒初始间隔
+  const maxInterval = 30000; // 最大 30 秒
   const startTime = Date.now();
+  let currentInterval = baseInterval;
+  let consecutiveFailures = 0;
+  const maxConsecutiveFailures = 3;
 
   while (Date.now() - startTime < maxWaitTime) {
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    // 指数退避 + jitter
+    const jitter = currentInterval * 0.25 * (Math.random() * 2 - 1);
+    await new Promise(resolve => setTimeout(resolve, currentInterval + jitter));
 
-    const videoUrl = await checkVideoStatus(taskId);
-    if (videoUrl) {
-      log.info(`[ContentGenerator] 视频生成完成: ${videoUrl}`);
-      return videoUrl;
+    try {
+      const videoUrl = await checkVideoStatus(taskId);
+      if (videoUrl) {
+        log.info(`[ContentGenerator] 视频生成完成: ${videoUrl}`);
+        return videoUrl;
+      }
+      // 检查成功但没返回 URL，重置失败计数
+      consecutiveFailures = 0;
+      // 成功后降低间隔
+      currentInterval = baseInterval;
+    } catch (error) {
+      consecutiveFailures++;
+      log.warn(`[ContentGenerator] 检查视频状态失败 (${consecutiveFailures}/${maxConsecutiveFailures}):`, error);
+      // 指数退避
+      currentInterval = Math.min(currentInterval * 1.5, maxInterval);
+      if (consecutiveFailures >= maxConsecutiveFailures) {
+        throw new Error(`视频状态检查连续失败 ${maxConsecutiveFailures} 次: ${(error as Error).message}`);
+      }
     }
   }
 
@@ -151,12 +171,7 @@ async function generateVideoWithWait(platform: Platform, product: ParsedProduct,
  * 检查视频生成状态
  */
 async function checkVideoStatus(taskId: string): Promise<string | null> {
-  try {
-    return await aiGateway.checkVideoStatus(taskId);
-  } catch (error) {
-    log.warn('[ContentGenerator] checkVideoStatus error:', error);
-    return null;
-  }
+  return await aiGateway.checkVideoStatus(taskId);
 }
 
 /**
@@ -167,7 +182,7 @@ async function downloadMediaFiles(result: GenerationResult): Promise<string[]> {
   const tmpDir = os.tmpdir();
 
   // 下载图片
-  if (result.imageUrls) {
+  if (result.imageUrls && result.imageUrls.length > 0) {
     for (const url of result.imageUrls) {
       try {
         const localPath = await downloadFile(url, path.join(tmpDir, `img-${Date.now()}.png`));
@@ -175,6 +190,10 @@ async function downloadMediaFiles(result: GenerationResult): Promise<string[]> {
       } catch (err) {
         log.warn(`[ContentGenerator] 图片下载失败: ${url}`, err);
       }
+    }
+    // 如果有图片URL但全部下载失败，抛出错误
+    if (localPaths.length === 0) {
+      throw new Error('所有图片下载失败，无法继续发布');
     }
   }
 
@@ -185,6 +204,9 @@ async function downloadMediaFiles(result: GenerationResult): Promise<string[]> {
       localPaths.push(localPath);
     } catch (err) {
       log.warn(`[ContentGenerator] 视频下载失败: ${result.videoUrl}`, err);
+      // 视频下载失败也抛出错误
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`视频下载失败: ${errorMessage}`);
     }
   }
 

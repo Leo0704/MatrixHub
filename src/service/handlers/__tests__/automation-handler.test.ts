@@ -116,34 +116,6 @@ describe('Automation Handler', () => {
     expect(navigateTo).toHaveBeenCalled();
   });
 
-  it('should execute auto_like action successfully', async () => {
-    const likeTask = {
-      ...mockTask,
-      payload: { action: 'auto_like', platform: 'douyin', accountId: 'acc-1' },
-    } as any;
-    const { ipcRenderer } = await import('electron');
-    ipcRenderer.invoke.mockResolvedValueOnce(true);
-
-    const result = await executeAutomationTask(mockPage, likeTask, mockSignal);
-
-    expect(result).toHaveProperty('processed');
-    expect(result).toHaveProperty('liked');
-  });
-
-  it('should execute auto_follow action successfully', async () => {
-    const followTask = {
-      ...mockTask,
-      payload: { action: 'auto_follow', platform: 'douyin', accountId: 'acc-1' },
-    } as any;
-    const { ipcRenderer } = await import('electron');
-    ipcRenderer.invoke.mockResolvedValueOnce(true);
-
-    const result = await executeAutomationTask(mockPage, followTask, mockSignal);
-
-    expect(result).toHaveProperty('processed');
-    expect(result).toHaveProperty('followed');
-  });
-
   it('should execute comment_management action successfully', async () => {
     const commentTask = {
       ...mockTask,

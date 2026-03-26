@@ -5,7 +5,27 @@ import { taskQueue } from '../queue.js';
 import { v4 as uuidv4 } from 'uuid';
 import log from 'electron-log';
 import { BrowserWindow } from 'electron';
+import * as fs from 'fs';
 import { loadAllPipelineTasks, loadPipelineTask, savePipelineTask, updatePipelineStatus } from './store.js';
+
+// Abort controllers for pipeline cancellation
+const pipelineAbortControllers = new Map<string, AbortController>();
+
+/**
+ * 清理临时文件
+ */
+function cleanupTempFiles(localFilePaths: string[]): void {
+  for (const filePath of localFilePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        log.info(`[Pipeline] 已清理临时文件: ${filePath}`);
+      }
+    } catch (err) {
+      log.warn(`[Pipeline] 清理临时文件失败: ${filePath}`, err);
+    }
+  }
+}
 
 /**
  * 获取所有 Pipeline 任务
@@ -32,7 +52,6 @@ export async function createPipelineTask(
     steps: [
       { step: 'parse', status: 'pending' },
       { step: 'text', status: 'pending' },
-      { step: 'voice', status: 'pending' },  // 仅图片集模式需要配音，视频模式跳过
       { step: 'publish', status: 'pending' },
     ],
     currentStep: 'parse',
@@ -46,8 +65,12 @@ export async function createPipelineTask(
 
   log.info(`[Pipeline] 创建任务: ${id}`);
 
+  // 创建取消控制器
+  const abortController = new AbortController();
+  pipelineAbortControllers.set(id, abortController);
+
   // 异步执行
-  executePipeline(pipelineTask).catch(err => {
+  executePipeline(pipelineTask, abortController.signal).catch(err => {
     log.error(`[Pipeline] 执行失败: ${id}`, err);
   });
 
@@ -57,8 +80,9 @@ export async function createPipelineTask(
 /**
  * 执行 Pipeline
  */
-async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
+async function executePipeline(pipelineTask: PipelineTask, abortSignal?: AbortSignal): Promise<void> {
   log.info(`[Pipeline] 开始执行: ${pipelineTask.id}`);
+  let tempFiles: string[] = [];
 
   try {
     // 更新状态为 running
@@ -67,8 +91,16 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     savePipelineTask(pipelineTask);
     broadcastPipelineUpdate(pipelineTask);
 
+    // 检查是否已取消
+    if (abortSignal?.aborted) {
+      throw new Error('任务已取消');
+    }
+
     // Step 1: 解析输入
     await executeStep(pipelineTask, 'parse', async () => {
+      if (abortSignal?.aborted) {
+        throw new Error('任务已取消');
+      }
       const parseResult = await parseInput(pipelineTask.input);
       if (!parseResult.success) {
         throw new Error(`输入解析失败: ${parseResult.error}`);
@@ -79,8 +111,12 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     // 获取解析结果
     const parseResult = (pipelineTask.steps.find(s => s.step === 'parse')?.result as any)?.product;
 
-    // Step 2 & 3: 一次性生成文案和媒体内容（避免重复调用 API）
+    // 检查是否已取消
+    checkCancelled(pipelineTask.id);
+
+    // Step 2: 一次性生成文案和媒体内容（避免重复调用 API）
     await executeStep(pipelineTask, 'text', async () => {
+      checkCancelled(pipelineTask.id);
       const contentResult = await generateContent({
         platform: pipelineTask.platform,
         contentType: pipelineTask.config.contentType,
@@ -101,21 +137,15 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     const contentResult = pipelineTask.steps.find(s => s.step === 'text')?.result as any;
     const textResult = { text: contentResult?.text };
     const mediaResult = { imageUrls: contentResult?.imageUrls, videoUrl: contentResult?.videoUrl, localFilePaths: contentResult?.localFilePaths };
-    const voiceResult = { voiceBase64: contentResult?.voiceBase64 };
+    // voice 已包含在 contentResult 中（如果生成了配音的话）
 
-    // Step 4: 生成配音（仅图片集模式且用户选择生成配音）
-    if (pipelineTask.config.contentType === 'image' && pipelineTask.config.generateVoice) {
-      // voice 已在上一步生成，不需要再次调用
-      await executeStep(pipelineTask, 'voice', async () => {
-        return { voiceBase64: contentResult?.voiceBase64 };
-      });
-    } else {
-      await skipStep(pipelineTask, 'voice');
-    }
+    // 检查是否已取消
+    checkCancelled(pipelineTask.id);
 
-    // Step 5: 发布
+    // Step 3: 发布
     if (pipelineTask.config.autoPublish && pipelineTask.config.targetAccounts.length > 0) {
       await executeStep(pipelineTask, 'publish', async () => {
+        checkCancelled(pipelineTask.id);
         const publishedTaskIds: string[] = [];
         const isImageMode = pipelineTask.config.contentType === 'image';
 
@@ -143,7 +173,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
               contentType: isImageMode ? 'image' : 'video',
               // 发布时使用本地文件路径
               images: isImageMode ? localFiles : undefined,
-              voiceBase64: isImageMode ? voiceResult?.voiceBase64 : undefined,
+              voiceBase64: isImageMode ? contentResult?.voiceBase64 : undefined,
               video: isImageMode ? undefined : (mediaResult?.videoUrl || localFiles[0]),
             },
           });
@@ -165,7 +195,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     pipelineTask.result = {
       text: textResult?.text,
       imageUrls: mediaResult?.imageUrls,
-      voiceBase64: voiceResult?.voiceBase64,
+      voiceBase64: contentResult?.voiceBase64,
       videoUrl: mediaResult?.videoUrl,
       publishedTaskIds: (pipelineTask.steps.find(s => s.step === 'publish')?.result as any)?.publishedTaskIds,
     };
@@ -175,12 +205,24 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     log.info(`[Pipeline] 执行完成: ${pipelineTask.id}`);
 
   } catch (error) {
-    log.error(`[Pipeline] 执行失败: ${pipelineTask.id}`, error);
-    pipelineTask.status = 'failed';
-    pipelineTask.error = (error as Error).message;
-    pipelineTask.updatedAt = Date.now();
-    savePipelineTask(pipelineTask);
-    broadcastPipelineUpdate(pipelineTask);
+    // 如果是用户取消，不记录为失败
+    if ((error as Error).message === 'Pipeline cancelled by user') {
+      log.info(`[Pipeline] 已取消: ${pipelineTask.id}`);
+    } else {
+      log.error(`[Pipeline] 执行失败: ${pipelineTask.id}`, error);
+      pipelineTask.status = 'failed';
+      pipelineTask.error = (error as Error).message;
+      pipelineTask.updatedAt = Date.now();
+      savePipelineTask(pipelineTask);
+      broadcastPipelineUpdate(pipelineTask);
+    }
+  } finally {
+    // 清理临时文件
+    const contentResult = pipelineTask.steps.find(s => s.step === 'text')?.result as any;
+    const localFilePaths = contentResult?.localFilePaths || [];
+    cleanupTempFiles(localFilePaths);
+    // 清理 abort controller
+    pipelineAbortControllers.delete(pipelineTask.id);
   }
 }
 
@@ -241,6 +283,17 @@ function broadcastPipelineUpdate(pipelineTask: PipelineTask): void {
 }
 
 /**
+ * 检查 Pipeline 是否已被取消
+ * 从数据库重新加载，确保获取最新状态
+ */
+function checkCancelled(taskId: string): void {
+  const current = loadPipelineTask(taskId);
+  if (current?.status === 'cancelled') {
+    throw new Error('Pipeline cancelled by user');
+  }
+}
+
+/**
  * 获取 Pipeline 状态
  */
 export async function getPipelineTask(pipelineId: string): Promise<PipelineTask | null> {
@@ -253,7 +306,14 @@ export async function getPipelineTask(pipelineId: string): Promise<PipelineTask 
 export async function cancelPipelineTask(pipelineId: string): Promise<void> {
   const task = loadPipelineTask(pipelineId);
   if (task && task.status === 'running') {
+    // 信号取消
+    const abortController = pipelineAbortControllers.get(pipelineId);
+    if (abortController) {
+      abortController.abort();
+    }
     updatePipelineStatus(pipelineId, 'cancelled');
     broadcastPipelineUpdate(task);
+    // 清理
+    pipelineAbortControllers.delete(pipelineId);
   }
 }

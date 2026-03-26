@@ -58,7 +58,7 @@ describe('CredentialManager', () => {
   describe('storeCredential', () => {
     it('should store credential successfully when safeStorage is available', async () => {
       await expect(
-        credentialManager.storeCredential('account-1', {
+        credentialManager.storeCredential('550e8400-e29b-41d4-a716-446655440000', {
           username: 'testuser',
           password: 'testpass',
         })
@@ -72,7 +72,7 @@ describe('CredentialManager', () => {
       (safeStorage.isEncryptionAvailable as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
 
       await expect(
-        credentialManager.storeCredential('account-1', {
+        credentialManager.storeCredential('550e8400-e29b-41d4-a716-446655440000', {
           username: 'testuser',
           password: 'testpass',
         })
@@ -84,7 +84,7 @@ describe('CredentialManager', () => {
     it('should return null for non-existent credential', async () => {
       mockFs.existsSync.mockReturnValueOnce(false);
 
-      const result = await credentialManager.getCredential('non-existent');
+      const result = await credentialManager.getCredential('660e8400-e29b-41d4-a716-446655440001');
       expect(result).toBeNull();
     });
 
@@ -95,7 +95,7 @@ describe('CredentialManager', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(encryptedBuffer);
 
-      const result = await credentialManager.getCredential('account-1');
+      const result = await credentialManager.getCredential('550e8400-e29b-41d4-a716-446655440000');
       expect(result).toEqual(credential);
     });
   });
@@ -105,7 +105,7 @@ describe('CredentialManager', () => {
       mockFs.existsSync.mockReturnValue(true);
 
       await expect(
-        credentialManager.deleteCredential('account-1')
+        credentialManager.deleteCredential('550e8400-e29b-41d4-a716-446655440000')
       ).resolves.not.toThrow();
 
       expect(mockFs.unlinkSync).toHaveBeenCalled();
@@ -120,14 +120,14 @@ describe('CredentialManager', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(encryptedBuffer);
 
-      const result = await credentialManager.validateCredential('account-1');
+      const result = await credentialManager.validateCredential('550e8400-e29b-41d4-a716-446655440000');
       expect(result.valid).toBe(true);
     });
 
     it('should return false for non-existent credential', async () => {
       mockFs.existsSync.mockReturnValue(false);
 
-      const result = await credentialManager.validateCredential('non-existent');
+      const result = await credentialManager.validateCredential('660e8400-e29b-41d4-a716-446655440001');
       expect(result.valid).toBe(false);
       expect(result.error).toBe('凭证不存在');
     });
@@ -139,7 +139,7 @@ describe('CredentialManager', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(encryptedBuffer);
 
-      const result = await credentialManager.validateCredential('account-1');
+      const result = await credentialManager.validateCredential('550e8400-e29b-41d4-a716-446655440000');
       expect(result.valid).toBe(false);
       expect(result.error).toBe('账号无有效凭证');
     });

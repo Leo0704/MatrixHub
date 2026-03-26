@@ -3,6 +3,7 @@ import { getRateLimits } from './config/runtime-config.js';
 import type { Platform, RateLimitConfig } from '../shared/types.js';
 import log from 'electron-log';
 import { sleep } from './utils/sleep.js';
+import { asRow } from './db-types.js';
 
 interface LimitBucket {
   count: number;
@@ -232,7 +233,7 @@ export class RateLimiter {
       SELECT SUM(count) as total_count, MAX(reset_at) as reset_at
       FROM rate_limits
       WHERE key = ? AND reset_at > ?
-    `).get(key, windowStart) as any;
+    `).get(key, windowStart) as { total_count: number; reset_at: number } | undefined;
 
     const count = row?.total_count ?? 0;
     const resetAt = row?.reset_at ?? (now + windowMs);
@@ -262,7 +263,7 @@ export class RateLimiter {
     db.prepare(`
       INSERT INTO rate_limits (key, count, reset_at)
       VALUES (?, ?, ?)
-      ON CONFLICT(key, reset_at) DO UPDATE SET count = excluded.count
+      ON CONFLICT(key, reset_at) DO UPDATE SET count = rate_limits.count + excluded.count
     `).run(key, bucket.count, bucket.resetAt);
 
     // 清理过期数据

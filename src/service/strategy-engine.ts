@@ -2,6 +2,7 @@ import { getDb } from './db.js'
 import { aiGateway } from './ai-gateway.js'
 import type { Task, Platform } from '../shared/types.js'
 import log from 'electron-log'
+import { asRow } from './db-types.js'
 
 export type PromptType = 'failure' | 'daily' | 'hot_topic'
 
@@ -27,7 +28,7 @@ export function buildFailureContext(task: Task): object {
       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
     FROM tasks
     WHERE platform = ? AND type = 'publish'
-  `).get(task.platform) as any
+  `).get(task.platform) as { total: number; completed: number } | undefined
 
   const successRate = stats.total > 0 ? (stats.completed / stats.total) : 0
 
@@ -66,14 +67,14 @@ export function buildDailyContext(platform: Platform): object {
       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
     FROM tasks
     WHERE platform = ? AND created_at >= ?
-  `).get(platform, sevenDaysAgo) as any
+  `).get(platform, sevenDaysAgo) as { total: number; completed: number; failed: number } | undefined
 
   // 账号健康状态
   const account = db.prepare(`
     SELECT status, last_used_at FROM accounts
     WHERE platform = ? AND status = 'active'
     LIMIT 1
-  `).get(platform) as any
+  `).get(platform) as { status: string; last_used_at: number } | undefined
 
   return {
     platform,
@@ -98,13 +99,13 @@ export function buildHotTopicContext(platform: Platform, hotTopic: { keyword: st
   const db = getDb()
 
   // 该平台近 7 天发布的主题
-  const recentTasks = db.prepare(`
+  const recentTasks = asRows<{ title: string; result: string | null }>(db.prepare(`
     SELECT title, result
     FROM tasks
     WHERE platform = ? AND status = 'completed'
     ORDER BY created_at DESC
     LIMIT 10
-  `).all(platform) as any[]
+  `).all(platform))
 
   // 估算平均互动
   const engagements = recentTasks

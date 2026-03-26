@@ -17,7 +17,8 @@ export interface HotTopicWithTrend extends HotTopic {
 }
 
 // 内存中的历史数据存储
-const historicalTopics: Map<Platform, Map<string, { rank: number; heat: number; timestamp: number }>> = new Map()
+interface TopicHistoryEntry { rank: number; heat: number; timestamp: number }
+const historicalTopics: Map<Platform, Map<string, TopicHistoryEntry>> = new Map()
 
 /**
  * 获取热点话题列表
@@ -117,7 +118,7 @@ export async function getHotTopicsWithTrend(platform: Platform): Promise<HotTopi
 
           // 获取首次出现时间
           const existing = platformHistory.get(`_firstSeen_${historyKey}`)
-          firstSeenAt = existing ? (existing as any).timestamp : previousData.timestamp
+          firstSeenAt = existing?.timestamp ?? previousData.timestamp
         }
 
         // 更新历史数据
@@ -129,7 +130,7 @@ export async function getHotTopicsWithTrend(platform: Platform): Promise<HotTopi
 
         // 存储首次出现时间
         if (!platformHistory.has(`_firstSeen_${historyKey}`)) {
-          platformHistory.set(`_firstSeen_${historyKey}`, { rank: currentRank, heat: t.heat, timestamp: now } as any)
+          platformHistory.set(`_firstSeen_${historyKey}`, { rank: currentRank, heat: t.heat, timestamp: now })
         }
 
         return {

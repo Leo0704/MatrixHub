@@ -98,7 +98,6 @@ describe('Pipeline Orchestrator', () => {
         steps: [
           { step: 'parse', status: 'pending' },
           { step: 'text', status: 'pending' },
-          { step: 'voice', status: 'pending' },
           { step: 'publish', status: 'pending' },
         ],
         currentStep: 'parse',

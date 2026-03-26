@@ -10,7 +10,7 @@ import log from 'electron-log';
 import { ipcRenderer } from 'electron';
 
 // 高风险操作需要用户确认
-const HIGH_RISK_ACTIONS = ['auto_reply', 'auto_like', 'auto_follow'];
+const HIGH_RISK_ACTIONS = ['auto_reply'];
 
 async function requestAutomationConfirm(params: {
   action: string;
@@ -32,23 +32,15 @@ interface AutoReplyConfig {
   maxReplies?: number;
 }
 
-interface AutoLikeConfig {
-  maxLikes?: number;
-}
-
-interface AutoFollowConfig {
-  maxFollows?: number;
-}
-
 interface CommentManagementConfig {
   action?: 'list' | 'delete' | 'reply';
   targetId?: string;
 }
 
-type AutomationConfig = AutoReplyConfig | AutoLikeConfig | AutoFollowConfig | CommentManagementConfig;
+type AutomationConfig = AutoReplyConfig | CommentManagementConfig;
 
 interface AutomationPayload {
-  action: 'auto_reply' | 'auto_like' | 'auto_follow' | 'comment_management';
+  action: 'auto_reply' | 'comment_management';
   platform?: Platform;
   accountId?: string;
   targetId?: string;
@@ -96,12 +88,6 @@ export async function executeAutomationTask(
   switch (payload.action) {
     case 'auto_reply':
       result = await executeAutoReply(page, platform, payload);
-      break;
-    case 'auto_like':
-      result = await executeAutoLike(page, platform, payload);
-      break;
-    case 'auto_follow':
-      result = await executeAutoFollow(page, platform, payload);
       break;
     case 'comment_management':
       result = await executeCommentManagement(page, platform, payload);
@@ -164,105 +150,6 @@ async function executeAutoReply(
 
   log.info(`[Service] 自动回复完成: 处理${processed}条，回复${replied}条`);
   return { processed, replied, platform };
-}
-
-async function executeAutoLike(
-  page: Page,
-  platform: Platform,
-  payload: AutomationPayload
-): Promise<Record<string, unknown>> {
-  const config = (payload.config as AutoLikeConfig) || {};
-  const { maxLikes = 20 } = config;
-
-  log.info(`[Service] 执行自动点赞: platform=${platform}, max=${maxLikes}`);
-
-  await navigateTo(page, platform, '/');
-
-  let processed = 0;
-  let liked = 0;
-
-  const likeSelectors = getAutoSelectors(platform, 'video_like') || getAutoSelectors(platform, 'like_button');
-
-  for (let i = 0; i < maxLikes; i++) {
-    // 随机延迟
-    await randomDelay(1200, 3500);
-    await humanScroll(page, 300 + Math.random() * 200);
-    await randomDelay(600, 1800);
-
-    // 每5次操作模拟一次"阅读"暂停
-    if (i > 0 && i % 5 === 0) {
-      await randomDelay(3000, 7000);
-    }
-
-    for (const sel of likeSelectors) {
-      try {
-        await humanClick(page, sel.value);
-        liked++;
-        log.info(`[Service] 已点赞第 ${liked} 个内容`);
-        await randomDelay(400, 1200);
-        break;
-      } catch {
-        continue;
-      }
-    }
-    processed++;
-  }
-
-  log.info(`[Service] 自动点赞完成: 处理${processed}个，点赞${liked}个`);
-  return { processed, liked, platform };
-}
-
-async function executeAutoFollow(
-  page: Page,
-  platform: Platform,
-  payload: AutomationPayload
-): Promise<Record<string, unknown>> {
-  const config = (payload.config as AutoFollowConfig) || {};
-  const { maxFollows = 10 } = config;
-
-  log.info(`[Service] 执行自动关注: platform=${platform}, max=${maxFollows}`);
-
-  const paths = AUTOMATION_PATHS[platform];
-  await navigateTo(page, platform, paths.discovery);
-
-  let processed = 0;
-  let followed = 0;
-  const followSelectors = getAutoSelectors(platform, 'follow_button');
-
-  for (let i = 0; i < maxFollows; i++) {
-    // 随机延迟
-    await randomDelay(1200, 3500);
-    await humanScroll(page, 250 + Math.random() * 150);
-    await randomDelay(400, 1200);
-
-    // 每5次操作模拟一次"阅读"暂停
-    if (i > 0 && i % 5 === 0) {
-      await randomDelay(3000, 7000);
-    }
-
-    for (const sel of followSelectors) {
-      try {
-        const btn = await page.$(sel.value);
-        if (btn) {
-          const text = await btn.textContent();
-          if (text?.includes('已关注')) {
-            continue;
-          }
-        }
-        await humanClick(page, sel.value);
-        followed++;
-        log.info(`[Service] 已关注第 ${followed} 个用户`);
-        await randomDelay(800, 1500);
-        break;
-      } catch {
-        continue;
-      }
-    }
-    processed++;
-  }
-
-  log.info(`[Service] 自动关注完成: 处理${processed}个，关注${followed}个`);
-  return { processed, followed, platform };
 }
 
 async function executeCommentManagement(

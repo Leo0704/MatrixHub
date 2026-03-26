@@ -215,9 +215,20 @@ export class PlatformAutomation {
   private async confirmPublish(platform: Platform): Promise<void> {
     const publishSelector = selectorManager.get(platform, 'publish_confirm');
     if (publishSelector) {
+      const currentUrl = this.page!.url();
       await this.page!.click(publishSelector.value);
-      // 等待发布完成
-      await this.page!.waitForTimeout(3000);
+
+      // 等待页面导航或成功提示出现
+      try {
+        await Promise.race([
+          this.page!.waitForURL(url => url !== currentUrl, { timeout: 10000 }),
+          this.page!.waitForSelector('[class*="success"], [class*="publish-success"], [data-e2e="success"]', { timeout: 10000 }),
+        ]);
+      } catch {
+        // 如果等待失败，至少等待一下让发布完成
+        await this.page!.waitForTimeout(2000);
+      }
+
       selectorManager.reportSuccess(platform, 'publish_confirm');
       log.info(`发布确认: ${platform}`);
     }

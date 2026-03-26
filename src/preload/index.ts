@@ -44,6 +44,10 @@ export interface ElectronAPI {
     failed: number;
   }>;
 
+  // Task Draft (Encrypted Storage)
+  getTaskDraft: () => Promise<any>;
+  setTaskDraft: (draft: any) => Promise<{ success: boolean }>;
+
   // 账号
   listAccounts: (platform?: Platform) => Promise<Account[]>;
   addAccount: (params: {
@@ -298,6 +302,10 @@ const api: ElectronAPI = {
   cancelTask: (taskId) => ipcRenderer.invoke('task:cancel', { taskId }),
   retryTask: (taskId) => ipcRenderer.invoke('task:retry', { taskId }),
   getTaskStats: () => ipcRenderer.invoke('task:stats'),
+
+  // ============ Task Draft (Encrypted Storage) ============
+  getTaskDraft: () => ipcRenderer.invoke('task-draft:get'),
+  setTaskDraft: (draft) => ipcRenderer.invoke('task-draft:set', draft),
 
   // ============ 账号 ============
   listAccounts: (platform) => ipcRenderer.invoke('account:list', { platform }),

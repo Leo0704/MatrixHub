@@ -16,6 +16,9 @@ import { registerGroupHandlers } from './handlers/group-handlers.js';
 import { createFetcher, createAllFetchers } from './data-fetcher/index.js';
 import { z } from 'zod';
 import { isUrlSafe } from '../shared/url-utils.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { getFieldEncryptor } from './crypto-utils.js';
 
 // 数据库行类型定义
 interface TaskAIConfigRow {
@@ -61,6 +64,67 @@ const aiTestConnectionSchema = z.object({
   apiKey: z.string().min(1),
   model: z.string().min(1),
 });
+
+// ============ Task Draft Storage (Encrypted) ============
+
+const TASK_DRAFT_FILE = 'task_draft.enc';
+
+function getTaskDraftPath(): string {
+  const dir = path.join(app.getPath('userData'), 'drafts');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, TASK_DRAFT_FILE);
+}
+
+function getTaskDraft(): Record<string, unknown> | null {
+  const draftPath = getTaskDraftPath();
+  if (!fs.existsSync(draftPath)) {
+    return null;
+  }
+
+  try {
+    const encryptor = getFieldEncryptor();
+    if (!encryptor || !encryptor.isAvailable()) {
+      log.warn('[TaskDraft] Encryptor not available, attempting raw read');
+      const data = fs.readFileSync(draftPath, 'utf-8');
+      return JSON.parse(data);
+    }
+
+    const encrypted = fs.readFileSync(draftPath, 'utf-8');
+    const decrypted = encryptor.decrypt(encrypted);
+    return JSON.parse(decrypted);
+  } catch (error) {
+    log.error('[TaskDraft] Failed to read draft:', error);
+    return null;
+  }
+}
+
+function setTaskDraft(draft: Record<string, unknown> | null): void {
+  const draftPath = getTaskDraftPath();
+
+  try {
+    if (draft === null) {
+      if (fs.existsSync(draftPath)) {
+        fs.unlinkSync(draftPath);
+      }
+      return;
+    }
+
+    const encryptor = getFieldEncryptor();
+    const jsonData = JSON.stringify(draft);
+
+    if (!encryptor || !encryptor.isAvailable()) {
+      log.warn('[TaskDraft] Encryptor not available, storing raw JSON');
+      fs.writeFileSync(draftPath, jsonData, 'utf-8');
+      return;
+    }
+
+    const encrypted = encryptor.encrypt(jsonData);
+    fs.writeFileSync(draftPath, encrypted, 'utf-8');
+    log.debug('[TaskDraft] Draft saved encrypted');
+  } catch (error) {
+    log.error('[TaskDraft] Failed to save draft:', error);
+  }
+}
 
 /**
  * 注册所有 IPC 处理器
@@ -120,6 +184,17 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('task:stats', async () => {
     return taskQueue.getStats();
+  });
+
+  // ============ Task Draft (Encrypted) ============
+
+  ipcMain.handle('task-draft:get', async () => {
+    return getTaskDraft();
+  });
+
+  ipcMain.handle('task-draft:set', async (_event, draft: Record<string, unknown> | null) => {
+    setTaskDraft(draft);
+    return { success: true };
   });
 
   // ============ 账号相关 ============
@@ -222,8 +297,6 @@ export function registerIpcHandlers(): void {
     // 操作描述映射
     const actionLabels: Record<string, string> = {
       auto_reply: '自动回复评论',
-      auto_like: '自动点赞视频',
-      auto_follow: '自动关注用户',
       comment_management: '评论管理',
     };
 
