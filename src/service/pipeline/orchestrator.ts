@@ -5,15 +5,13 @@ import { taskQueue } from '../queue.js';
 import { v4 as uuidv4 } from 'uuid';
 import log from 'electron-log';
 import { BrowserWindow } from 'electron';
-
-// Pipeline 任务内存存储（生产环境应使用数据库）
-const pipelineTaskStore = new Map<string, PipelineTask>();
+import { loadAllPipelineTasks, loadPipelineTask, savePipelineTask, updatePipelineStatus } from './store.js';
 
 /**
  * 获取所有 Pipeline 任务
  */
 export function getAllPipelineTasks(): PipelineTask[] {
-  return Array.from(pipelineTaskStore.values());
+  return loadAllPipelineTasks();
 }
 
 /**
@@ -43,8 +41,8 @@ export async function createPipelineTask(
     updatedAt: Date.now(),
   };
 
-  // 存储到内存（生产环境应存储到数据库）
-  pipelineTaskStore.set(id, pipelineTask);
+  // 存储到数据库
+  savePipelineTask(pipelineTask);
 
   log.info(`[Pipeline] 创建任务: ${id}`);
 
@@ -66,6 +64,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     // 更新状态为 running
     pipelineTask.status = 'running';
     pipelineTask.updatedAt = Date.now();
+    savePipelineTask(pipelineTask);
     broadcastPipelineUpdate(pipelineTask);
 
     // Step 1: 解析输入
@@ -171,6 +170,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
       publishedTaskIds: (pipelineTask.steps.find(s => s.step === 'publish')?.result as any)?.publishedTaskIds,
     };
 
+    savePipelineTask(pipelineTask);
     broadcastPipelineUpdate(pipelineTask);
     log.info(`[Pipeline] 执行完成: ${pipelineTask.id}`);
 
@@ -179,6 +179,7 @@ async function executePipeline(pipelineTask: PipelineTask): Promise<void> {
     pipelineTask.status = 'failed';
     pipelineTask.error = (error as Error).message;
     pipelineTask.updatedAt = Date.now();
+    savePipelineTask(pipelineTask);
     broadcastPipelineUpdate(pipelineTask);
   }
 }
@@ -204,10 +205,12 @@ async function executeStep(
     step.result = result;
     step.status = 'completed';
     step.completedAt = Date.now();
+    savePipelineTask(pipelineTask);
   } catch (error) {
     step.status = 'failed';
     step.error = (error as Error).message;
     step.completedAt = Date.now();
+    savePipelineTask(pipelineTask);
     throw error;
   }
 }
@@ -221,6 +224,7 @@ async function skipStep(pipelineTask: PipelineTask, stepName: string): Promise<v
 
   step.status = 'skipped';
   step.completedAt = Date.now();
+  savePipelineTask(pipelineTask);
 }
 
 /**
@@ -240,17 +244,16 @@ function broadcastPipelineUpdate(pipelineTask: PipelineTask): void {
  * 获取 Pipeline 状态
  */
 export async function getPipelineTask(pipelineId: string): Promise<PipelineTask | null> {
-  return pipelineTaskStore.get(pipelineId) || null;
+  return loadPipelineTask(pipelineId);
 }
 
 /**
  * 取消 Pipeline
  */
 export async function cancelPipelineTask(pipelineId: string): Promise<void> {
-  const task = pipelineTaskStore.get(pipelineId);
+  const task = loadPipelineTask(pipelineId);
   if (task && task.status === 'running') {
-    task.status = 'cancelled';
-    task.updatedAt = Date.now();
+    updatePipelineStatus(pipelineId, 'cancelled');
     broadcastPipelineUpdate(task);
   }
 }
