@@ -17,6 +17,8 @@ interface CampaignRow {
   consecutive_failures: number;
   last_feedback: string | null;
   latest_report: string | null;
+  monitor_started_at: number;
+  monitor_points_completed: number;
   created_at: number;
   updated_at: number;
 }
@@ -37,6 +39,8 @@ function rowToCampaign(row: CampaignRow): Campaign {
     consecutiveFailures: row.consecutive_failures,
     lastFeedback: row.last_feedback as 'good' | 'bad' | undefined,
     latestReport: row.latest_report ? JSON.parse(row.latest_report) : undefined,
+    monitorStartedAt: row.monitor_started_at || undefined,
+    monitorPointsCompleted: row.monitor_points_completed || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -57,8 +61,8 @@ export function createCampaign(data: {
   const now = Date.now();
 
   db.prepare(`
-    INSERT INTO campaigns (id, name, product_url, product_description, product_info, content_type, add_voiceover, marketing_goal, target_account_ids, status, current_iteration, consecutive_failures, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, 0, ?, ?)
+    INSERT INTO campaigns (id, name, product_url, product_description, product_info, content_type, add_voiceover, marketing_goal, target_account_ids, status, current_iteration, consecutive_failures, monitor_started_at, monitor_points_completed, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, 0, 0, 0, ?, ?)
   `).run(
     id,
     data.name,
@@ -112,4 +116,10 @@ export function setCampaignFeedback(id: string, feedback: 'good' | 'bad'): void 
   const db = getDb();
   db.prepare('UPDATE campaigns SET last_feedback = ?, updated_at = ? WHERE id = ?')
     .run(feedback, Date.now(), id);
+}
+
+export function updateCampaignMonitoring(id: string, monitorStartedAt: number, monitorPointsCompleted: number): void {
+  const db = getDb();
+  db.prepare('UPDATE campaigns SET monitor_started_at = ?, monitor_points_completed = ?, updated_at = ? WHERE id = ?')
+    .run(monitorStartedAt, monitorPointsCompleted, Date.now(), id);
 }

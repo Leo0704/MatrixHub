@@ -76,6 +76,8 @@ function initializeSchema(db: Database.Database): void {
       consecutive_failures INTEGER DEFAULT 0,
       last_feedback TEXT,
       latest_report TEXT,
+      monitor_started_at INTEGER DEFAULT 0,
+      monitor_points_completed INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );

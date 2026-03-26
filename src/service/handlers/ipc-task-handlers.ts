@@ -13,7 +13,7 @@ import { IPC_TIMEOUT_MS, IpcChannel } from '../../shared/ipc-channels.js';
 import type { Task, TaskFilter, Platform } from '../../shared/types.js';
 
 const taskCreateSchema = z.object({
-  type: z.enum(['publish', 'ai_generate', 'fetch_data', 'automation', 'page_agent']),
+  type: z.enum(['publish', 'ai_generate', 'fetch_data', 'automation']),
   platform: z.enum(['douyin', 'kuaishou', 'xiaohongshu']),
   title: z.string().min(1).max(200),
   payload: z.record(z.string(), z.unknown()),

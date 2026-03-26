@@ -12,8 +12,7 @@ export type TaskType =
   | 'publish'      // 发布内容
   | 'ai_generate'  // AI 生成
   | 'fetch_data'   // 获取数据
-  | 'automation'   // 浏览器自动化
-  | 'page_agent';  // Page Agent 自动化
+  | 'automation';  // 浏览器自动化
 
 export interface Task {
   id: string;
@@ -351,4 +350,7 @@ export interface Campaign {
   consecutiveFailures: number;
   lastFeedback?: 'good' | 'bad';
   latestReport?: CampaignReport;
+  // 监控相关
+  monitorStartedAt?: number;
+  monitorPointsCompleted?: number;  // bitmask: bit0=6h, bit1=24h, bit2=48h
 }

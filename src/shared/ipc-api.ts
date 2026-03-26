@@ -214,6 +214,7 @@ export interface ElectronAPI {
   campaign_list: (status?: string) => Promise<{ success: boolean; campaigns?: unknown[]; error?: string }>;
   campaign_feedback: (campaignId: string, feedback: 'good' | 'bad') => Promise<{ success: boolean; error?: string }>;
   campaign_cancel: (campaignId: string) => Promise<{ success: boolean; error?: string }>;
+  scrape_product: (url: string) => Promise<{ success: boolean; data?: unknown; error?: string }>;
 
   // Pipeline
   createPipeline: (params: {
@@ -302,6 +303,17 @@ export interface ElectronAPI {
   onGroupCreated: (callback: (group: GroupEvent) => void) => void;
   onGroupUpdated: (callback: (group: GroupEvent) => void) => void;
   onGroupDeleted: (callback: (data: { groupId: string }) => void) => void;
+
+  // Automation 确认（人工确认节点，spec要求取消，故为 noop）
+  onAutomationConfirmRequest: (callback: (data: {
+    action: string;
+    actionLabel: string;
+    platform: string;
+    platformLabel: string;
+    accountId?: string;
+    riskMessage: string;
+  }) => void) => void;
+  sendAutomationConfirmResponse: (result: { confirmed: boolean; dontAskAgain: boolean }) => Promise<{ success: boolean }>;
 
   // AI 推荐监听
   onAIRecommendation: (callback: (data: {

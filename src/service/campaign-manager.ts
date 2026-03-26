@@ -2,13 +2,13 @@ import { scrapeProductInfo } from './scraper/product-scraper.js';
 import { generateContentStrategy, decideIteration, generateIterationStrategy, type AccountContentPlan } from './ai-director.js';
 import { buildPublishSchedule } from './strategy/publish-scheduler.js';
 import { scrapeAccountMetrics } from './scraper/douyin-metrics.js';
-import { createCampaign, getCampaign, updateCampaignStatus, updateCampaignIteration, saveCampaignReport, setCampaignFeedback } from './campaign-store.js';
+import { createCampaign, getCampaign, updateCampaignStatus, updateCampaignIteration, saveCampaignReport, setCampaignFeedback, updateCampaignMonitoring } from './campaign-store.js';
 import { taskQueue } from './queue.js';
 import { broadcastToRenderers } from './ipc-handlers.js';
 import { createPage, releasePage } from './platform-launcher.js';
 import { accountManager, credentialManager } from './credential-manager.js';
 import { generateContent, type GeneratedContent } from './strategy/content-executor.js';
-import type { Campaign, CampaignReport, AccountMetrics, ContentType, MarketingGoal, ProductInfo } from '../shared/types.js';
+import type { Campaign, CampaignReport, AccountMetrics, ContentType, MarketingGoal, ProductInfo, AccountPublishRecord } from '../shared/types.js';
 import type { Page } from 'playwright';
 import log from 'electron-log';
 
@@ -17,6 +17,9 @@ const campaignMonitors = new Map<string, {
   timers: Array<{ time: number; callback: () => void }>;
   abortController: AbortController;
 }>();
+
+// 账号发布记录存储（内存中）
+const accountPublishRecords = new Map<string, AccountPublishRecord>();
 
 export interface LaunchParams {
   name: string;
@@ -88,14 +91,23 @@ export async function launchCampaign(params: LaunchParams): Promise<Campaign> {
     generatedContents.push(content);
   }
 
-  // Step 5: 调度发布时间（分散 10-30 分钟）
-  const schedules = buildPublishSchedule(campaign, []);
+  // Step 5: 调度发布时间（分散 10-30 分钟，考虑账号冷却）
+  const records = Array.from(accountPublishRecords.values());
+  const schedules = buildPublishSchedule(campaign, records);
 
   // Step 6: 为每个账号创建发布任务
   for (let i = 0; i < params.targetAccountIds.length; i++) {
     const accountId = params.targetAccountIds[i];
     const schedule = schedules[i];
     const content = generatedContents[i];
+
+    // 更新账号发布记录（预占名额）
+    const existing = accountPublishRecords.get(accountId);
+    accountPublishRecords.set(accountId, {
+      accountId,
+      lastPublishedAt: Date.now(),
+      publishedToday: (existing?.publishedToday || 0) + 1,
+    });
 
     // 构建任务 payload（与 publish-handler 兼容）
     const taskPayload = {
@@ -154,7 +166,7 @@ export async function handleFeedback(campaignId: string, feedback: 'good' | 'bad
     broadcastToRenderers('campaign:iterating', { campaignId });
 
     // 检查是否连续失败超过2次
-    if (campaign.currentIteration + 1 >= 2) {
+    if (campaign.currentIteration + 1 > 2) {
       // 连续失败，停止并通知
       updateCampaignStatus(campaignId, 'failed');
       broadcastToRenderers('campaign:failed', {
@@ -207,13 +219,22 @@ async function launchNextIteration(campaign: Campaign, mode: 'continue' | 'itera
   }
 
   // 重新调度发布时间
-  const schedules = buildPublishSchedule(campaign, []);
+  const records = Array.from(accountPublishRecords.values());
+  const schedules = buildPublishSchedule(campaign, records);
 
   // 为每个账号创建新任务
   for (let i = 0; i < campaign.targetAccountIds.length; i++) {
     const accountId = campaign.targetAccountIds[i];
     const schedule = schedules[i];
     const content = generatedContents[i];
+
+    // 更新账号发布记录（预占名额）
+    const existing = accountPublishRecords.get(accountId);
+    accountPublishRecords.set(accountId, {
+      accountId,
+      lastPublishedAt: Date.now(),
+      publishedToday: (existing?.publishedToday || 0) + 1,
+    });
 
     await taskQueue.create({
       type: 'publish',
@@ -252,10 +273,13 @@ function startMonitoring(campaignId: string): void {
   const abortController = new AbortController();
   const now = Date.now();
 
+  // 保存监控开始时间到数据库（用于服务重启后恢复）
+  updateCampaignMonitoring(campaignId, now, 0);
+
   const monitorPoints = [
-    { offset: 6 * 60 * 60 * 1000, key: '6h' },
-    { offset: 24 * 60 * 60 * 1000, key: '24h' },
-    { offset: 48 * 60 * 60 * 1000, key: '48h' },
+    { offset: 6 * 60 * 60 * 1000, key: '6h', bit: 1 },
+    { offset: 24 * 60 * 60 * 1000, key: '24h', bit: 2 },
+    { offset: 48 * 60 * 60 * 1000, key: '48h', bit: 4 },
   ];
 
   const timers: Array<{ time: number; callback: () => void }> = [];
@@ -265,6 +289,12 @@ function startMonitoring(campaignId: string): void {
     timers.push({
       time: scheduledTime,
       callback: async () => {
+        // 标记该监控点已完成
+        const campaign = getCampaign(campaignId);
+        if (campaign) {
+          const completed = (campaign.monitorPointsCompleted || 0) | point.bit;
+          updateCampaignMonitoring(campaignId, campaign.monitorStartedAt!, completed);
+        }
         await checkCampaignProgress(campaignId);
       },
     });
@@ -306,6 +336,26 @@ export async function checkCampaignProgress(campaignId: string): Promise<void> {
   if (!campaign) return;
 
   log.info('[CampaignManager] 检查推广进度:', campaignId);
+
+  // 计算哪些监控点已到期
+  const monitorPoints = [
+    { offset: 6 * 60 * 60 * 1000, key: '6h', bit: 1 },
+    { offset: 24 * 60 * 60 * 1000, key: '24h', bit: 2 },
+    { offset: 48 * 60 * 60 * 1000, key: '48h', bit: 4 },
+  ];
+
+  const now = Date.now();
+  const startedAt = campaign.monitorStartedAt || campaign.createdAt;
+  const currentCompleted = campaign.monitorPointsCompleted || 0;
+
+  // 检查是否有新的监控点到期
+  for (const point of monitorPoints) {
+    const elapsed = now - startedAt;
+    if (elapsed >= point.offset && !(currentCompleted & point.bit)) {
+      // 该监控点已到期但未执行，执行它
+      log.info(`[CampaignManager] 触发监控点: ${point.key} (elapsed=${Math.round(elapsed / 1000 / 60)}min)`);
+    }
+  }
 
   // 使用 platform-launcher 获取已登录的 Page，爬取真实数据
   const metrics: AccountMetrics[] = [];
@@ -374,9 +424,9 @@ export async function checkCampaignProgress(campaignId: string): Promise<void> {
   // 保存报告
   saveCampaignReport(campaignId, report);
 
-  // 判断是否到达48小时（生成最终报告）
-  const age = Date.now() - campaign.updatedAt;
-  if (age >= 48 * 60 * 60 * 1000) {
+  // 判断是否到达48小时（使用监控开始时间计算）
+  const elapsed = now - startedAt;
+  if (elapsed >= 48 * 60 * 60 * 1000) {
     // 48小时到，设置为等待反馈状态
     updateCampaignStatus(campaignId, 'waiting_feedback');
     stopMonitoring(campaignId);

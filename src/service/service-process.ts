@@ -24,7 +24,6 @@ import {
   executeAIGenerateTask,
   executeFetchDataTask,
   executeAutomationTask,
-  executePageAgentTask,
 } from './handlers/index.js';
 
 // 服务进程配置
@@ -219,9 +218,6 @@ async function executeTask(task: Task): Promise<void> {
       case 'automation':
         await handleAutomationTask(task, controller.signal);
         break;
-      case 'page_agent':
-        await handlePageAgentTask(task, controller.signal);
-        break;
       default:
         throw new Error(`未知任务类型: ${task.type}`);
     }
@@ -292,20 +288,6 @@ async function handleAutomationTask(task: Task, signal: AbortSignal): Promise<vo
   } finally {
     // 归还页面到池（保持登录状态）
     await releasePage(page);
-  }
-}
-
-async function handlePageAgentTask(task: Task, signal: AbortSignal): Promise<void> {
-  const accountId = getAccountIdFromTask(task);
-  const page = await createPage(task.platform, accountId);
-  try {
-    const result = await executePageAgentTask(page, task, signal);
-    taskQueue.updateStatus(task.id, result.success ? 'completed' : 'failed', {
-      result: result as unknown as Record<string, unknown>,
-      progress: 100,
-    });
-  } finally {
-    await page.close();
   }
 }
 

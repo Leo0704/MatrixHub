@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { IpcChannel } from '../../shared/ipc-channels.js';
 import { launchCampaign, handleFeedback, getCampaignProgress } from '../campaign-manager.js';
 import { listCampaigns, getCampaign } from '../campaign-store.js';
+import { scrapeProductInfo } from '../scraper/product-scraper.js';
 import type { CampaignStatus } from '../../shared/types.js';
 import log from 'electron-log';
 
@@ -60,6 +61,18 @@ export function registerCampaignHandlers(): void {
       return { success: true };
     } catch (error) {
       log.error('[IPC] campaign:cancel error:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // 产品信息抓取
+  ipcMain.handle(IpcChannel.CAMPAIGN_SCRAPE, async (_event, url: string) => {
+    try {
+      log.info('[IPC] campaign:scrape', url);
+      const result = await scrapeProductInfo(url);
+      return result;
+    } catch (error) {
+      log.error('[IPC] campaign:scrape error:', error);
       return { success: false, error: (error as Error).message };
     }
   });

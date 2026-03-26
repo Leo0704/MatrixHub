@@ -30,9 +30,20 @@ export function CampaignLaunch() {
   const handleScrape = async () => {
     if (!form.productUrl) return;
     setScrapeStatus('loading');
-    // 调用 scraper（通过 IPC）
-    // 目前简化：直接假设抓取成功
-    setTimeout(() => setScrapeStatus('success'), 1000);
+    try {
+      const result = await (window.electronAPI as any)?.scrape_product(form.productUrl);
+      if (result?.success && result.data) {
+        setForm(f => ({
+          ...f,
+          productDescription: result.data.description || f.productDescription,
+        }));
+        setScrapeStatus('success');
+      } else {
+        setScrapeStatus('failed');
+      }
+    } catch {
+      setScrapeStatus('failed');
+    }
   };
 
   // 启动推广

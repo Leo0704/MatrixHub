@@ -67,17 +67,33 @@ export async function moderateAndFix(text: string): Promise<ModerationResult> {
     return result;
   }
 
-  // 使用 AI 修改文案（这里用简单的替换策略，真实实现应该调用 AI 重写）
-  let revised = text;
+  // 优先使用 AI 重写文案
+  try {
+    const aiResult = await rewriteWithAI(text, result.violations);
+    if (aiResult) {
+      // AI 重写后再次审核
+      const recheck = moderateText(aiResult);
+      if (recheck.passed) {
+        return {
+          passed: true,
+          violations: result.violations,
+          revisedContent: aiResult,
+        };
+      }
+      // AI 修订后仍有问题，回退到规则替换
+    }
+  } catch {
+    // AI 不可用时降级到规则替换
+  }
 
+  // 降级：使用规则替换
+  let revised = text;
   for (const v of result.violations) {
     if (v.type === 'extreme_words') {
-      // 替换极限用语为合规表达
       revised = replaceExtremeWords(revised, v.matched);
     }
   }
 
-  // 再次审核修改后的内容
   const recheck = moderateText(revised);
   if (recheck.passed) {
     return {
@@ -99,6 +115,21 @@ async function moderateAndFixInternal(text: string, depth: number): Promise<Mode
   let revised = text;
   const current = moderateText(text);
 
+  // 尝试 AI 重写
+  try {
+    const aiResult = await rewriteWithAI(text, current.violations);
+    if (aiResult) {
+      const recheck = moderateText(aiResult);
+      if (recheck.passed) {
+        return { passed: true, violations: current.violations, revisedContent: aiResult };
+      }
+      revised = aiResult;
+    }
+  } catch {
+    // AI 不可用
+  }
+
+  // 规则替换
   for (const v of current.violations) {
     revised = replaceViolation(revised, v);
   }
@@ -109,6 +140,39 @@ async function moderateAndFixInternal(text: string, depth: number): Promise<Mode
   }
 
   return moderateAndFixInternal(revised, depth - 1);
+}
+
+/**
+ * 使用 AI 重写违规文案
+ */
+async function rewriteWithAI(text: string, violations: Violation[]): Promise<string | null> {
+  const { aiGateway } = await import('../ai-gateway.js');
+
+  const violationTypes = violations.map(v => v.type).join(', ');
+  const prompt = `请修改以下抖音文案，使其符合平台规范要求。
+
+需要处理的违规类型：${violationTypes}
+
+原文：
+${text}
+
+要求：
+1. 去除所有违规词汇和表达
+2. 保持原文的核心信息和营销意图
+3. 使用合规的替代表达
+4. 保持抖音风格，可以有适当夸张但不能违规
+
+直接输出修改后的文案，不要加任何说明前缀。`;
+
+  try {
+    const result = await aiGateway.generate({
+      taskType: 'text',
+      prompt,
+    });
+    return result.content || null;
+  } catch {
+    return null;
+  }
 }
 
 function replaceExtremeWords(text: string, word: string): string {
