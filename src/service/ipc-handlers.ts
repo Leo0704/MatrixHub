@@ -44,6 +44,7 @@ import {
   registerSystemHandlers,
   registerFetchHandlers,
   registerPipelineHandlers,
+  registerCampaignHandlers,
 } from './handlers/ipc-index.js';
 
 /**
@@ -66,6 +67,7 @@ export function registerIpcHandlers(): void {
   registerSystemHandlers();
   registerFetchHandlers();
   registerPipelineHandlers();
+  registerCampaignHandlers();
 
   log.info('IPC 处理器注册完成');
 }

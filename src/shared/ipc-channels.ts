@@ -85,6 +85,13 @@ export const IpcChannel = {
   PIPELINE_CREATE: 'pipeline:create',
   PIPELINE_GET: 'pipeline:get',
   PIPELINE_CANCEL: 'pipeline:cancel',
+
+  // Campaign
+  CAMPAIGN_LAUNCH: 'campaign:launch',
+  CAMPAIGN_GET: 'campaign:get',
+  CAMPAIGN_LIST: 'campaign:list',
+  CAMPAIGN_FEEDBACK: 'campaign:feedback',
+  CAMPAIGN_CANCEL: 'campaign:cancel',
 } as const;
 
 export type IpcChannel = (typeof IpcChannel)[keyof typeof IpcChannel];

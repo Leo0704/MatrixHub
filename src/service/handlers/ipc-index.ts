@@ -14,3 +14,4 @@ export { registerSystemHandlers } from './ipc-system-handlers.js';
 export { registerFetchHandlers } from './ipc-fetch-handlers.js';
 export { registerPipelineHandlers } from './ipc-pipeline-handlers.js';
 export { registerGroupHandlers } from './group-handlers.js';
+export { registerCampaignHandlers } from './ipc-campaign-handlers.js';
