@@ -59,6 +59,30 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
   `);
 
+  // Campaigns 表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      product_url TEXT,
+      product_description TEXT,
+      product_info TEXT DEFAULT '{}',
+      content_type TEXT NOT NULL CHECK(content_type IN ('video', 'image_text')),
+      add_voiceover INTEGER DEFAULT 0,
+      marketing_goal TEXT NOT NULL CHECK(marketing_goal IN ('exposure', 'engagement', 'conversion')),
+      target_account_ids TEXT DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'running', 'waiting_feedback', 'iterating', 'completed', 'failed')),
+      current_iteration INTEGER DEFAULT 0,
+      consecutive_failures INTEGER DEFAULT 0,
+      last_feedback TEXT,
+      latest_report TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
+  `);
+
   // 向后兼容：已存在的数据库添加新列（只有列不存在时才添加）
   const tableInfo = db.pragma('table_info(tasks)') as { name: string }[];
   const hasAiAnalysisCount = tableInfo.some((col) => col.name === 'ai_analysis_count');

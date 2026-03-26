@@ -279,3 +279,74 @@ export interface PipelineTask {
   createdAt: number;
   updatedAt: number;
 }
+
+// Campaign 状态机
+export type CampaignStatus = 'draft' | 'running' | 'waiting_feedback' | 'iterating' | 'completed' | 'failed';
+
+// 内容类型
+export type ContentType = 'video' | 'image_text';
+
+// 营销目标
+export type MarketingGoal = 'exposure' | 'engagement' | 'conversion';
+
+// 产品信息
+export interface ProductInfo {
+  name: string;
+  description: string;
+  price?: string;
+  specs?: string;
+  brand?: string;
+  targetAudience?: string;
+  images: string[];
+}
+
+// 账号发布记录（用于冷却机制）
+export interface AccountPublishRecord {
+  accountId: string;
+  lastPublishedAt: number;
+  publishedToday: number;
+}
+
+// 单账号效果数据
+export interface AccountMetrics {
+  accountId: string;
+  accountName: string;
+  views: number;
+  likes: number;
+  comments: number;
+  favorites: number;
+  shares: number;
+  followerDelta: number;
+  healthStatus: 'normal' | 'limited' | 'banned';
+}
+
+// 效果报告
+export interface CampaignReport {
+  campaignId: string;
+  generatedAt: number;
+  metrics: AccountMetrics[];
+  bestAccounts: string[];
+  worstAccounts: string[];
+  recommendation: 'continue' | 'iterate' | 'stop';
+  summary: string;
+}
+
+// Campaign（推广活动）
+export interface Campaign {
+  id: string;
+  name: string;
+  productUrl?: string;
+  productDescription?: string;
+  productInfo?: ProductInfo;
+  contentType: ContentType;
+  addVoiceover: boolean;
+  marketingGoal: MarketingGoal;
+  targetAccountIds: string[];
+  status: CampaignStatus;
+  createdAt: number;
+  updatedAt: number;
+  currentIteration: number;
+  consecutiveFailures: number;
+  lastFeedback?: 'good' | 'bad';
+  latestReport?: CampaignReport;
+}
