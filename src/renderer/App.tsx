@@ -12,7 +12,6 @@ import ScheduledPublish from './pages/ScheduledPublish';
 import DataInsights from './pages/DataInsights';
 import AccountManagement from './pages/AccountManagement';
 import Settings from './pages/Settings';
-import AutoCreation from './pages/AutoCreation';
 import { CampaignLaunch } from './pages/CampaignLaunch';
 import { CampaignDashboard } from './pages/CampaignDashboard';
 import { CampaignReportPage } from './pages/CampaignReport';
@@ -104,7 +103,6 @@ function App() {
     { page: 'schedule', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>, label: '定时发布' },
     { page: 'insights', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>, label: '数据洞察' },
     { page: 'accounts', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>, label: '账号管理' },
-    { page: 'auto-creation', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, label: '全自动创作' },
     { page: 'campaignLaunch', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>, label: '推广启动' },
     { page: 'campaignDashboard', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>, label: '推广列表' },
   ];
@@ -123,8 +121,6 @@ function App() {
         return <DataInsights />;
       case 'accounts':
         return <AccountManagement />;
-      case 'auto-creation':
-        return <AutoCreation />;
       case 'campaignLaunch':
         return <CampaignLaunch />;
       case 'campaignDashboard':
