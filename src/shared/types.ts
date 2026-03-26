@@ -130,7 +130,7 @@ export interface IpcChannels {
 
 // AI 生成请求
 export interface AIRequest {
-  taskType?: 'text' | 'image' | 'video' | 'voice';
+  taskType?: 'text' | 'image' | 'video' | 'voice' | 'core_director';
   providerType?: 'openai' | 'anthropic' | 'ollama' | 'zhipu'
     | 'minimax' | 'kimi' | 'qwen' | 'doubao'
     | 'deepseek' | 'spark' | 'yi' | 'siliconflow';
@@ -228,6 +228,12 @@ export interface IterationDecision {
   newStrategyHints?: string;
   // 设计文档第10节：更换核心营销卖点时必须通知用户
   corePitchChanged?: boolean;
+  // 设计文档第10节：更换产品链接时必须通知用户
+  productUrlChanged?: boolean;
+  // 设计文档第10节：切换内容类型（视频↔图文）时必须通知用户
+  contentTypeChanged?: boolean;
+  // 设计文档第10节：变更原因列表（用于通知用户具体变了什么）
+  changeReasons?: string[];
   // 自动调整标志（设计文档第10节）
   autoAdjustments?: {
     style?: boolean;      // 文案/配图风格自动调整
@@ -246,7 +252,7 @@ export interface PageAgentPayload {
   accountId: string;
   url?: string;           // 目标 URL，默认导航到发布页
   maxSteps?: number;      // 最大步数，默认 20
-  taskType?: 'text' | 'image' | 'video' | 'voice';
+  taskType?: 'text' | 'image' | 'video' | 'voice' | 'core_director';
 }
 
 // ============ Pipeline 类型 ============
@@ -328,6 +334,7 @@ export interface AccountPublishRecord {
   accountId: string;
   lastPublishedAt: number;
   publishedToday: number;
+  activeHours?: number[]; // 账号活跃小时分布 (0-23)，设计文档第5.2节
 }
 
 // 单账号效果数据

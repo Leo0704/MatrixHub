@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Platform, Task, TaskFilter, AITriggerType } from '../shared/types.js';
 import { IpcChannel, IPC_CHANNEL_VERSION } from '../shared/ipc-channels.js';
-import type { ElectronAPI, TaskDraft, GroupEvent, ExportData, ImportData } from '../shared/ipc-api.js';
+import type { ElectronAPI, TaskDraft, GroupEvent } from '../shared/ipc-api.js';
 
 const api: ElectronAPI = {
   // ============ 热点话题 ============
@@ -91,10 +91,9 @@ const api: ElectronAPI = {
   getSettings: () => ipcRenderer.invoke(IpcChannel.GET_SETTINGS),
   saveSettings: (settings) => ipcRenderer.invoke(IpcChannel.SAVE_SETTINGS, settings),
 
-  // ============ 数据导出/导入 ============
-  exportData: () => ipcRenderer.invoke(IpcChannel.EXPORT_DATA),
-  importData: (data) => ipcRenderer.invoke(IpcChannel.IMPORT_DATA, data),
-  clearAllData: () => ipcRenderer.invoke(IpcChannel.CLEAR_ALL_DATA),
+  // ============ 运行时配置（设计文档第10节阈值可配置 + 第21节每日上限可配置）===========
+  getRuntimeConfig: () => ipcRenderer.invoke(IpcChannel.CONFIG_GET),
+  updateRuntimeConfig: (key: string, value: unknown) => ipcRenderer.invoke(IpcChannel.CONFIG_UPDATE, { key, value }),
 
   // ============ 事件监听 ============
   onMenuAction: (channel, callback) => {
@@ -172,6 +171,15 @@ const api: ElectronAPI = {
 
   onAIHotTopic: (callback) => {
     ipcRenderer.on('ai:hot-topic', (_, data) => callback(data));
+  },
+
+  // 通知监听
+  onNotificationMust: (callback) => {
+    ipcRenderer.on('notification:must', (_, data) => callback(data));
+  },
+
+  onNotificationImportant: (callback) => {
+    ipcRenderer.on('notification:important', (_, data) => callback(data));
   },
 
   // ============ Campaign ============

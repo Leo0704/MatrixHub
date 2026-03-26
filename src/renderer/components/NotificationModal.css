@@ -1,0 +1,130 @@
+.notification-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.notification-modal {
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  max-width: 480px;
+  width: 90%;
+  animation: slideUp 0.2s var(--ease-out);
+}
+
+.notification-modal.notification-must {
+  border: 1px solid var(--error);
+  box-shadow: 0 0 40px rgba(248, 113, 113, 0.15);
+}
+
+.notification-modal.notification-important {
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 30px rgba(129, 140, 248, 0.12);
+}
+
+.notification-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.notification-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notification-icon-must {
+  color: var(--error);
+}
+
+.notification-icon-important {
+  color: var(--primary);
+}
+
+.notification-title-area {
+  flex: 1;
+}
+
+.notification-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: var(--space-xs);
+}
+
+.notification-type-badge.badge-must {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--error);
+}
+
+.notification-type-badge.badge-important {
+  background: rgba(129, 140, 248, 0.15);
+  color: var(--primary);
+}
+
+.notification-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.notification-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding: var(--space-md);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-lg);
+}
+
+.notification-accounts {
+  font-size: 13px;
+  margin-bottom: var(--space-lg);
+}
+
+.notification-accounts-label {
+  color: var(--text-muted);
+}
+
+.notification-accounts-list {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.notification-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-subtle);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

@@ -1,60 +1,12 @@
 import { useState, useEffect } from 'react';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { ConfirmModal } from '../components/ConfirmModal';
 
 export default function Settings() {
   const [version, setVersion] = useState('v0.1.0');
-  const [exportStatus, setExportStatus] = useState('');
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     window.electronAPI?.getVersion().then(setVersion).catch((err) => console.error('Failed to load version:', err));
   }, []);
-
-  const handleExport = async () => {
-    try {
-      const data = await window.electronAPI?.exportData();
-      if (!data) {
-        setExportStatus('导出失败：无法获取数据');
-        return;
-      }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `matrixhub-backup-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setExportStatus('导出成功！');
-    } catch (err) {
-      console.error('Export failed:', err);
-      setExportStatus('导出失败');
-    }
-  };
-
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        const result = await window.electronAPI?.importData(data);
-        if (result?.success) {
-          setExportStatus('导入成功！请刷新页面。');
-        } else {
-          setExportStatus('导入失败: ' + (result?.error || '未知错误'));
-        }
-      } catch (err) {
-        console.error('Import failed:', err);
-        setExportStatus('导入失败');
-      }
-    };
-    input.click();
-  };
 
   const [settings, setSettings] = useState({
     theme: 'dark',
@@ -65,13 +17,21 @@ export default function Settings() {
     browserHeadless: false,
   });
 
+  // 设计文档第10节 + 第21节：推广配置（阈值 + 每日上限）
+  const [campaignDailyLimit, setCampaignDailyLimit] = useState(2);
+  const [iterationStopViews, setIterationStopViews] = useState(500);
+  const [iterationIterateViews, setIterationIterateViews] = useState(1000);
+  const [campaignConfigLoading, setCampaignConfigLoading] = useState(false);
+  const [campaignConfigMsg, setCampaignConfigMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // 任务类型绑定状态
-  type TaskType = 'text' | 'image' | 'video' | 'voice';
+  type TaskType = 'text' | 'image' | 'video' | 'voice' | 'core_director';
   const TASK_TYPES: { type: TaskType; label: string; desc: string }[] = [
     { type: 'text', label: '文案生成', desc: '用于生成短视频脚本、种草文案等' },
     { type: 'image', label: '图片生成', desc: '用于 AI 生成配图、海报等' },
     { type: 'video', label: '视频生成', desc: '用于 AI 生成视频内容' },
     { type: 'voice', label: '配音', desc: '用于文字转语音、配音合成' },
+    { type: 'core_director', label: '核心驱动', desc: '用于决策/调度/分析（内容策略/迭代判断）' },
   ];
 
   // 每个任务类型的 AI 配置（apiKey 只在保存时填写，不从服务端加载）
@@ -80,6 +40,7 @@ export default function Settings() {
     image: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
     video: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
     voice: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
+    core_director: { baseUrl: '', hasApiKey: false, model: '', apiKey: '' },
   });
   const [testingTask, setTestingTask] = useState<TaskType | null>(null);
   const [savingTask, setSavingTask] = useState<TaskType | null>(null);
@@ -88,12 +49,49 @@ export default function Settings() {
     image: null,
     video: null,
     voice: null,
+    core_director: null,
   });
   const [expandedTask, setExpandedTask] = useState<TaskType | null>('text');
 
   useEffect(() => {
     loadTaskBindings();
+    loadCampaignConfig();
   }, []);
+
+  const loadCampaignConfig = async () => {
+    try {
+      const config = await (window.electronAPI as any).getRuntimeConfig();
+      if (config) {
+        setCampaignDailyLimit(config.campaignDailyLimit ?? 2);
+        setIterationStopViews(config.iterationThresholds?.stopViews ?? 500);
+        setIterationIterateViews(config.iterationThresholds?.iterateViews ?? 1000);
+      }
+    } catch (error) {
+      console.error('Failed to load campaign config:', error);
+    }
+  };
+
+  const handleSaveCampaignConfig = async () => {
+    setCampaignConfigLoading(true);
+    setCampaignConfigMsg(null);
+    try {
+      const api = window.electronAPI as any;
+      const r1 = await api.updateRuntimeConfig('campaignDailyLimit', campaignDailyLimit);
+      const r2 = await api.updateRuntimeConfig('iterationThresholds', {
+        stopViews: iterationStopViews,
+        iterateViews: iterationIterateViews,
+      });
+      if (r1.success && r2.success) {
+        setCampaignConfigMsg({ type: 'success', text: '保存成功！' });
+      } else {
+        setCampaignConfigMsg({ type: 'error', text: '保存失败' });
+      }
+    } catch (error) {
+      setCampaignConfigMsg({ type: 'error', text: '保存失败' });
+    } finally {
+      setCampaignConfigLoading(false);
+    }
+  };
 
   const loadTaskBindings = async () => {
     try {
@@ -104,6 +102,7 @@ export default function Settings() {
           image: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.image, apiKey: '' },
           video: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.video, apiKey: '' },
           voice: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.voice, apiKey: '' },
+          core_director: { ...{ baseUrl: '', hasApiKey: false, model: '', apiKey: '' }, ...configs.core_director, apiKey: '' },
         });
       }
     } catch (error) {
@@ -229,6 +228,91 @@ export default function Settings() {
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* 推广设置（设计文档第10节阈值可配置 + 第21节每日上限可配置）*/}
+      <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
+        <h3 style={{ marginBottom: 'var(--space-lg)' }}>推广设置</h3>
+
+        <div style={settingRow}>
+          <div>
+            <div style={{ fontWeight: 500 }}>每账号每日发布上限</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              设计文档第21节：每账号每日发布不超过 N 条（默认 2）
+            </div>
+          </div>
+          <select
+            className="input"
+            style={{ width: 80 }}
+            value={campaignDailyLimit}
+            onChange={e => setCampaignDailyLimit(Number(e.target.value))}
+          >
+            {[1, 2, 3, 4, 5].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={settingRow}>
+          <div>
+            <div style={{ fontWeight: 500 }}>停止迭代播放量阈值</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              连续迭代后平均播放量低于此值则停止（默认 500）
+            </div>
+          </div>
+          <input
+            className="input"
+            type="number"
+            style={{ width: 100 }}
+            value={iterationStopViews}
+            min={100}
+            max={10000}
+            step={100}
+            onChange={e => setIterationStopViews(Number(e.target.value))}
+          />
+        </div>
+
+        <div style={settingRow}>
+          <div>
+            <div style={{ fontWeight: 500 }}>建议迭代播放量阈值</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              平均播放量低于此值则建议优化策略（默认 1000）
+            </div>
+          </div>
+          <input
+            className="input"
+            type="number"
+            style={{ width: 100 }}
+            value={iterationIterateViews}
+            min={100}
+            max={10000}
+            step={100}
+            onChange={e => setIterationIterateViews(Number(e.target.value))}
+          />
+        </div>
+
+        {campaignConfigMsg && (
+          <div style={{
+            padding: 'var(--space-sm) var(--space-md)',
+            borderRadius: 'var(--radius-md)',
+            background: campaignConfigMsg.type === 'error' ? 'var(--error-muted)' : 'var(--success-muted)',
+            color: campaignConfigMsg.type === 'error' ? 'var(--error)' : 'var(--success)',
+            fontSize: 13,
+            marginBottom: 'var(--space-md)',
+          }}>
+            {campaignConfigMsg.text}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-primary"
+            disabled={campaignConfigLoading}
+            onClick={handleSaveCampaignConfig}
+          >
+            {campaignConfigLoading ? '保存中...' : '保存推广设置'}
+          </button>
         </div>
       </div>
 
@@ -396,39 +480,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* 数据管理 */}
-      <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
-        <h3 style={{ marginBottom: 'var(--space-lg)' }}>数据管理</h3>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          <button className="btn btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={handleExport}>
-            📥 导出数据
-          </button>
-          <button className="btn btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={handleImport}>
-            📤 导入数据
-          </button>
-          <button
-            className="btn btn-danger"
-            onClick={() => setShowClearConfirm(true)}
-          >
-            🗑️ 清除所有数据
-          </button>
-        </div>
-
-        {exportStatus && (
-          <div style={{
-            marginTop: 'var(--space-md)',
-            padding: 'var(--space-sm) var(--space-md)',
-            borderRadius: 'var(--radius-md)',
-            background: exportStatus.includes('失败') || exportStatus.includes('错误') ? 'var(--error-muted)' : 'var(--success-muted)',
-            color: exportStatus.includes('失败') || exportStatus.includes('错误') ? 'var(--error)' : 'var(--success)',
-            fontSize: 13,
-          }}>
-            {exportStatus}
-          </div>
-        )}
-      </div>
-
       {/* 关于 */}
       <div className="card">
         <h3 style={{ marginBottom: 'var(--space-lg)' }}>关于</h3>
@@ -439,19 +490,6 @@ export default function Settings() {
           </p>
         </div>
       </div>
-      {showClearConfirm && (
-        <ConfirmModal
-          title="确认清除所有数据？"
-          message="此操作不可恢复。所有账号、任务和设置都将被永久删除。"
-          confirmLabel="确认清除"
-          onConfirm={async () => {
-            await window.electronAPI?.clearAllData();
-            setShowClearConfirm(false);
-            setExportStatus('数据已清除！请刷新页面。');
-          }}
-          onCancel={() => setShowClearConfirm(false)}
-        />
-      )}
     </div>
   );
 }

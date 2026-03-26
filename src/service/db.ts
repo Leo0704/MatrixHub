@@ -322,6 +322,18 @@ function initializeSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_content_history_campaign ON campaign_content_history(campaign_id);
   `);
+  // 账号发布历史表（设计文档第5.2节：AI 智能发布时间调度）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_publish_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT NOT NULL,
+      published_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_publish_history_account ON account_publish_history(account_id);
+    CREATE INDEX IF NOT EXISTS idx_publish_history_time ON account_publish_history(published_at);
+  `);
+
 
   log.info('数据库 Schema 初始化完成');
 }
@@ -416,131 +428,3 @@ export function encryptDbField(value: string | null): string | null {
   return encryptor.encrypt(value);
 }
 
-// 数据导出类型
-export interface ExportData {
-  accounts: Array<{
-    id: string;
-    platform: string;
-    username: string;
-    display_name: string;
-    avatar: string | null;
-    status: string;
-    last_used_at: number | null;
-    created_at: number;
-    updated_at: number;
-  }>;
-  tasks: Array<{
-    id: string;
-    type: string;
-    platform: string;
-    status: string;
-    title: string;
-    payload: string;
-    result: string | null;
-    error: string | null;
-    progress: number;
-    retry_count: number;
-    max_retries: number;
-    scheduled_at: number | null;
-    started_at: number | null;
-    completed_at: number | null;
-    created_at: number;
-    updated_at: number;
-    version?: number;
-    ai_analysis_count?: number;
-  }>;
-  groups: Array<{
-    id: string;
-    name: string;
-    color: string;
-    sort_order: number;
-    created_at: number;
-    updated_at: number;
-  }>;
-  selectors: Array<{
-    id: string;
-    platform: string;
-    selector_key: string;
-    selector_value: string;
-    version: number;
-    is_active: number;
-    success_rate: number;
-    failure_count: number;
-    created_at: number;
-    updated_at: number;
-  }>;
-}
-
-export function exportData(): ExportData {
-  const database = getDb();
-  return {
-    accounts: database.prepare('SELECT * FROM accounts').all() as ExportData['accounts'],
-    tasks: database.prepare('SELECT * FROM tasks').all() as ExportData['tasks'],
-    groups: database.prepare('SELECT * FROM account_groups').all() as ExportData['groups'],
-    selectors: database.prepare('SELECT * FROM selector_versions').all() as ExportData['selectors'],
-  };
-}
-
-export function importData(data: ExportData): void {
-  const database = getDb();
-  const tx = database.transaction(() => {
-    // Clear existing data (except credentials for security)
-    database.exec('DELETE FROM accounts; DELETE FROM tasks; DELETE FROM account_groups;');
-
-    // Re-import accounts
-    const accountStmt = database.prepare(`
-      INSERT INTO accounts (id, platform, username, display_name, avatar, status, last_used_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const account of data.accounts) {
-      accountStmt.run(
-        account.id, account.platform, account.username,
-        account.display_name, account.avatar, account.status,
-        account.last_used_at, account.created_at, account.updated_at
-      );
-    }
-
-    // Re-import tasks
-    const taskStmt = database.prepare(`
-      INSERT INTO tasks (id, type, platform, status, title, payload, result, error, progress, retry_count, max_retries, scheduled_at, started_at, completed_at, created_at, updated_at, version, ai_analysis_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const task of data.tasks) {
-      taskStmt.run(
-        task.id, task.type, task.platform, task.status, task.title,
-        task.payload, task.result, task.error, task.progress,
-        task.retry_count, task.max_retries, task.scheduled_at,
-        task.started_at, task.completed_at, task.created_at, task.updated_at,
-        task.version ?? 1, task.ai_analysis_count ?? 0
-      );
-    }
-
-    // Re-import groups
-    const groupStmt = database.prepare(`
-      INSERT INTO account_groups (id, name, color, sort_order, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    for (const group of data.groups) {
-      groupStmt.run(
-        group.id, group.name, group.color,
-        group.sort_order, group.created_at, group.updated_at
-      );
-    }
-
-    // Re-import selectors
-    const selectorStmt = database.prepare(`
-      INSERT INTO selector_versions (id, platform, selector_key, selector_value, version, is_active, success_rate, failure_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const selector of data.selectors) {
-      selectorStmt.run(
-        selector.id, selector.platform, selector.selector_key,
-        selector.selector_value, selector.version, selector.is_active,
-        selector.success_rate, selector.failure_count,
-        selector.created_at, selector.updated_at
-      );
-    }
-  });
-
-  tx();
-}

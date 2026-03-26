@@ -103,6 +103,17 @@ export function CampaignReportPage() {
         </div>
       </div>
 
+      {report.worstAccountReasons && report.worstAccountReasons.length > 0 && (
+        <div className="worst-reasons">
+          <h3>效果最差账号分析</h3>
+          <ul>
+            {report.worstAccountReasons.map((reason, i) => (
+              <li key={i}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="metrics-table">
         <table>
           <thead>

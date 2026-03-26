@@ -66,17 +66,27 @@ export interface AIFeedbackData {
   reason?: string;
 }
 
-// ============ 导出/导入数据类型 ============
-export interface ExportData {
-  accounts: Account[];
-  tasks: Task[];
-  groups: GroupEvent[];
+// ============ 通知类型 ============
+// 设计文档第10节：产品链接/内容类型变更必须通知
+export type NotificationMustType = 'account_banned' | 'account_limited' | 'content_violated' | 'core_pitch_changed' | 'frequency_increased' | 'product_url_changed' | 'content_type_changed';
+export type NotificationImportantType = 'content_exploded' | 'ai_strategy_changed' | 'report_ready' | 'publish_complete';
+
+export interface NotificationMustData {
+  type: NotificationMustType;
+  title: string;
+  message: string;
+  campaignId?: string;
+  accounts?: string[];
+  // product_url_changed / content_type_changed 专用
+  productUrl?: string;
+  reason?: string;
 }
 
-export interface ImportData {
-  accounts: Account[];
-  tasks: Task[];
-  groups: GroupEvent[];
+export interface NotificationImportantData {
+  type: NotificationImportantType;
+  title: string;
+  message: string;
+  campaignId?: string;
 }
 
 // ============ AI Provider 类型 ============
@@ -191,7 +201,7 @@ export interface ElectronAPI {
     failures: number;
     lastFailure?: string;
   }>;
-  bindTaskType: (taskType: 'text' | 'image' | 'video' | 'voice', providerId: string) => Promise<{ success: boolean; error?: string }>;
+  bindTaskType: (taskType: 'text' | 'image' | 'video' | 'voice' | 'core_director', providerId: string) => Promise<{ success: boolean; error?: string }>;
   getTaskTypeBindings: () => Promise<Record<string, { id: string; name: string; type: string; models: string[] }>>;
   getTaskAIConfigs: () => Promise<Record<string, { baseUrl: string; hasApiKey: boolean; model: string }>>;
   saveTaskAIConfig: (taskType: string, config: { baseUrl: string; apiKey: string; model: string }) => Promise<{ success: boolean; error?: string }>;
@@ -288,11 +298,11 @@ export interface ElectronAPI {
   getSettings: () => Promise<Record<string, unknown>>;
   saveSettings: (settings: Record<string, unknown>) => Promise<void>;
 
-  // 数据导出/导入
-  exportData: () => Promise<ExportData>;
-  importData: (data: ImportData) => Promise<{ success: boolean; error?: string }>;
-  clearAllData: () => Promise<void>;
+  // 运行时配置（设计文档第10节阈值可配置 + 第21节每日上限可配置）
+  getRuntimeConfig: () => Promise<Record<string, unknown>>;
+  updateRuntimeConfig: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>;
 
+  // 数据导出/导入
   // 事件监听
   onMenuAction: (channel: string, callback: () => void) => void;
   onTaskCreated: (callback: (task: Task) => void) => void;
@@ -314,6 +324,10 @@ export interface ElectronAPI {
   onAIFeedback: (callback: (data: AIFeedbackData) => void) => void;
   onAIDailyPlan: (callback: (data: { platform: Platform; result: unknown }) => void) => void;
   onAIHotTopic: (callback: (data: { platform: Platform; result: unknown }) => void) => void;
+
+  // 通知监听
+  onNotificationMust: (callback: (data: NotificationMustData) => void) => void;
+  onNotificationImportant: (callback: (data: NotificationImportantData) => void) => void;
 
   // 移除监听
   removeAllListeners: (channel: string) => void;

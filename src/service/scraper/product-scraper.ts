@@ -21,16 +21,105 @@ function isInRange(ip: string, start: string, end: string): boolean {
   return ipNum >= startNum && ipNum <= endNum;
 }
 
-function isInternalIP(host: string): boolean {
-  // Check explicit hosts
-  if (INTERNAL_HOSTS.includes(host) || host.startsWith('localhost:')) {
+/**
+ * Parse an IPv6 address string into an array of 8 big-endian 16-bit numbers.
+ * Returns null on parse error.
+ */
+function parseIPv6Parts(addr: string): number[] | null {
+  // Handle IPv4-mapped IPv6 like ::ffff:127.0.0.1
+  const ipv4Match = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (ipv4Match) {
+    const ipv4Parts = ipv4Match[1].split('.').map(Number);
+    if (ipv4Parts.length !== 4 || ipv4Parts.some(p => isNaN(p) || p < 0 || p > 255)) return null;
+    return [0, 0, 0, 0, 0, 0xffff, (ipv4Parts[0] << 8) | ipv4Parts[1], (ipv4Parts[2] << 8) | ipv4Parts[3]];
+  }
+
+  // Handle bare IPv6 like ::1, fe80::, fc00::, 2001:db8::
+  // Also handle bracket-wrapped: [::1] -> ::1
+  const clean = addr.replace(/^\[|\]$/g, '');
+  const parts: string[] = clean.split(':');
+
+  // Expand :: to full 8 groups
+  const emptyIndex = parts.indexOf('');
+  if (emptyIndex === -1) {
+    if (parts.length !== 8) return null;
+  } else {
+    const nonEmpty = parts.filter(p => p !== '');
+    const emptyCount = 8 - nonEmpty.length;
+    if (emptyCount < 1) return null;
+    // Rebuild with correct number of empty groups
+    const expanded: string[] = [];
+    for (let i = 0; i < emptyIndex; i++) expanded.push(parts[i]);
+    for (let i = 0; i < emptyCount; i++) expanded.push('0');
+    for (let i = emptyIndex + 1; i < parts.length; i++) expanded.push(parts[i]);
+    while (expanded.length < 8) expanded.push('0');
+    parts.length = 0;
+    for (let i = 0; i < 8; i++) parts[i] = expanded[i] || '0';
+  }
+
+  if (parts.length !== 8) return null;
+  return parts.map(p => {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(p)) return NaN;
+    return parseInt(p, 16);
+  });
+}
+
+/**
+ * Check if a bare IPv6 address string is an internal address.
+ * Does NOT handle bracket notation — caller must strip [].
+ */
+function isIPv6Internal(addr: string): boolean {
+  // Loopback ::1
+  if (addr === '::1') return true;
+
+  const parts = parseIPv6Parts(addr);
+  if (!parts || parts.length !== 8) return false;
+  if (parts.some(isNaN)) return false;
+
+  const group0 = parts[0];
+  const group1 = parts[1];
+
+  // ::ffff:0:0/96 — IPv4-mapped IPv6 (first 6 groups zero, group5 = 0xffff)
+  if (parts[0] === 0 && parts[1] === 0 && parts[2] === 0 && parts[3] === 0 && parts[4] === 0 && parts[5] === 0xffff) {
     return true;
   }
+
+  // fc00::/7 — Unique Local Addresses (first 7 bits = 1111110)
+  // First byte must be 0xfc or 0xfd
+  const firstByte = (group0 >> 8) & 0xff;
+  if (firstByte >= 0xfc && firstByte <= 0xfd) return true;
+
+  // fe80::/10 — Link-Local (first 10 bits = 1111111010, i.e. first byte 0xfe80-0xfeff)
+  if (firstByte >= 0xfe80 && firstByte <= 0xfeff) return true;
+
+  // 2001:db8::/32 — Documentation (first 32 bits = 2001:0db8)
+  if (group0 === 0x2001 && group1 === 0x0db8) return true;
+
+  return false;
+}
+
+function isInternalIP(host: string): boolean {
+  // Strip bracket notation for IPv6 URLs: [::1] -> ::1
+  const cleanHost = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+
+  // Check explicit hosts (without port)
+  const hostWithoutPort = cleanHost.split(':')[0];
+  if (INTERNAL_HOSTS.includes(hostWithoutPort)) return true;
+
+  // Check ::1 loopback (covers [::1] and [::1]:port)
+  if (cleanHost === '::1' || cleanHost.startsWith('::1]')) return true;
+
+  // Check IPv6 addresses (bare or bracket-wrapped)
+  if (cleanHost.includes(':')) {
+    return isIPv6Internal(cleanHost);
+  }
+
   // Check IPv4 private ranges
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    if (isInRange(host, '10.0.0.0', '10.255.255.255')) return true;
-    if (isInRange(host, '172.16.0.0', '172.31.255.255')) return true;
-    if (isInRange(host, '192.168.0.0', '192.168.255.255')) return true;
+  const ipv4Host = hostWithoutPort;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(ipv4Host)) {
+    if (isInRange(ipv4Host, '10.0.0.0', '10.255.255.255')) return true;
+    if (isInRange(ipv4Host, '172.16.0.0', '172.31.255.255')) return true;
+    if (isInRange(ipv4Host, '192.168.0.0', '192.168.255.255')) return true;
   }
   return false;
 }

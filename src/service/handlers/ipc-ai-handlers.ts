@@ -133,7 +133,7 @@ export function registerAIHandlers(): void {
   });
 
   ipcMain.handle(IpcChannel.AI_BIND_TASK_TYPE, async (_event, params: {
-    taskType: 'text' | 'image' | 'video' | 'voice';
+    taskType: 'text' | 'image' | 'video' | 'voice' | 'core_director';
     providerId: string;
   }) => {
     try {

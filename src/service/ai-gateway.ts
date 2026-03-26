@@ -129,7 +129,7 @@ class Breaker {
 
 // ============ AI Gateway ============
 
-export type TaskType = 'text' | 'image' | 'video' | 'voice';
+export type TaskType = 'text' | 'image' | 'video' | 'voice' | 'core_director';
 
 /**
  * AI Gateway

@@ -73,11 +73,6 @@ export const IpcChannel = {
   GET_SETTINGS: 'get-settings',
   SAVE_SETTINGS: 'save-settings',
 
-  // Export/Import
-  EXPORT_DATA: 'export-data',
-  IMPORT_DATA: 'import-data',
-  CLEAR_ALL_DATA: 'clear-all-data',
-
   // Fetch
   FETCH_HOT_TOPICS: 'fetch:hot-topics',
 

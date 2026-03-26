@@ -1,6 +1,7 @@
 import { scrapeProductInfo } from './scraper/product-scraper.js';
 import { generateContentStrategy, decideIteration, generateIterationStrategy, type AccountContentPlan } from './ai-director.js';
 import { buildPublishSchedule } from './strategy/publish-scheduler.js';
+import { getCampaignDailyLimit } from './config/runtime-config.js';
 import { scrapeAccountMetrics } from './scraper/douyin-metrics.js';
 import { createCampaign, getCampaign, updateCampaignStatus, updateCampaignIteration, saveCampaignReport, setCampaignFeedback, updateCampaignMonitoring } from './campaign-store.js';
 import { taskQueue } from './queue.js';
@@ -107,17 +108,20 @@ export async function launchCampaign(params: LaunchParams): Promise<Campaign> {
   updateCampaignStatus(campaign.id, 'running');
 
   // 设计文档第10节：初始化每日发布上限跟踪（默认2条）
-  campaignDailyLimits.set(campaign.id, 2);
+  campaignDailyLimits.set(campaign.id, getCampaignDailyLimit());
 
   // Step 3: 生成内容策略（每个账号独立内容）
   const contentPlans = await generateContentStrategy(campaign.id, productInfo!, params.targetAccountIds.length);
 
   // Step 4: 生成每个账号的实际内容（文案、图片等）
   // 设计文档第22节：传递 campaignId 和 iteration=1 用于内容新鲜度追踪
+  // 设计文档第20节：传递 accountTags 用于 Hashtag 个性化
   const generatedContents: GeneratedContent[] = [];
   for (let i = 0; i < params.targetAccountIds.length; i++) {
     const plan = contentPlans[i];
-    log.info('[CampaignManager] 生成内容:', params.targetAccountIds[i], plan.contentAngle);
+    const accountId = params.targetAccountIds[i];
+    const accountTags = accountManager.get(accountId)?.tags ?? [];
+    log.info('[CampaignManager] 生成内容:', accountId, plan.contentAngle, { accountTags });
     const content = await generateContent({
       plan,
       productInfo: productInfo!,
@@ -126,6 +130,7 @@ export async function launchCampaign(params: LaunchParams): Promise<Campaign> {
       marketingGoal: params.marketingGoal,
       campaignId: campaign.id,
       iteration: 1,
+      accountTags,
     });
     generatedContents.push(content);
   }
@@ -204,7 +209,15 @@ export async function handleFeedback(campaignId: string, feedback: 'good' | 'bad
     await launchNextIteration(campaign, 'continue', autoAdjustments);
   } else {
     // 效果不好：先由 AI 决策是否继续迭代
-    const decision = await decideIteration(campaign.latestReport!, campaign.currentIteration);
+    // 设计文档第10节：传递 productUrl/contentType 用于变更检测
+    const decision = await decideIteration(
+      campaign.latestReport!,
+      campaign.currentIteration,
+      campaign.productUrl,
+      campaign.contentType,
+      campaign.productUrl,
+      campaign.contentType,
+    );
 
     // 设计文档第10节：更换核心营销卖点必须通知用户
     if (decision.corePitchChanged) {
@@ -212,6 +225,24 @@ export async function handleFeedback(campaignId: string, feedback: 'good' | 'bad
         type: 'core_pitch_changed',
         title: 'AI 更换核心营销卖点',
         message: `AI 决策更换产品核心卖点：${decision.newStrategyHints || decision.reason}。${decision.reason}`,
+      });
+    }
+
+    // 设计文档第10节：更换产品链接必须通知用户
+    if (decision.productUrlChanged) {
+      broadcastToRenderers('notification:must', {
+        type: 'product_url_changed',
+        title: 'AI 更换产品链接',
+        message: `AI 决策更换推广产品链接，请确认新链接：${campaign.productUrl}`,
+      });
+    }
+
+    // 设计文档第10节：切换内容类型必须通知用户
+    if (decision.contentTypeChanged) {
+      broadcastToRenderers('notification:must', {
+        type: 'content_type_changed',
+        title: 'AI 切换内容类型',
+        message: `AI 决策切换内容类型：${decision.changeReasons?.find(r => r.includes('内容类型')) || ''}，请确认是否继续`,
       });
     }
 
@@ -243,7 +274,7 @@ async function launchNextIteration(
   campaign: Campaign,
   mode: 'continue' | 'iterate',
   autoAdjustments?: { style?: boolean; timing?: boolean; hashtag?: boolean },
-  dailyLimit = 2
+  dailyLimit = getCampaignDailyLimit()
 ): Promise<void> {
   const productInfo = campaign.productInfo!;
 
@@ -281,9 +312,12 @@ async function launchNextIteration(
   }
 
   // 生成每个账号的实际内容
+  // 设计文档第20节：传递 accountTags 用于 Hashtag 个性化
   const generatedContents: GeneratedContent[] = [];
   for (let i = 0; i < campaign.targetAccountIds.length; i++) {
     const plan = contentPlans[i];
+    const accountId = campaign.targetAccountIds[i];
+    const accountTags = accountManager.get(accountId)?.tags ?? [];
     // 设计文档第22节：传递 campaignId 和 iteration 用于内容新鲜度追踪
     const content = await generateContent({
       plan,
@@ -293,6 +327,7 @@ async function launchNextIteration(
       marketingGoal: campaign.marketingGoal,
       campaignId: campaign.id,
       iteration: campaign.currentIteration + 1,
+      accountTags,
     });
     generatedContents.push(content);
   }

@@ -71,7 +71,7 @@ export function CampaignLaunch() {
       });
 
       if (result?.success) {
-        setCurrentPage('campaign');
+        setCurrentPage('campaignDashboard');
       } else {
         setError(result?.error || '启动失败');
       }
@@ -230,7 +230,7 @@ export function CampaignLaunch() {
       {error && <div className="error-message">{error}</div>}
 
       <div className="form-actions">
-        <button onClick={() => setCurrentPage('campaign')} className="btn-secondary">
+        <button onClick={() => setCurrentPage('campaignDashboard')} className="btn-secondary">
           取消
         </button>
         <button onClick={handleLaunch} disabled={loading} className="btn-primary">

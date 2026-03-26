@@ -3,9 +3,9 @@ import { getDb } from './db.js'
 import { broadcastToRenderers } from './ipc-handlers.js'
 import { callAI } from './strategy-engine.js'
 import { getHotTopics } from './hot-topic-detector.js'
-import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, RetryAdvice, ProductInfo, CampaignReport, IterationDecision, Platform } from '../shared/types.js'
+import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, RetryAdvice, ProductInfo, CampaignReport, IterationDecision, Platform, ContentType } from '../shared/types.js'
 import log from 'electron-log'
-import { getAiMaxAnalysisPerTask } from './config/runtime-config.js'
+import { getAiMaxAnalysisPerTask, getIterationThresholds } from './config/runtime-config.js'
 
 // ============ 并发控制 ============
 let pendingAnalysis = false
@@ -186,7 +186,7 @@ export async function dailyBriefing(platform: Platform = 'douyin'): Promise<Dail
   try {
     const { buildDailyContext } = await import('./strategy-engine.js')
     const context = buildDailyContext(platform)
-    const result = await callAI('daily', context) as unknown as DailyPlan
+    const result = await callAI('daily', context, 'core_director') as unknown as DailyPlan
 
     const confidence = (typeof result.confidence === 'number' && result.confidence >= 0 && result.confidence <= 1)
       ? result.confidence : 0.5
@@ -245,7 +245,7 @@ export async function checkHotTopics(platform: Platform = 'douyin'): Promise<Hot
     const top = hotTopics[0]
     const { buildHotTopicContext } = await import('./strategy-engine.js')
     const context = buildHotTopicContext(platform, top)
-    const result = await callAI('hot_topic', context) as unknown as HotTopicDecision
+    const result = await callAI('hot_topic', context, 'core_director') as unknown as HotTopicDecision
 
     const confidence = (typeof result.confidence === 'number' && result.confidence >= 0 && result.confidence <= 1)
       ? result.confidence : 0.5
@@ -350,10 +350,11 @@ ${productInfo.brand ? `- 品牌：${productInfo.brand}` : ''}
 
 以 JSON 数组格式输出，每个元素包含：accountIndex, contentAngle, targetAudience, hashtagHints`;
 
+  // 设计文档第3节：核心驱动 AI（决策/调度/分析）使用 core_director taskType
   const result = await callAI('content_strategy', {
     prompt,
     expectedFormat: 'json_array',
-  });
+  }, 'core_director');
 
   const plans = JSON.parse(result.content as string);
   return plans.map((p: any, i: number) => ({
@@ -366,11 +367,30 @@ ${productInfo.brand ? `- 品牌：${productInfo.brand}` : ''}
 
 /**
  * 决定是否需要迭代
+ * 设计文档第10节：迭代阈值可配置
+ * 设计文档第10节：产品链接/内容类型变更必须通知用户
  */
 export async function decideIteration(
   report: CampaignReport,
-  currentIteration: number
+  currentIteration: number,
+  previousProductUrl?: string,
+  previousContentType?: ContentType,
+  newProductUrl?: string,
+  newContentType?: ContentType,
 ): Promise<IterationDecision> {
+  const thresholds = getIterationThresholds();
+  const changeReasons: string[] = [];
+
+  // 设计文档第10节：检测产品链接是否变更
+  if (previousProductUrl && newProductUrl && previousProductUrl !== newProductUrl) {
+    changeReasons.push('更换了产品链接');
+  }
+
+  // 设计文档第10节：检测内容类型是否切换
+  if (previousContentType && newContentType && previousContentType !== newContentType) {
+    changeReasons.push(`内容类型从${previousContentType === 'video' ? '视频' : '图文'}切换为${newContentType === 'video' ? '视频' : '图文'}`);
+  }
+
   // 计算平均播放量
   const avgViews = report.metrics.reduce((sum, m) => sum + m.views, 0) / report.metrics.length;
 
@@ -382,15 +402,17 @@ export async function decideIteration(
     return {
       action: 'stop',
       reason: `${bannedAccounts}个账号已被封禁，建议人工介入处理账号问题后再继续`,
+      changeReasons,
     };
   }
 
-  if (avgViews < 500 && currentIteration > 0) {
+  if (avgViews < thresholds.stopViews && currentIteration > 0) {
     // 连续迭代后效果仍然很差，停止
     if (currentIteration >= 2) {
       return {
         action: 'stop',
         reason: `连续${currentIteration}次迭代后平均播放量仅${Math.round(avgViews)}，效果未达预期，建议人工调整策略`,
+        changeReasons,
       };
     }
     return {
@@ -399,26 +421,29 @@ export async function decideIteration(
       newStrategyHints: '建议更换核心营销卖点，如从价格优势改为品质/功效优势',
       // 设计文档第10节：核心营销卖点变更需通知用户
       corePitchChanged: true,
+      changeReasons,
       autoAdjustments: { style: true, hashtag: true },
     };
   }
 
-  if (avgViews < 1000) {
+  if (avgViews < thresholds.iterateViews) {
     return {
       action: 'iterate',
       reason: `平均播放量${Math.round(avgViews)}有提升空间，尝试优化内容策略`,
       newStrategyHints: '建议调整 Hashtag 或发布时间策略',
       // 设计文档第10节：Hashtag/发布时间可自动执行
       autoAdjustments: { style: true, hashtag: true, timing: true },
+      changeReasons,
     };
   }
 
-  // avgViews >= 1000，表现良好
+  // avgViews >= thresholds.iterateViews，表现良好
   // 设计文档第10节：发布时间微调可自动执行
   return {
     action: 'continue',
     reason: `平均播放量${Math.round(avgViews)}表现良好，继续当前策略`,
     autoAdjustments: { timing: true },
+    changeReasons,
   };
 }
 
@@ -446,10 +471,11 @@ export async function generateIterationStrategy(
 
 以 JSON 数组格式输出，每个元素包含：accountIndex, contentAngle, targetAudience, hashtagHints`;
 
+  // 设计文档第3节：核心驱动 AI（决策/调度/分析）使用 core_director taskType
   const result = await callAI('content_strategy', {
     prompt,
     expectedFormat: 'json_array',
-  });
+  }, 'core_director');
 
   const plans = JSON.parse(result.content as string);
   return plans.map((p: any, i: number) => ({

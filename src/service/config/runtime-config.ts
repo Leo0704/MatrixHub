@@ -39,6 +39,13 @@ export interface RuntimeConfig {
   aiMaxAnalysisPerTask: number;  // AI 分析循环保护上限
   activeHours: { start: number; end: number };  // 用户活跃时段（北京时间，小时）
   antiFingerprint: AntiFingerprintConfig;  // 反指纹配置
+  // 设计文档第10节：迭代决策阈值（可配置化）
+  iterationThresholds: {
+    stopViews: number;       // 连续迭代后平均播放量低于此值则停止（默认 500）
+    iterateViews: number;    // 播放量低于此值则建议迭代（默认 1000）
+  };
+  // 设计文档第21节：每账号每日发布上限（可配置化，默认 2）
+  campaignDailyLimit: number;
 }
 
 // ============ 默认配置 ============
@@ -78,6 +85,11 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     devicePixelRatio: 0,             // 0 = 随机
     mouseSpeedMultiplier: 1.5,       // 鼠标移动速度乘数
   },
+  iterationThresholds: {
+    stopViews: 500,
+    iterateViews: 1000,
+  },
+  campaignDailyLimit: 2,
 };
 
 // ============ 配置管理器 ============
@@ -224,3 +236,5 @@ export const getTaskStaleTimeout = () => runtimeConfig.getTaskStaleTimeout();
 export const getAiMaxAnalysisPerTask = () => runtimeConfig.getKey('aiMaxAnalysisPerTask');
 export const getActiveHours = () => runtimeConfig.getKey('activeHours');
 export const getAntiFingerprint = () => runtimeConfig.getKey('antiFingerprint');
+export const getIterationThresholds = () => runtimeConfig.getKey('iterationThresholds');
+export const getCampaignDailyLimit = () => runtimeConfig.getKey('campaignDailyLimit');

@@ -40,7 +40,6 @@ import {
   registerMonitoringHandlers,
   registerConfigHandlers,
   registerSettingsHandlers,
-  registerExportHandlers,
   registerConsentHandlers,
   registerSystemHandlers,
   registerFetchHandlers,
@@ -63,7 +62,6 @@ export function registerIpcHandlers(): void {
   registerMonitoringHandlers();
   registerConfigHandlers();
   registerSettingsHandlers();
-  registerExportHandlers();
   registerConsentHandlers();
   registerSystemHandlers();
   registerFetchHandlers();

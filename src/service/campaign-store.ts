@@ -123,3 +123,59 @@ export function updateCampaignMonitoring(id: string, monitorStartedAt: number, m
   db.prepare('UPDATE campaigns SET monitor_started_at = ?, monitor_points_completed = ?, updated_at = ? WHERE id = ?')
     .run(monitorStartedAt, monitorPointsCompleted, Date.now(), id);
 }
+
+// ========== 账号发布历史函数（设计文档第5.2节：AI 智能发布时间调度）==========
+
+interface PublishHistoryRow {
+  id: number;
+  account_id: string;
+  published_at: number;
+  created_at: number;
+}
+
+/**
+ * 记录账号发布历史
+ */
+export function recordAccountPublish(accountId: string, publishedAt: number): void {
+  const db = getDb();
+  db.prepare(
+    'INSERT INTO account_publish_history (account_id, published_at, created_at) VALUES (?, ?, ?)'
+  ).run(accountId, publishedAt, Date.now());
+}
+
+/**
+ * 获取账号发布历史记录
+ */
+export function getAccountPublishHistory(accountId: string, limit: number = 30): PublishHistoryRow[] {
+  const db = getDb();
+  return db.prepare(
+    'SELECT * FROM account_publish_history WHERE account_id = ? ORDER BY published_at DESC LIMIT ?'
+  ).all(accountId, limit) as PublishHistoryRow[];
+}
+
+/**
+ * 计算账号活跃小时分布
+ * 返回 0-23 的小时数组，表示该账号历史发布的小时分布
+ */
+export function getAccountActiveHours(accountId: string, historyLimit: number = 30): number[] {
+  const history = getAccountPublishHistory(accountId, historyLimit);
+  if (history.length === 0) {
+    return [];
+  }
+  
+  // 统计每小时发布次数
+  const hourCounts = new Array(24).fill(0);
+  for (const record of history) {
+    const hour = new Date(record.published_at).getHours();
+    hourCounts[hour]++;
+  }
+  
+  // 返回有发布记录的小时
+  const activeHours: number[] = [];
+  for (let h = 0; h < 24; h++) {
+    if (hourCounts[h] > 0) {
+      activeHours.push(h);
+    }
+  }
+  return activeHours;
+}

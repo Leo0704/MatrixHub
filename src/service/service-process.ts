@@ -18,6 +18,7 @@ import { dailyBriefingAll, checkHotTopics } from './ai-director.js';
 import { sleep } from './utils/sleep.js';
 import type { Task, Platform } from '../shared/types.js';
 import { getActiveHours } from './config/runtime-config.js';
+import { recordAccountPublish } from './campaign-store.js';
 import log from 'electron-log';
 import {
   executePublishTask,
@@ -222,6 +223,15 @@ async function executeTask(task: Task): Promise<void> {
       result: { finishedAt: Date.now() },
     });
     log.info(`[Service] 任务完成: ${task.id}`);
+
+    // 设计文档第5.2节：发布成功后记录账号活跃时间，用于 AI 智能调度
+    if (task.type === 'publish') {
+      const accountId = getAccountIdFromTask(task);
+      if (accountId) {
+        recordAccountPublish(accountId, Date.now());
+        log.info(`[Service] 记录账号发布历史: ${accountId}`);
+      }
+    }
 
   } catch (error) {
     const err = error as Error;

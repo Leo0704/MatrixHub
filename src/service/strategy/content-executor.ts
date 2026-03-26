@@ -23,6 +23,7 @@ export interface GenerateContentParams {
   marketingGoal: 'exposure' | 'engagement' | 'conversion';
   campaignId?: string;             // 设计文档第22节：内容新鲜度追踪
   iteration?: number;              // 当前迭代轮次
+  accountTags?: string[];          // 设计文档第20节：账号标签
 }
 
 /**
@@ -30,7 +31,7 @@ export interface GenerateContentParams {
  * 设计文档第22节：内容新鲜度 - 每次迭代生成的内容必须不同于历史版本
  */
 export async function generateContent(params: GenerateContentParams): Promise<GeneratedContent> {
-  const { plan, productInfo, contentType, addVoiceover, marketingGoal, campaignId, iteration } = params;
+  const { plan, productInfo, contentType, addVoiceover, marketingGoal, campaignId, iteration, accountTags } = params;
 
   log.info('[ContentExecutor] 生成内容:', plan.accountId, contentType);
 
@@ -58,7 +59,28 @@ export async function generateContent(params: GenerateContentParams): Promise<Ge
   // Step 2: 审核文案（违规词检测+修改）
   const { moderateAndFix } = await import('../moderation/content-moderator.js');
   const moderationResult = await moderateAndFix(text);
-  const safeText = moderationResult.revisedContent || text;
+  let safeText = moderationResult.revisedContent || text;
+
+  // Step 2.5: 对 AI 重写后的内容进行二次审核，确保通过后再继续
+  let finalCheck = moderationResult;
+  let retryCount = 0;
+  const maxRetries = 2;
+  while (!finalCheck.passed && retryCount < maxRetries) {
+    log.info(`[ContentExecutor] 内容审核未通过，第 ${retryCount + 1} 次重写:`, finalCheck.violations.map(v => v.matched));
+    const revised = await moderateAndFix(safeText);
+    if (revised.passed) {
+      safeText = revised.revisedContent || safeText;
+      finalCheck = { passed: true, violations: [] };
+    } else {
+      safeText = revised.revisedContent || safeText;
+      finalCheck = revised;
+      retryCount++;
+    }
+  }
+
+  if (!finalCheck.passed) {
+    log.warn('[ContentExecutor] 内容违规无法完全消除，标记发布风险:', finalCheck.violations.map(v => v.matched));
+  }
 
   // Step 3: 生成图片或视频
   let images: string[] = [];
@@ -79,7 +101,22 @@ export async function generateContent(params: GenerateContentParams): Promise<Ge
   }
 
   // Step 5: 生成/优化 Hashtag
-  const hashtags = await generateHashtags(plan, productInfo, safeText);
+  let hashtags = await generateHashtags(plan, productInfo, safeText, accountTags);
+
+  // Step 5.5: 审核 Hashtag，移除含违规词的标签
+  const { moderateText: moderateHashtagText } = await import('../moderation/content-moderator.js');
+  const hashtagText = hashtags.join(' ');
+  const hashtagCheck = moderateHashtagText(hashtagText);
+  if (!hashtagCheck.passed) {
+    const safeHashtagSet = hashtags.filter(tag => {
+      for (const v of hashtagCheck.violations) {
+        if (tag.includes(v.matched)) return false;
+      }
+      return true;
+    });
+    log.info('[ContentExecutor] Hashtag 审核清理:', { before: hashtags.length, after: safeHashtagSet.length, removed: hashtagCheck.violations.map(v => v.matched) });
+    hashtags = safeHashtagSet;
+  }
 
   log.info('[ContentExecutor] 内容生成完成:', plan.accountId, { textLength: safeText.length, images: images.length, video: !!video });
 
@@ -222,18 +259,21 @@ async function generateVoiceover(text: string): Promise<string | undefined> {
 async function generateHashtags(
   plan: AccountContentPlan,
   productInfo: ProductInfo,
-  text: string
+  text: string,
+  accountTags?: string[]
 ): Promise<string[]> {
+  const accountTagsSection = accountTags && accountTags.length > 0
+    ? `\n账号标签：${accountTags.join(', ')}` : '';
   const prompt = `为以下抖音文案生成 3-5 个合适的 Hashtag（以 # 开头，用空格分隔）：
 
 文案：${text}
 产品：${productInfo.name}
-内容角度：${plan.contentAngle}
+内容角度：${plan.contentAngle}${accountTagsSection}
 
 要求：
 1. 要跟文案内容相关
-2. 要有一定的热度
-3. 不要太多，3-5 个就好
+2. 要跟账号标签风格匹配${accountTagsSection ? '\n3. 优先使用与账号标签相关的热门话题' : '\n3. 不要太多，3-5 个就好'}
+4. 不要太多，3-5 个就好
 
 直接输出 Hashtag，用空格分隔。`;
 

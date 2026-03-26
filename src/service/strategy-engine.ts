@@ -180,12 +180,17 @@ export function parseAIOutput(raw: string): Record<string, unknown> {
 
 /**
  * 调用 AI 并解析输出，失败重试一次
+ * @param type PromptType
+ * @param context 上下文对象
+ * @param taskType 可选的任务类型，用于路由到特定的 AI 配置（设计文档第3节：核心驱动 AI 独立配置）
  */
-export async function callAI(type: PromptType, context: object): Promise<Record<string, unknown>> {
+export async function callAI(type: PromptType, context: object, taskType?: string): Promise<Record<string, unknown>> {
   const prompt = buildPrompt(type, context)
 
   const resp = await aiGateway.generate({
-    // 不指定 providerType，让 AI Gateway 使用用户配置的默认 provider
+    // 设计文档第3节：核心驱动 AI（决策/调度/分析）使用独立的 taskType 配置
+    // 内容生成 AI（文案/图片/视频/配音）使用各自的 taskType
+    ...(taskType ? { taskType: taskType as any } : {}),
     prompt,
     system: '你是一个严谨的社交媒体运营 AI。请严格按照指定的 JSON 格式输出，不要输出任何其他内容。'
   })
@@ -200,6 +205,7 @@ export async function callAI(type: PromptType, context: object): Promise<Record<
     // 重试一次
     log.warn('[StrategyEngine] 首次解析失败，重试一次')
     const resp2 = await aiGateway.generate({
+      ...(taskType ? { taskType: taskType as any } : {}),
       prompt: prompt + '\n\n请严格按 JSON 格式输出，不要输出其他内容。',
       system: '你是一个严谨的社交媒体运营 AI。'
     })

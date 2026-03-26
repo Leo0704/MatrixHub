@@ -17,15 +17,18 @@
   display: block;
   margin-bottom: 6px;
   font-weight: 500;
+  color: var(--text-primary);
 }
 
 .form-group input[type="text"],
 .form-group textarea {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   font-size: 14px;
+  background: var(--bg-base);
+  color: var(--text-primary);
 }
 
 .form-group textarea {
@@ -43,11 +46,16 @@
 
 .input-with-button button {
   padding: 8px 16px;
-  background: #6366f1;
+  background: var(--primary);
   color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 200ms ease;
+}
+
+.input-with-button button:hover {
+  background: var(--primary-hover);
 }
 
 .input-with-button button:disabled {
@@ -65,17 +73,19 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  color: var(--text-primary);
 }
 
 .account-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   padding: 12px;
   max-height: 200px;
   overflow-y: auto;
+  background: var(--bg-base);
 }
 
 .account-item {
@@ -84,6 +94,7 @@
   gap: 8px;
   padding: 4px 0;
   cursor: pointer;
+  color: var(--text-primary);
 }
 
 .form-actions {
@@ -95,12 +106,17 @@
 
 .btn-primary {
   padding: 10px 24px;
-  background: #6366f1;
+  background: var(--primary);
   color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
+  transition: background 200ms ease;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
 }
 
 .btn-primary:disabled {
@@ -111,34 +127,39 @@
 .btn-secondary {
   padding: 10px 24px;
   background: transparent;
-  color: var(--text-color, #333);
-  border: 1px solid var(--border-color, #ddd);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
+  transition: border-color 200ms ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-strong);
 }
 
 .success {
-  color: #22c55e;
+  color: var(--success);
   font-size: 12px;
   margin-left: 8px;
 }
 
 .error {
-  color: #ef4444;
+  color: var(--error);
   font-size: 12px;
   margin-left: 8px;
 }
 
 .error-message {
-  color: #ef4444;
-  background: #fef2f2;
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.1);
   padding: 12px;
   border-radius: 6px;
   margin-bottom: 16px;
 }
 
 .hint {
-  color: #888;
+  color: var(--text-muted);
   font-size: 13px;
 }
