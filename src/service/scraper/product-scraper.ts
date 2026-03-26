@@ -88,12 +88,29 @@ export async function scrapeProductInfo(url: string): Promise<ScrapeResult> {
             return;
           }
 
+          // 设计文档第15节：抓取 Optional 字段（价格/规格/品牌/适用人群）
+          const price = extractMeta(html, 'product:price:amount')
+            || extractJsonLdPrice(html)
+            || extractMicrodataPrice(html)
+            || undefined;
+          const brand = extractMeta(html, 'product:brand')
+            || extractJsonLdBrand(html)
+            || undefined;
+          const specs = extractJsonLdSpecs(html) || extractMicrodataSpecs(html) || undefined;
+          const targetAudience = extractMeta(html, 'product:age_group')
+            || extractMeta(html, 'product:target_gender')
+            || undefined;
+
           resolve({
             success: true,
             data: {
               name,
               description,
               images,
+              ...(price && { price }),
+              ...(brand && { brand }),
+              ...(specs && { specs }),
+              ...(targetAudience && { targetAudience }),
             },
           });
         } catch (e) {
@@ -141,6 +158,150 @@ function extractImages(html: string): string[] {
     }
   }
   return images.slice(0, 10); // 最多10张
+}
+
+/**
+ * 从 JSON-LD 中提取价格
+ */
+function extractJsonLdPrice(html: string): string | undefined {
+  try {
+    const matches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    for (const match of matches) {
+      const json = JSON.parse(match[1]);
+      const price = extractPriceFromJsonLd(json);
+      if (price) return price;
+    }
+  } catch { /* ignore */ }
+  return undefined;
+}
+
+function extractPriceFromJsonLd(obj: unknown): string | undefined {
+  if (typeof obj === 'string') return undefined;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const p = extractPriceFromJsonLd(item);
+      if (p) return p;
+    }
+    return undefined;
+  }
+  if (obj && typeof obj === 'object') {
+    const o = obj as Record<string, unknown>;
+    // 常见价格字段路径
+    const price = o.offers ? extractPriceFromJsonLd((o.offers as Record<string, unknown>)) : undefined;
+    if (price) return price;
+    const priceStr = (o.price || o.priceCurrency) as string | undefined;
+    if (priceStr && typeof priceStr === 'string' && /^\d/.test(priceStr)) return priceStr;
+    // 递归搜索 offers 数组
+    if (Array.isArray(o.offers)) {
+      for (const offer of o.offers) {
+        const p = extractPriceFromJsonLd(offer);
+        if (p) return p;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 从 Microdata 中提取价格
+ */
+function extractMicrodataPrice(html: string): string | undefined {
+  const match = html.match(/<meta[^>]+itemprop=["']price["'][^>]+content=["']([^"']+)["']/i)
+    || html.match(/<[^>]+itemprop=["']price["'][^>]*>([^<]+)<\/[^>]+>/i);
+  return match ? match[1].trim() : undefined;
+}
+
+/**
+ * 从 JSON-LD 中提取品牌
+ */
+function extractJsonLdBrand(html: string): string | undefined {
+  try {
+    const matches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    for (const match of matches) {
+      const json = JSON.parse(match[1]);
+      const brand = extractBrandFromJsonLd(json);
+      if (brand) return brand;
+    }
+  } catch { /* ignore */ }
+  return undefined;
+}
+
+function extractBrandFromJsonLd(obj: unknown): string | undefined {
+  if (typeof obj === 'string') return undefined;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const b = extractBrandFromJsonLd(item);
+      if (b) return b;
+    }
+    return undefined;
+  }
+  if (obj && typeof obj === 'object') {
+    const o = obj as Record<string, unknown>;
+    const brand = o.brand;
+    if (typeof brand === 'string') return brand;
+    if (brand && typeof brand === 'object') {
+      const brandObj = brand as Record<string, unknown>;
+      if (typeof brandObj.name === 'string') return brandObj.name;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 从 JSON-LD 中提取规格（以"; "分隔的字符串）
+ */
+function extractJsonLdSpecs(html: string): string | undefined {
+  try {
+    const matches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    for (const match of matches) {
+      const json = JSON.parse(match[1]);
+      const specs = extractSpecsFromJsonLd(json);
+      if (specs) return specs;
+    }
+  } catch { /* ignore */ }
+  return undefined;
+}
+
+function extractSpecsFromJsonLd(obj: unknown): string | undefined {
+  if (typeof obj === 'string') return undefined;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const s = extractSpecsFromJsonLd(item);
+      if (s) return s;
+    }
+    return undefined;
+  }
+  if (obj && typeof obj === 'object') {
+    const o = obj as Record<string, unknown>;
+    // productSpecification 通常在 offers 或 additionalProperty 中
+    const offers = o.offers;
+    if (Array.isArray(offers)) {
+      const parts: string[] = [];
+      for (const offer of offers) {
+        const specs = extractSpecsFromJsonLd(offer);
+        if (specs) parts.push(specs);
+      }
+      if (parts.length > 0) return parts.join('; ');
+    }
+    if (o.additionalProperty) {
+      const specs = extractSpecsFromJsonLd(o.additionalProperty);
+      if (specs) return specs;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 从 Microdata 中提取规格
+ */
+function extractMicrodataSpecs(html: string): string | undefined {
+  // 匹配 Microdata itemprop="productID" 或 "sku" 等
+  const matches = html.matchAll(/<[^>]+itemprop=["'](?:productID|sku|model)["'][^>]*>([^<]+)<\/[^>]+>/gi);
+  const specs: string[] = [];
+  for (const match of matches) {
+    specs.push(match[1].trim());
+  }
+  return specs.length > 0 ? specs.join('; ') : undefined;
 }
 
 function extractTitleFromUrl(url: string): string {

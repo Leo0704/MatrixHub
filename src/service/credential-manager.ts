@@ -14,7 +14,7 @@ import {
 import type { AccountRow } from './db-types.js';
 import { asRow, asRows } from './db-types.js';
 
-const VALID_PLATFORMS: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
+const VALID_PLATFORMS: Platform[] = ['douyin'];
 
 // Path traversal protection: validate inputs before use in file paths
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

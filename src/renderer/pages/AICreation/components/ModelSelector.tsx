@@ -8,17 +8,6 @@ const AI_MODELS: Record<Platform, { id: string; name: string; provider: AIProvid
     { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'anthropic' },
     { id: 'deepseek-chat', name: 'DeepSeek V3', provider: 'deepseek' },
   ],
-  kuaishou: [
-    { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'anthropic' },
-    { id: 'deepseek-chat', name: 'DeepSeek V3', provider: 'deepseek' },
-  ],
-  xiaohongshu: [
-    { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'anthropic' },
-    { id: 'glm-4', name: 'GLM-4', provider: 'zhipu' },
-    { id: 'deepseek-chat', name: 'DeepSeek V3', provider: 'deepseek' },
-  ],
 };
 
 const formatProvider = (p: string): string => {

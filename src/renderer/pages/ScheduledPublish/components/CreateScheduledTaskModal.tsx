@@ -58,7 +58,7 @@ export function CreateScheduledTaskModal({ onClose, onCreated, initialDate }: Pr
     finally { setCreating(false); }
   };
 
-  const platformInfo = { douyin: { name: '抖音', icon: '🎵' }, kuaishou: { name: '快手', icon: '📱' }, xiaohongshu: { name: '小红书', icon: '📕' } };
+  const platformInfo = { douyin: { name: '抖音', icon: '🎵' } };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>

@@ -31,8 +31,6 @@ export function TaskFilters({
         >
           <option value="all">全部平台</option>
           <option value="douyin">抖音</option>
-          <option value="kuaishou">快手</option>
-          <option value="xiaohongshu">小红书</option>
         </select>
 
         <select

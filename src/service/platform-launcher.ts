@@ -47,12 +47,8 @@ let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 // 重要：页面池按账号隔离，不复用跨账号页面
 // 登录状态必须保持，不能超时关闭
 
-// 各平台 URL
-const PLATFORM_URLS: Record<Platform, string> = {
-  douyin: 'https://creator.douyin.com',
-  kuaishou: 'https://cp.kuaishou.com',
-  xiaohongshu: 'https://creator.xiaohongshu.com',
-};
+// 抖音 Creator URL
+const DOUYIN_URL = 'https://creator.douyin.com';
 
 export interface StealthConfig {
   disableWebSecurity?: boolean;

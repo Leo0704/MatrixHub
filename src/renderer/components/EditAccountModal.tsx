@@ -26,8 +26,6 @@ export default function EditAccountModal({
 
   const platformNames = {
     douyin: '🎵 抖音',
-    kuaishou: '📱 快手',
-    xiaohongshu: '📕 小红书',
   };
 
   const checkPasswordStrength = (pwd: string) => {

@@ -15,6 +15,7 @@ import {
 } from '../utils/page-helpers.js';
 import { sleep } from '../utils/sleep.js';
 import log from 'electron-log';
+import { broadcastToRenderers } from '../ipc-handlers.js';
 
 interface PublishPayload {
   title?: string;
@@ -113,6 +114,17 @@ export async function executePublishTask(
     taskQueue.clearCheckpoint(task.id);
 
     log.info(`[Service] 发布成功: ${task.id}`);
+
+    // 设计文档第8节：重要通知 - 发布完成
+    if (task.pipelineId) {
+      broadcastToRenderers('notification:important', {
+        type: 'publish_complete',
+        title: '内容发布完成',
+        message: `账号 ${payload.accountId} 已成功发布内容`,
+        campaignId: task.pipelineId,
+        accountId: payload.accountId,
+      });
+    }
 
   } finally {
     // 注意：不再关闭 page，而是由 service-process.ts 调用 releasePage()

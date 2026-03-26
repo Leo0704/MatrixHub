@@ -28,8 +28,6 @@ interface HistoricalHotTopic {
 
 const PLATFORM_NAMES: Record<Platform, { name: string }> = {
   douyin: { name: '抖音' },
-  kuaishou: { name: '快手' },
-  xiaohongshu: { name: '小红书' },
 };
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000;

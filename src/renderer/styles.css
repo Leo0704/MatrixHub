@@ -45,8 +45,6 @@
 
   /* 平台色 — 鲜艳有活力 */
   --platform-douyin: #ff4d6a;
-  --platform-kuaishou: #ff6b30;
-  --platform-xiaohongshu: #ff3355;
 
   /* 间距 — 4px 网格 */
   --space-2xs: 2px;
@@ -353,18 +351,6 @@ html, body, #root {
   background: rgba(255, 77, 106, 0.12);
   color: var(--platform-douyin);
   border: 1px solid rgba(255, 77, 106, 0.2);
-}
-
-.badge-platform-kuaishou {
-  background: rgba(255, 107, 48, 0.12);
-  color: var(--platform-kuaishou);
-  border: 1px solid rgba(255, 107, 48, 0.2);
-}
-
-.badge-platform-xiaohongshu {
-  background: rgba(255, 51, 85, 0.12);
-  color: var(--platform-xiaohongshu);
-  border: 1px solid rgba(255, 51, 85, 0.2);
 }
 
 .badge-success {

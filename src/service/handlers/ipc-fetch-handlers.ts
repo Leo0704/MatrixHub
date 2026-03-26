@@ -3,7 +3,7 @@
  */
 import { ipcMain } from 'electron';
 import log from 'electron-log';
-import { createFetcher, createAllFetchers } from '../data-fetcher/index.js';
+import { createFetcher } from '../data-fetcher/index.js';
 import { IpcChannel, IPC_TIMEOUT_MS } from '../../shared/ipc-channels.js';
 import type { Platform } from '../../shared/types.js';
 
@@ -19,45 +19,18 @@ function withTimeout<T>(promise: Promise<T>, channel: string): Promise<T> {
 export function registerFetchHandlers(): void {
   ipcMain.handle(IpcChannel.FETCH_HOT_TOPICS, async (_event, { platform }: { platform?: Platform }) => {
     try {
-      if (platform) {
-        const fetcher = createFetcher(platform);
-        try {
-          const result = await withTimeout(fetcher.fetchHotTopics({ limit: 10 }), IpcChannel.FETCH_HOT_TOPICS);
-          return result;
-        } finally {
-          await fetcher.close();
-        }
-      } else {
-        const fetchers = createAllFetchers();
-        const allTopics: { heat: number }[] = [];
-        const errors: string[] = [];
-
-        for (const fetcher of fetchers) {
-          try {
-            const result = await withTimeout(fetcher.fetchHotTopics({ limit: 10 }), IpcChannel.FETCH_HOT_TOPICS);
-            allTopics.push(...(result.topics ?? []));
-            if (result.error) {
-              errors.push(`${(fetcher as unknown as { platform: string }).platform}: ${result.error}`);
-            }
-          } catch (e) {
-            errors.push(`${(fetcher as unknown as { platform: string }).platform}: ${(e as Error).message}`);
-          } finally {
-            await fetcher.close();
-          }
-        }
-
-        allTopics.sort((a: { heat: number }, b: { heat: number }) => b.heat - a.heat);
-
-        return {
-          topics: allTopics,
-          source: 'all' as const,
-          fetchedAt: Date.now(),
-          error: errors.length > 0 ? errors.join('; ') : undefined,
-        };
+      // MVP 只支持抖音，忽略 platform 参数
+      log.info('[IPC] 获取抖音热点话题');
+      const fetcher = createFetcher('douyin');
+      try {
+        const result = await withTimeout(fetcher.fetchHotTopics({ limit: 10 }), IpcChannel.FETCH_HOT_TOPICS);
+        return result;
+      } finally {
+        await fetcher.close();
       }
     } catch (error) {
       log.error('[IPC] fetch:hot-topics failed:', error);
-      return { topics: [], source: platform ?? 'all', fetchedAt: Date.now(), error: (error as Error).message };
+      return { topics: [], source: 'douyin', fetchedAt: Date.now(), error: (error as Error).message };
     }
   });
 }

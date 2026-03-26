@@ -16,8 +16,6 @@ const statusLabels: Record<Task['status'], string> = {
 
 const platformNames: Record<Task['platform'], string> = {
   douyin: '抖音',
-  kuaishou: '快手',
-  xiaohongshu: '小红书',
 };
 
 function formatTime(timestamp: number | undefined): string {

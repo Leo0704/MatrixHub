@@ -30,6 +30,20 @@ const SENSITIVE_INDUSTRY = [
   '金融投资', '稳赚', '高回报', '保本',
 ];
 
+// 违禁品类（设计文档第16节）
+const BANNED_GOODS = [
+  '枪支', '弹药', '刀具', '弩', '电击器', '催泪器',
+  '毒品', '大麻', '冰毒', '海洛因', '吗啡',
+  '假币', '伪造证件', '色情', '低俗', '暴力',
+  '野生动物', '濒危物种', '走私',
+];
+
+// 版权侵权关键词（设计文档第16节）
+const COPYRIGHT_INFRINGEMENT = [
+  '正品保证', '官方授权', '正品代购',
+  '原单', '尾单', 'A货', '高仿',
+];
+
 export function moderateText(text: string): ModerationResult {
   const violations: Violation[] = [];
 
@@ -51,6 +65,20 @@ export function moderateText(text: string): ModerationResult {
   for (const word of SENSITIVE_INDUSTRY) {
     if (text.includes(word)) {
       violations.push({ type: 'sensitive_industry', matched: word, severity: 'medium' });
+    }
+  }
+
+  // 检测违禁品（设计文档第16节）
+  for (const word of BANNED_GOODS) {
+    if (text.includes(word)) {
+      violations.push({ type: 'banned_goods', matched: word, severity: 'high' });
+    }
+  }
+
+  // 检测版权侵权（设计文档第16节）
+  for (const word of COPYRIGHT_INFRINGEMENT) {
+    if (text.includes(word)) {
+      violations.push({ type: 'copyright', matched: word, severity: 'high' });
     }
   }
 
@@ -202,6 +230,10 @@ function replaceViolation(text: string, v: Violation): string {
   }
   if (v.type === 'sensitive_industry') {
     return text.split(v.matched).join('**');
+  }
+  // 违禁品和版权侵权：标记为违规，不自动替换
+  if (v.type === 'banned_goods' || v.type === 'copyright') {
+    return text.split(v.matched).join('❌');
   }
   return text;
 }

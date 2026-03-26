@@ -33,6 +33,7 @@ export async function scrapeAccountMetrics(
       shares: metrics.shares,
       followerDelta: metrics.followerDelta,
       healthStatus,
+      contentStatus: 'unknown', // 由 campaign-manager 根据任务状态推断
     };
   } catch (error) {
     log.error(`[DouyinMetrics] Failed to scrape account ${accountId}:`, error);
@@ -47,6 +48,7 @@ export async function scrapeAccountMetrics(
       shares: 0,
       followerDelta: 0,
       healthStatus: 'limited', // 默认标记为受限，下次重试
+      contentStatus: 'unknown',
     };
   }
 }

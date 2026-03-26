@@ -263,8 +263,7 @@ function App() {
                       className={`badge badge-platform-${account.platform}`}
                       style={{ fontSize: 10 }}
                     >
-                      {account.platform === 'douyin' ? '抖音' :
-                       account.platform === 'kuaishou' ? '快手' : '小红书'}
+                      {account.platform === 'douyin' ? '抖音' : '抖音'}
                     </span>
                   ))}
                 </div>

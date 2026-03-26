@@ -94,8 +94,6 @@ const STATUS_CONFIG: Record<Task['status'], StatusConfig> = {
 
 const PLATFORM_NAMES: Record<Platform, string> = {
   douyin: '抖音',
-  kuaishou: '快手',
-  xiaohongshu: '小红书',
 };
 
 interface TaskRowProps {

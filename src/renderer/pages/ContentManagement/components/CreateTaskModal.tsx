@@ -297,7 +297,7 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
         <div style={{ marginBottom: 'var(--space-lg)' }}>
           <label style={labelStyle} id="platform-label">平台</label>
           <div style={{ display: 'flex', gap: 'var(--space-sm)' }} role="radiogroup" aria-labelledby="platform-label">
-            {(['douyin', 'kuaishou', 'xiaohongshu'] as Platform[]).map(p => (
+            {(['douyin'] as Platform[]).map(p => (
               <button
                 key={p}
                 className={`btn ${platform === p ? 'btn-primary' : 'btn-secondary'}`}
@@ -305,9 +305,9 @@ export function CreateTaskModal({ onClose, onCreated }: CreateTaskModalProps) {
                 onClick={() => setPlatform(p)}
                 role="radio"
                 aria-checked={platform === p}
-                aria-label={p === 'douyin' ? '抖音' : p === 'kuaishou' ? '快手' : '小红书'}
+                aria-label={p === 'douyin' ? '抖音' : ''}
               >
-                {p === 'douyin' ? '🎵 抖音' : p === 'kuaishou' ? '📱 快手' : '📕 小红书'}
+                {p === 'douyin' ? '🎵 抖音' : ''}
               </button>
             ))}
           </div>

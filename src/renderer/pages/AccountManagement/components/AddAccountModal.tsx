@@ -93,9 +93,9 @@ export function AddAccountModal({ groups, onClose, onAdded }: Props) {
         <div style={{ marginBottom: 'var(--space-lg)' }}>
           <label style={labelStyle}>平台</label>
           <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-            {(['douyin', 'kuaishou', 'xiaohongshu'] as Platform[]).map(p => (
+            {(['douyin'] as Platform[]).map(p => (
               <button key={p} className={`btn ${platform === p ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1, fontSize: 13 }} onClick={() => setPlatform(p)}>
-                {p === 'douyin' ? '🎵 抖音' : p === 'kuaishou' ? '📱 快手' : '📕 小红书'}
+                {p === 'douyin' ? '🎵 抖音' : ''}
               </button>
             ))}
           </div>

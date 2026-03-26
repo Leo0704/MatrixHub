@@ -49,14 +49,6 @@ const DEFAULT_CONFIG: RuntimeConfig = {
       { start: 3, end: 5, reason: '抖音日常维护' },
       { start: 23, end: 24, reason: '日结时段' },
     ],
-    kuaishou: [
-      { start: 2, end: 4, reason: '快手日常维护' },
-      { start: 23, end: 24, reason: '日结时段' },
-    ],
-    xiaohongshu: [
-      { start: 2, end: 6, reason: '小红书日常维护' },
-      { start: 22, end: 24, reason: '晚高峰限流' },
-    ],
   },
   errorWeights: {
     selector: { weight: 0.3, waitMultiplier: 1.0 },
@@ -72,18 +64,6 @@ const DEFAULT_CONFIG: RuntimeConfig = {
       requestsPerMinute: 10,
       requestsPerHour: 200,
       requestsPerDay: 1000,
-    },
-    kuaishou: {
-      platform: 'kuaishou',
-      requestsPerMinute: 15,
-      requestsPerHour: 300,
-      requestsPerDay: 2000,
-    },
-    xiaohongshu: {
-      platform: 'xiaohongshu',
-      requestsPerMinute: 5,
-      requestsPerHour: 100,
-      requestsPerDay: 500,
     },
   },
   taskStaleTimeoutMs: 60 * 60 * 1000, // 1 小时

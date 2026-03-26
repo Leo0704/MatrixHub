@@ -12,7 +12,7 @@ interface Props {
   onSelectDate: (date: Date) => void;
 }
 
-const platformInfo = { douyin: { icon: '🎵' }, kuaishou: { icon: '📱' }, xiaohongshu: { icon: '📕' } };
+const platformInfo = { douyin: { icon: '🎵' } };
 
 export function CalendarPicker({ tasks, currentMonth, onMonthChange, onSelectDate }: Props) {
   const calendarData = useMemo(() => {

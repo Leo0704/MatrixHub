@@ -6,7 +6,7 @@
 export interface TaskRow {
   id: string;
   type: 'publish' | 'ai_generate' | 'fetch_data' | 'automation';
-  platform: 'douyin' | 'kuaishou' | 'xiaohongshu';
+  platform: 'douyin';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'deferred';
   title: string;
   payload: string;
@@ -36,7 +36,7 @@ export interface TaskCheckpointRow {
 
 export interface AccountRow {
   id: string;
-  platform: 'douyin' | 'kuaishou' | 'xiaohongshu';
+  platform: 'douyin';
   username: string;
   display_name: string;
   avatar: string | null;
@@ -108,7 +108,7 @@ export interface PipelineTaskRow {
   id: string;
   input_type: 'url' | 'product_detail' | 'hot_topic';
   input_data: string;
-  platform: 'douyin' | 'kuaishou' | 'xiaohongshu';
+  platform: 'douyin';
   config: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   steps: string;

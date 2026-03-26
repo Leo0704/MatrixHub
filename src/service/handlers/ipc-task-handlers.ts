@@ -14,7 +14,7 @@ import type { Task, TaskFilter, Platform } from '../../shared/types.js';
 
 const taskCreateSchema = z.object({
   type: z.enum(['publish', 'ai_generate', 'fetch_data', 'automation']),
-  platform: z.enum(['douyin', 'kuaishou', 'xiaohongshu']),
+  platform: z.enum(['douyin']),
   title: z.string().min(1).max(200),
   payload: z.record(z.string(), z.unknown()),
   scheduledAt: z.number().optional(),

@@ -3,7 +3,7 @@ import { getDb } from './db.js'
 import { broadcastToRenderers } from './ipc-handlers.js'
 import { callAI } from './strategy-engine.js'
 import { getHotTopics } from './hot-topic-detector.js'
-import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, Platform, RetryAdvice, ProductInfo, CampaignReport } from '../shared/types.js'
+import type { Task, AIFailureResult, DailyPlan, HotTopicDecision, AIDecision, AITriggerType, RetryAdvice, ProductInfo, CampaignReport, IterationDecision, Platform } from '../shared/types.js'
 import log from 'electron-log'
 import { getAiMaxAnalysisPerTask } from './config/runtime-config.js'
 
@@ -74,32 +74,59 @@ function buildFailureDecision(result: AIFailureResult, task: Task): AIDecision {
 }
 
 // ============ 执行决策 ============
+// 设计文档第10节：文案/配图/时间/角度可自动执行，只有核心变更才需确认
 async function executeDecision(decision: AIDecision): Promise<void> {
   switch (decision.action) {
+    case 'auto_iterate':
+      // 自动执行风格迭代：AI 决定文案/配图/Hashtag 微调，无需用户确认
+      log.info('[AIDirector] AI 自动迭代:', decision.reason, `置信度: ${(decision.confidence * 100).toFixed(0)}%`);
+      broadcastToRenderers('ai:auto-executed', {
+        action: 'auto_iterate',
+        reason: decision.reason,
+        confidence: decision.confidence,
+        params: decision.params,
+      });
+      // TODO: 自动创建优化任务（待 campaign-manager 集成）
+      break;
+
+    case 'auto_adjust_schedule':
+      // 自动调整发布时间：AI 决定发布时间微调，无需用户确认
+      log.info('[AIDirector] AI 自动调整发布时间:', decision.reason);
+      broadcastToRenderers('ai:auto-executed', {
+        action: 'auto_adjust_schedule',
+        reason: decision.reason,
+        confidence: decision.confidence,
+        params: decision.params,
+      });
+      break;
+
     case 'retry_with_fix':
-      // 发送推荐消息让用户确认（不自动创建任务）
+      // 需用户确认：selector/超时等失败重试
       broadcastToRenderers('ai:recommendation', {
         action: 'retry_with_fix',
         reason: decision.reason,
         confidence: decision.confidence,
         params: { task: decision.params }
-      })
-      break
+      });
+      break;
+
     case 'create_task':
-      // 发送推荐消息让用户确认（不自动创建任务）
+      // 需用户确认：创建新任务
       broadcastToRenderers('ai:recommendation', {
         action: 'create_task',
         reason: decision.reason,
         confidence: decision.confidence,
         params: { task: decision.params }
-      })
-      break
+      });
+      break;
+
     case 'notify':
-      broadcastToRenderers('ai:recommendation', decision)
-      break
+      broadcastToRenderers('ai:recommendation', decision);
+      break;
+
     case 'skip':
-      log.info('[AIDirector] AI决策跳过:', decision.reason)
-      break
+      log.info('[AIDirector] AI决策跳过:', decision.reason);
+      break;
   }
 }
 
@@ -155,7 +182,7 @@ export async function analyzeFailure(task: Task): Promise<void> {
   await analyzeWithQueue(task)
 }
 
-export async function dailyBriefing(platform: Platform): Promise<DailyPlan | null> {
+export async function dailyBriefing(platform: Platform = 'douyin'): Promise<DailyPlan | null> {
   try {
     const { buildDailyContext } = await import('./strategy-engine.js')
     const context = buildDailyContext(platform)
@@ -210,9 +237,9 @@ export async function dailyBriefing(platform: Platform): Promise<DailyPlan | nul
   }
 }
 
-export async function checkHotTopics(platform: Platform): Promise<HotTopicDecision | null> {
+export async function checkHotTopics(platform: Platform = 'douyin'): Promise<HotTopicDecision | null> {
   try {
-    const hotTopics = await getHotTopics(platform)
+    const hotTopics = await getHotTopics()
     if (!hotTopics.length) return null
 
     const top = hotTopics[0]
@@ -259,7 +286,7 @@ export async function checkHotTopics(platform: Platform): Promise<HotTopicDecisi
   }
 }
 
-export async function analyzeNow(type: AITriggerType, platform: Platform, taskId?: string): Promise<void> {
+export async function analyzeNow(type: AITriggerType, _platform: string, taskId?: string): Promise<void> {
   switch (type) {
     case 'failure': {
       if (!taskId) { log.warn('[AIDirector] failure类型需要taskId'); return }
@@ -269,10 +296,10 @@ export async function analyzeNow(type: AITriggerType, platform: Platform, taskId
       break
     }
     case 'daily':
-      await dailyBriefing(platform)
+      await dailyBriefing()
       break
     case 'hot_topic':
-      await checkHotTopics(platform)
+      await checkHotTopics()
       break
     default:
       log.warn('[AIDirector] unknown analyzeNow type:', type)
@@ -282,16 +309,9 @@ export async function analyzeNow(type: AITriggerType, platform: Platform, taskId
 // ============ 全局每日简报（跨平台汇总分析）============
 
 export async function dailyBriefingAll(): Promise<void> {
-  const platforms: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu']
-  const results: DailyPlan[] = []
-
-  for (const platform of platforms) {
-    const r = await dailyBriefing(platform)
-    if (r) results.push(r)
-  }
-
-  broadcastToRenderers('ai:daily-briefing-all', { results })
-  log.info('[AIDirector] 每日简报完成:', results.length, '个平台')
+  const result = await dailyBriefing()
+  broadcastToRenderers('ai:daily-briefing-all', { results: result ? [result] : [] })
+  log.info('[AIDirector] 每日简报完成')
 }
 
 // ============ Campaign 内容策略 ============
@@ -301,12 +321,6 @@ export interface AccountContentPlan {
   contentAngle: string;        // 内容角度描述
   targetAudience: string;      // 目标人群
   hashtagHints: string[];      // Hashtag 提示
-}
-
-export interface IterationDecision {
-  action: 'continue' | 'iterate' | 'stop';
-  reason: string;
-  newStrategyHints?: string;
 }
 
 /**
@@ -382,7 +396,10 @@ export async function decideIteration(
     return {
       action: 'iterate',
       reason: `平均播放量${Math.round(avgViews)}偏低，尝试换一种内容策略`,
-      newStrategyHints: '建议更换内容角度，如从产品介绍改为用户故事',
+      newStrategyHints: '建议更换核心营销卖点，如从价格优势改为品质/功效优势',
+      // 设计文档第10节：核心营销卖点变更需通知用户
+      corePitchChanged: true,
+      autoAdjustments: { style: true, hashtag: true },
     };
   }
 
@@ -391,12 +408,17 @@ export async function decideIteration(
       action: 'iterate',
       reason: `平均播放量${Math.round(avgViews)}有提升空间，尝试优化内容策略`,
       newStrategyHints: '建议调整 Hashtag 或发布时间策略',
+      // 设计文档第10节：Hashtag/发布时间可自动执行
+      autoAdjustments: { style: true, hashtag: true, timing: true },
     };
   }
 
+  // avgViews >= 1000，表现良好
+  // 设计文档第10节：发布时间微调可自动执行
   return {
     action: 'continue',
     reason: `平均播放量${Math.round(avgViews)}表现良好，继续当前策略`,
+    autoAdjustments: { timing: true },
   };
 }
 

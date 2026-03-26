@@ -10,7 +10,7 @@
  * - ipc-task-handlers.ts: 任务管理
  * - ipc-account-handlers.ts: 账号管理
  * - ipc-rate-handlers.ts: 限流状态
- * - ipc-automation-handlers.ts: 自动化操作确认
+ * - (已移除) ipc-automation-handlers.ts: 自动化操作确认（spec要求取消人工确认节点）
  * - ipc-ai-handlers.ts: AI 生成、Provider 配置、每日简报
  * - (已移除) ipc-selector-handlers.ts: 选择器版本管理
  * - ipc-monitoring-handlers.ts: 健康检查、告警、指标
@@ -46,7 +46,6 @@ import {
   registerFetchHandlers,
   registerPipelineHandlers,
   registerCampaignHandlers,
-  registerAutomationHandlers,
 } from './handlers/ipc-index.js';
 
 /**
@@ -70,7 +69,6 @@ export function registerIpcHandlers(): void {
   registerFetchHandlers();
   registerPipelineHandlers();
   registerCampaignHandlers();
-  registerAutomationHandlers();
 
   log.info('IPC 处理器注册完成');
 }

@@ -34,7 +34,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL CHECK(type IN ('publish', 'ai_generate', 'fetch_data', 'automation')),
-      platform TEXT NOT NULL CHECK(platform IN ('douyin', 'kuaishou', 'xiaohongshu')),
+      platform TEXT NOT NULL CHECK(platform = 'douyin'),
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'deferred')),
       title TEXT NOT NULL,
       payload TEXT NOT NULL DEFAULT '{}',
@@ -153,7 +153,7 @@ function initializeSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
-      platform TEXT NOT NULL CHECK(platform IN ('douyin', 'kuaishou', 'xiaohongshu')),
+      platform TEXT NOT NULL CHECK(platform = 'douyin'),
       username TEXT NOT NULL,
       display_name TEXT NOT NULL,
       avatar TEXT,
@@ -292,7 +292,7 @@ function initializeSchema(db: Database.Database): void {
       trace_id TEXT NOT NULL,
       input_type TEXT NOT NULL CHECK(input_type IN ('url', 'product_detail', 'hot_topic')),
       input_data TEXT NOT NULL DEFAULT '{}',
-      platform TEXT NOT NULL CHECK(platform IN ('douyin', 'kuaishou', 'xiaohongshu')),
+      platform TEXT NOT NULL CHECK(platform = 'douyin'),
       config TEXT NOT NULL DEFAULT '{}',
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'compensating', 'compensated')),
       steps TEXT NOT NULL DEFAULT '[]',
@@ -305,6 +305,22 @@ function initializeSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_pipeline_platform ON pipeline_tasks(platform);
+  `);
+
+  // 内容历史表（设计文档第22节：内容新鲜度）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS campaign_content_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      iteration INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      image_hashes TEXT NOT NULL DEFAULT '[]',
+      text_preview TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(campaign_id, account_id, iteration)
+    );
+    CREATE INDEX IF NOT EXISTS idx_content_history_campaign ON campaign_content_history(campaign_id);
   `);
 
   log.info('数据库 Schema 初始化完成');

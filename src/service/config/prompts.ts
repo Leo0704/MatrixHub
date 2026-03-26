@@ -66,8 +66,6 @@ export const PROMPT_TEMPLATES: Record<string, string> = {
  */
 export const SYSTEM_PROMPTS: Record<string, string> = {
   douyin: '你是一个专业的抖音内容创作者，熟悉短视频节奏和算法偏好。生成的内容要吸引眼球、有节奏感。',
-  kuaishou: '你是一个专业的快手内容创作者，熟悉老铁文化和真实感内容。生成的内容要接地气、有温度。',
-  xiaohongshu: '你是一个专业的小红书博主，熟悉种草文风和审美标准。生成的内容要有调性、有质感。',
 };
 
 // 保留原始导出名（用于向后兼容）

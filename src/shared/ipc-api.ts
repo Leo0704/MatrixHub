@@ -304,17 +304,6 @@ export interface ElectronAPI {
   onGroupUpdated: (callback: (group: GroupEvent) => void) => void;
   onGroupDeleted: (callback: (data: { groupId: string }) => void) => void;
 
-  // Automation 确认（人工确认节点，spec要求取消，故为 noop）
-  onAutomationConfirmRequest: (callback: (data: {
-    action: string;
-    actionLabel: string;
-    platform: string;
-    platformLabel: string;
-    accountId?: string;
-    riskMessage: string;
-  }) => void) => void;
-  sendAutomationConfirmResponse: (result: { confirmed: boolean; dontAskAgain: boolean }) => Promise<{ success: boolean }>;
-
   // AI 推荐监听
   onAIRecommendation: (callback: (data: {
     action: string;

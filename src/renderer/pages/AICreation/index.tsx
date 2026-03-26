@@ -24,8 +24,6 @@ const MAX_UNDO_HISTORY = 50;
 function getPlatformImageContext(platform: Platform): string {
   const contexts: Record<Platform, string> = {
     douyin: '这是抖音平台的图片创作。抖音用户喜欢：色彩鲜艳、视觉冲击力强、有趣好玩的画面。封面图要能在0.5秒内抓住用户眼球。',
-    kuaishou: '这是快手平台的图片创作。快手用户喜欢：真实感、接地气、有故事性的画面。避免过度精致，追求自然和亲和力。',
-    xiaohongshu: '这是小红书平台的图片创作。小红书用户喜欢：高颜值、精致感、有审美价值的画面。色调要高级感，排版要美观。'
   };
   return contexts[platform] || contexts.douyin;
 }
@@ -33,8 +31,6 @@ function getPlatformImageContext(platform: Platform): string {
 function getImageSystemPrompt(platform: Platform): string {
   const prompts: Record<Platform, string> = {
     douyin: '你是一个抖音视觉创作专家，擅长生成符合抖音平台风格的图片，要求：色彩鲜艳、视觉冲击强、有趣抓眼球。',
-    kuaishou: '你是一个快手视觉创作专家，擅长生成符合快手平台风格的图片，要求：真实感、接地气、有故事性。',
-    xiaohongshu: '你是一个小红书视觉创作专家，擅长生成符合小红书平台风格的图片，要求：高颜值、精致感、有审美价值。'
   };
   return prompts[platform] || prompts.douyin;
 }
@@ -42,8 +38,6 @@ function getImageSystemPrompt(platform: Platform): string {
 function getVoiceContext(platform: Platform): string {
   const contexts: Record<Platform, string> = {
     douyin: '配音风格要求：年轻化、有活力、节奏感强。适合快节奏的短视频，内容要简洁有力。',
-    kuaishou: '配音风格要求：亲切自然、接地气。像是朋友在和你聊天，不要太正式。',
-    xiaohongshu: '配音风格要求：有质感、温柔亲切。像是闺蜜在分享心得，有代入感。'
   };
   return contexts[platform] || contexts.douyin;
 }
@@ -51,8 +45,6 @@ function getVoiceContext(platform: Platform): string {
 function getVideoContext(platform: Platform): string {
   const contexts: Record<Platform, string> = {
     douyin: '这是抖音视频创作。抖音是一个短视频平台，内容要：1）前3秒必须有强钩子 2）节奏快，信息密集 3）结尾留悬念或强CTA 4）适合竖屏9:16格式。',
-    kuaishou: '这是快手视频创作。快手用户喜欢：真实感、有故事性、接地气的内容。可以有更多时间展开，适合有温度的叙事。',
-    xiaohongshu: '这是小红书视频创作。小红书视频要求：1）高颜值、精致感 2）内容有干货价值 3）适合生活方式类内容 4）竖屏或方形皆可。'
   };
   return contexts[platform] || contexts.douyin;
 }
@@ -486,7 +478,7 @@ ${result}
             <h3 style={{ marginBottom: 'var(--space-lg)' }}>确认发布</h3>
             <div style={{ marginBottom: 'var(--space-lg)' }}>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)' }}>
-                平台：{platform === 'douyin' ? '🎵 抖音' : platform === 'kuaishou' ? '📱 快手' : '📕 小红书'}
+                平台：{platform === 'douyin' ? '🎵 抖音' : '🎵 抖音'}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)' }}>
                 标题：{contentMode === 'image' ? imagePrompt : contentMode === 'voice' ? voicePrompt : topic}

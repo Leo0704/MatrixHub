@@ -4,8 +4,6 @@ interface AccountHealth { platform: Platform; status: string; }
 
 const PLATFORM_NAMES: Record<Platform, { name: string; color: string }> = {
   douyin: { name: '抖音', color: 'var(--platform-douyin)' },
-  kuaishou: { name: '快手', color: 'var(--platform-kuaishou)' },
-  xiaohongshu: { name: '小红书', color: 'var(--platform-xiaohongshu)' },
 };
 
 interface Props {

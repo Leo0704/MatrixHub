@@ -16,7 +16,7 @@ export function registerRateHandlers(): void {
   });
 
   ipcMain.handle(IpcChannel.RATE_STATUS_ALL, async () => {
-    const platforms: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
+    const platforms: Platform[] = ['douyin'];
     const result: Record<string, ReturnType<typeof rateLimiter.getStatus>> = {};
     for (const platform of platforms) {
       result[platform] = rateLimiter.getStatus(platform);

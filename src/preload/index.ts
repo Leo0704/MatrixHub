@@ -200,14 +200,6 @@ const api: ElectronAPI = {
   scrape_product: (url: string) =>
     ipcRenderer.invoke('campaign:scrape', url),
 
-  // Automation 确认（人工确认节点，spec要求取消，此为 noop 实现）
-  onAutomationConfirmRequest: (callback) => {
-    ipcRenderer.on('automation:confirm-request', (_, data) => callback(data));
-  },
-
-  sendAutomationConfirmResponse: (result) =>
-    ipcRenderer.invoke('automation:confirm-response', result),
-
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);
   },

@@ -1,4 +1,4 @@
-export type Platform = 'douyin' | 'kuaishou' | 'xiaohongshu';
+export type Platform = 'douyin';
 
 export type TaskStatus =
   | 'pending'      // 等待执行
@@ -207,11 +207,33 @@ export interface HotTopicDecision {
 }
 
 // AI 决策（执行层使用）
+// 设计文档第10节要求区分自动执行和需用户确认的决策
 export interface AIDecision {
-  action: 'retry_with_fix' | 'create_task' | 'notify' | 'skip'
+  action:
+    | 'retry_with_fix'      // 需确认：selector/超时等失败重试
+    | 'create_task'         // 需确认：创建新任务
+    | 'notify'              // 需确认：通知用户决策
+    | 'skip'                // 跳过：无操作
+    | 'auto_iterate'        // 自动执行：文案/配图/Hashtag 等风格微调
+    | 'auto_adjust_schedule' // 自动执行：发布时间微调
   reason: string
   confidence: number
   params: Record<string, unknown>
+}
+
+// 迭代决策（用于 Campaign 反馈处理）
+export interface IterationDecision {
+  action: 'continue' | 'iterate' | 'stop';
+  reason: string;
+  newStrategyHints?: string;
+  // 设计文档第10节：更换核心营销卖点时必须通知用户
+  corePitchChanged?: boolean;
+  // 自动调整标志（设计文档第10节）
+  autoAdjustments?: {
+    style?: boolean;      // 文案/配图风格自动调整
+    timing?: boolean;    // 发布时间自动调整
+    hashtag?: boolean;   // Hashtag 自动优化
+  };
 }
 
 // AI 手动触发类型
@@ -319,17 +341,27 @@ export interface AccountMetrics {
   shares: number;
   followerDelta: number;
   healthStatus: 'normal' | 'limited' | 'banned';
+  // 设计文档第8节：内容是否被平台拦截（推断）
+  // 'unknown'=未知, 'published'=正常发布, 'violated'=疑似被平台拦截/隐藏
+  contentStatus: 'unknown' | 'published' | 'violated';
 }
 
-// 效果报告
+// 效果报告（设计文档第17节：48小时效果简报模板）
 export interface CampaignReport {
   campaignId: string;
   generatedAt: number;
   metrics: AccountMetrics[];
-  bestAccounts: string[];
-  worstAccounts: string[];
+  bestAccounts: string[];              // Top3 账号
+  worstAccounts: string[];              // 效果最差账号
+  worstAccountReasons?: string[];     // 设计文档第17节：最差账号原因标注
   recommendation: 'continue' | 'iterate' | 'stop';
   summary: string;
+  // 设计文档第10节：自动调整标志
+  autoAdjustments?: {
+    style?: boolean;      // 文案/配图风格自动调整
+    timing?: boolean;    // 发布时间自动调整
+    hashtag?: boolean;   // Hashtag 自动优化
+  };
 }
 
 // Campaign（推广活动）
@@ -349,6 +381,10 @@ export interface Campaign {
   currentIteration: number;
   consecutiveFailures: number;
   lastFeedback?: 'good' | 'bad';
+  // 设计文档第10节：每日发布上限（用于检测发布频率变更）
+  dailyLimit?: number;
+  // 设计文档第10节：前一次迭代的每日上限（用于对比是否增加发布频率）
+  previousDailyLimit?: number;
   latestReport?: CampaignReport;
   // 监控相关
   monitorStartedAt?: number;

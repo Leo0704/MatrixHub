@@ -7,8 +7,6 @@ interface HotTopicWithTrend {
 
 const PLATFORM_NAMES: Record<Platform, { name: string; color: string }> = {
   douyin: { name: '抖音', color: 'var(--platform-douyin)' },
-  kuaishou: { name: '快手', color: 'var(--platform-kuaishou)' },
-  xiaohongshu: { name: '小红书', color: 'var(--platform-xiaohongshu)' },
 };
 
 const RefreshIcon = ({ spinning }: { spinning?: boolean }) => (
@@ -61,7 +59,7 @@ export function HotTopicsList({ hotTopics, loading, error, selectedPlatform, onR
         <h3>热点话题 TOP10</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
-            {(['all', 'douyin', 'kuaishou', 'xiaohongshu'] as const).map(p => (
+            {(['all', 'douyin'] as const).map(p => (
               <button key={p} onClick={() => onPlatformFilter(p)}
                 style={{
                   padding: '4px 12px',

@@ -86,10 +86,6 @@ export const IpcChannel = {
   PIPELINE_GET: 'pipeline:get',
   PIPELINE_CANCEL: 'pipeline:cancel',
 
-  // Automation
-  AUTOMATION_CONFIRM_REQUEST: 'automation:confirm-request',
-  AUTOMATION_CONFIRM_RESPONSE: 'automation:confirm-response',
-
   // Campaign
   CAMPAIGN_LAUNCH: 'campaign:launch',
   CAMPAIGN_GET: 'campaign:get',
@@ -97,6 +93,10 @@ export const IpcChannel = {
   CAMPAIGN_FEEDBACK: 'campaign:feedback',
   CAMPAIGN_CANCEL: 'campaign:cancel',
   CAMPAIGN_SCRAPE: 'campaign:scrape',
+
+  // Notification (设计文档第8节)
+  NOTIFICATION_MUST: 'notification:must',        // 必须通知：账号封禁/风控、内容违规、连续2次失败
+  NOTIFICATION_IMPORTANT: 'notification:important', // 重要通知：发布完成、报告生成、内容爆量、AI换策略
 } as const;
 
 export type IpcChannel = (typeof IpcChannel)[keyof typeof IpcChannel];

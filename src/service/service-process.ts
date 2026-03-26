@@ -119,8 +119,6 @@ export async function startServiceLoop(): Promise<void> {
   // 注册每日 08:00 AI 简报（北京时间）
   // 以及热点检测（每4小时）
   function scheduleAI(): void {
-    const platforms: Platform[] = ['douyin', 'kuaishou', 'xiaohongshu'];
-
     // 每日简报检查（每分钟）
     const checkDaily = () => {
       const now = new Date();
@@ -145,9 +143,7 @@ export async function startServiceLoop(): Promise<void> {
       const now = Date.now();
       if (now - lastHotTopicCheck >= HOT_TOPIC_INTERVAL) {
         lastHotTopicCheck = now;
-        for (const platform of platforms) {
-          checkHotTopics(platform).catch(err => log.error('[Service] 热点检测失败:', err));
-        }
+        checkHotTopics().catch(err => log.error('[Service] 热点检测失败:', err));
       }
     };
 

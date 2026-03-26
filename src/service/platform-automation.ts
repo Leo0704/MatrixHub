@@ -134,8 +134,6 @@ export class PlatformAutomation {
   private async navigateToPublish(platform: Platform): Promise<void> {
     const urls: Record<Platform, string> = {
       douyin: 'https://creator.douyin.com/content/upload',
-      kuaishou: 'https://cp.kuaishou.com/interaction/long-video/upload',
-      xiaohongshu: 'https://creator.xiaohongshu.com/publish',
     };
 
     log.info(`导航到发布页: ${urls[platform]}`);

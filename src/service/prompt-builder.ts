@@ -11,9 +11,8 @@ export type PromptType = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | 'script
  */
 export function buildCreativePrompt(type: PromptType, topic: string, platform: Platform): string {
   const templates: Record<PromptType, (topic: string, platform: Platform) => string> = {
-    '1': (topic, platform) => {
-      const emoji = platform === 'douyin' ? '🎵' : platform === 'kuaishou' ? '📱' : '📕';
-      return `${emoji} 【短视频爆款脚本生成】
+    '1': (topic, _platform) => {
+      return `🎵 【短视频爆款脚本生成】
 
 主题：${topic}
 
@@ -248,9 +247,8 @@ ${topic}
 1. 口语化、亲切
 2. 突出亮点
 3. 引发共鸣`,
-    'default': (topic, platform) => {
-      const emoji = platform === 'douyin' ? '🎵' : platform === 'kuaishou' ? '📱' : '📕';
-      return `${emoji} 【内容生成】
+    'default': (topic, _platform) => {
+      return `🎵 【内容生成】
 
 主题：${topic}
 
@@ -294,45 +292,6 @@ export function getEnhancedSystemPrompt(platform: Platform): string {
 2. 每15秒有一个小高潮或转折
 3. 结尾留悬念或强CTA
 4. 标题和封面决定点击率`,
-    kuaishou: `你熟悉快手老铁文化，擅长创作真实、有温度、接地气的内容。
-
-专长：
-- 真实生活分享（不装，自然）
-- 情感共鸣创作（友情、亲情、爱情）
-- 社区互动策略
-
-受众：25-45岁三四线城市用户，重视真实性和亲和力
-
-风格要求：
-- 真实不装、有烟火气、有温度
-- 讲述普通人故事
-- 引发"老铁666"式共鸣
-- 口语化、亲切感
-
-爆款标准：
-1. 真实感 > 精致感
-2. 情感共鸣 > 信息量
-3. 评论区互动是关键`,
-    xiaohongshu: `你是小红书头部博主，擅长创作高质感种草文案。
-
-专长：
-- 好物分享、生活方式类内容
-- 精致感与真实感平衡
-- 种草文案（让人想购买）
-
-受众：18-35岁女性，追求品质生活、有消费能力
-
-风格要求：
-- 审美在线、有调性
-- 精致但不做作
-- 有获得感、让人种草
-- 排版美观、图文配合
-
-爆款标准：
-1. 封面和标题决定点击率
-2. 第一句话要引发好奇
-3. 有具体细节和数据支撑
-4. 结尾CTA引导互动`
   };
 
   return prompts[platform] || prompts.douyin;
@@ -344,8 +303,6 @@ export function getEnhancedSystemPrompt(platform: Platform): string {
 export function getImageSystemPrompt(platform: Platform): string {
   const prompts: Record<Platform, string> = {
     douyin: '生成适合抖音的视频封面图，要求：色彩鲜艳、抓人眼球、有悬念感，适合短视频平台',
-    kuaishou: '生成适合快手的封面图，要求：真实感、接地气、有亲和力，符合老铁文化',
-    xiaohongshu: '生成适合小红书的图片，要求：高质感、审美在线、有精致感，符合平台调性'
   };
   return prompts[platform] || prompts.douyin;
 }
@@ -356,8 +313,6 @@ export function getImageSystemPrompt(platform: Platform): string {
 export function getVoicePromptEnhancement(platform: Platform): string {
   const prompts: Record<Platform, string> = {
     douyin: '配音要年轻化、有活力、节奏感强，适合短视频',
-    kuaishou: '配音要亲切自然、接地气，像朋友聊天',
-    xiaohongshu: '配音要有质感、温柔亲切，像闺蜜分享'
   };
   return prompts[platform] || prompts.douyin;
 }

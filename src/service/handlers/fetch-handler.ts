@@ -2,8 +2,8 @@
  * 数据获取任务处理器
  */
 import type { Platform, Task } from '../../shared/types.js';
-import { createFetcher, createAllFetchers } from '../data-fetcher/index.js';
-import type { FetchResult, HotTopic } from '../data-fetcher/types.js';
+import { createFetcher } from '../data-fetcher/index.js';
+import type { FetchResult } from '../data-fetcher/types.js';
 import { createPage } from '../platform-launcher.js';
 import { checkLoginState, navigateTo, randomDelay } from '../utils/page-helpers.js';
 import log from 'electron-log';
@@ -29,7 +29,7 @@ export async function executeFetchDataTask(
 
   switch (payload.dataType) {
     case 'hot_topics':
-      result = await fetchHotTopics(payload.platform) as unknown as Record<string, unknown>;
+      result = await fetchHotTopics() as unknown as Record<string, unknown>;
       break;
     case 'content_stats':
       result = await fetchContentStats(payload.accountId, payload.dateRange);
@@ -45,44 +45,15 @@ export async function executeFetchDataTask(
   return result;
 }
 
-async function fetchHotTopics(platform?: Platform): Promise<FetchResult> {
-  if (platform) {
-    log.info(`[Service] 获取 ${platform} 热点话题`);
-    const fetcher = createFetcher(platform);
-    try {
-      const result = await fetcher.fetchHotTopics();
-      return result;
-    } finally {
-      await fetcher.close();
-    }
-  } else {
-    log.info('[Service] 获取全平台热点话题');
-    const fetchers = createAllFetchers();
-    const allTopics: HotTopic[] = [];
-    const errors: string[] = [];
-
-    for (const fetcher of fetchers) {
-      try {
-        const result = await fetcher.fetchHotTopics();
-        allTopics.push(...result.topics);
-        if (result.error) {
-          errors.push(`${(fetcher as any).platform}: ${result.error}`);
-        }
-      } catch (e) {
-        errors.push(`${(fetcher as any).platform}: ${(e as Error).message}`);
-      } finally {
-        await fetcher.close();
-      }
-    }
-
-    allTopics.sort((a, b) => b.heat - a.heat);
-
-    return {
-      topics: allTopics,
-      source: 'all',
-      fetchedAt: Date.now(),
-      error: errors.length > 0 ? errors.join('; ') : undefined,
-    };
+async function fetchHotTopics(): Promise<FetchResult> {
+  // MVP 只支持抖音
+  log.info('[Service] 获取抖音热点话题');
+  const fetcher = createFetcher('douyin');
+  try {
+    const result = await fetcher.fetchHotTopics();
+    return result;
+  } finally {
+    await fetcher.close();
   }
 }
 

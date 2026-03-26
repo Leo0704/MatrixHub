@@ -61,8 +61,6 @@ export function AIRecommendationModal({
 
   const platformNames: Record<Platform, string> = {
     douyin: '抖音',
-    kuaishou: '快手',
-    xiaohongshu: '小红书',
   };
 
   const formatScheduledTime = (timestamp: number) => {
